@@ -9,7 +9,10 @@ This is a tutorial and meant to be a community project. Contributions are welcom
 - Adding new parts (but make an issue first so we can plan it first)
 
 ## Looking at / contributing to the code
-Every part's code (files in general) builds off of the previous part.
+Every part's code (files in general) builds off of the previous part. So this uses `git worktree` for the tutorial operating system's files. To view a part, run
+```bash
+git worktree add part-0 --guess-remote
+```
 
 ## Looking at the tutorial
 Go to the `Part 0.md` file.
