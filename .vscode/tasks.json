@@ -1,0 +1,25 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "run",
+			"args": [
+				"--",
+				"-s",
+				"-S",
+				"-serial",
+				"stdio"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "Start QEMU with GDB Debugging",
+			"isBackground": true,
+			"runOptions": {
+				// You can't have multiple processes listening on port 1234 at the same time
+				"instanceLimit": 1
+			}
+		}
+	]
+}
