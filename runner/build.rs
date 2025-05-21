@@ -21,15 +21,16 @@ fn main() {
     let iso_dir = out_dir.join("iso_root");
     create_dir_all(&iso_dir).unwrap();
 
-    // In the ISO, the config will be at boot/limine/limine.conf
-    let boot_dir = iso_dir.join("boot");
-    create_dir_all(&boot_dir).unwrap();
-    let out_limine_dir = boot_dir.join("limine");
-    create_dir_all(&out_limine_dir).unwrap();
-    let limine_conf = out_limine_dir.join("limine.conf");
+    // Limine config will be in `limine.conf`
+    let limine_conf = iso_dir.join("limine.conf");
     ensure_symlink(runner_dir.join("limine.conf"), limine_conf).unwrap();
 
+    let boot_dir = iso_dir.join("boot");
+    create_dir_all(&boot_dir).unwrap();
+
     // Copy files from the Limine packaeg into `boot/limine`
+    let out_limine_dir = boot_dir.join("limine");
+    create_dir_all(&out_limine_dir).unwrap();
     for path in [
         "limine-bios.sys",
         "limine-bios-cd.bin",
