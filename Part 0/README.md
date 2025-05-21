@@ -52,6 +52,9 @@ channel = "nightly-2025-05-19"
 components = ["rust-src"]
 ```
 
+## Configuring Limine
+Create a file `kernel/limine.conf`. Leave it empty for now. We will use it to configure Limine later.
+
 # The Cargo workspace
 We will have two Rust projects: the kernel, which is our actual operating system, and the runner, which will have programs that run our operating system in a virtual machine. For now, we'll just have the runner, and make the kernel in the next part.
 
