@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug kernel in QEMU",
+            "type": "lldb",
+            "request": "launch",
+            "targetCreateCommands": [
+                "target create ${workspaceFolder}/runner/out_dir/iso_root/kernel",
+            ],
+            "processCreateCommands": [
+                "gdb-remote localhost:1234",
+                "continue",
+            ],
+            "preLaunchTask": "Start QEMU with GDB Debugging",
+        },
+    ],
+}
