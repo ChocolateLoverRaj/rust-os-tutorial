@@ -14,8 +14,6 @@ fn main() {
     let runner_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // This folder contains Limine files such as `BOOTX64.EFI`
     let limine_dir = PathBuf::from(env::var("LIMINE_PATH").unwrap());
-    // Cargo passes us the path the to kernel executable because it is an artifact dep
-    let kernel_executable_file = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
 
     // We will create an ISO file for our OS
     // First we create a folder which will be used to generate the ISO
@@ -23,14 +21,9 @@ fn main() {
     let iso_dir = out_dir.join("iso_root");
     create_dir_all(&iso_dir).unwrap();
 
-    let boot_dir = iso_dir.join("boot");
-
-    // In the ISO, boot/kernel will be our kernel executable
-    create_dir_all(&boot_dir).unwrap();
-    let kernel_dest = boot_dir.join("kernel");
-    ensure_symlink(&kernel_executable_file, &kernel_dest).unwrap();
-
     // In the ISO, the config will be at boot/limine/limine.conf
+    let boot_dir = iso_dir.join("boot");
+    create_dir_all(&boot_dir).unwrap();
     let out_limine_dir = boot_dir.join("limine");
     create_dir_all(&out_limine_dir).unwrap();
     let limine_conf = out_limine_dir.join("limine.conf");
@@ -102,14 +95,6 @@ fn main() {
         .status()
         .unwrap();
     assert!(status.success());
-
-    // Symlink some files to a consistent folder for easy manual debugging
-    let links_dir = runner_dir.join("links");
-    create_dir_all(&links_dir).unwrap();
-    // Easily inspect output dir
-    ensure_symlink(out_dir, links_dir.join("out_dir")).unwrap();
-    // Used by Vscode debugger configuration in `launch.json`
-    ensure_symlink(kernel_executable_file, links_dir.join("kernel")).unwrap();
 
     // This will let `main.rs` see the path of the ISO we created
     println!("cargo:rustc-env=ISO={}", output_iso.display());

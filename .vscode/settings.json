@@ -1,6 +1,0 @@
-{
-    "qemu-gdb-debug.executablePath": "runner/links/kernel",
-    "qemu-gdb-debug.serverAddress": ":1234",
-    "qemu-gdb-debug.startQemuCommand": "cargo r -- -s -S",
-    "qemu-gdb-debug.gdbPath": "gdb",
-}
