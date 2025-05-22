@@ -1,8 +1,11 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Write;
+
 use limine::BaseRevision;
 use limine::request::{RequestsEndMarker, RequestsStartMarker};
+use uart_16550::SerialPort;
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -25,6 +28,11 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     // All limine requests must also be referenced in a called function, otherwise they may be
     // removed by the linker.
     assert!(BASE_REVISION.is_supported());
+
+    let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+    serial_port.init();
+    writeln!(serial_port, "Hello World!\r").unwrap();
+
     hlt_loop();
 }
 
