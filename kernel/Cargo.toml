@@ -6,6 +6,9 @@ publish = false
 
 [dependencies]
 limine = "0.4"
+log = "0.4.27"
+owo-colors = "4.2.1"
+spinning_top = "0.3.0"
 uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
 
