@@ -89,3 +89,18 @@ let level: &dyn Display = match level {
 And now the log level text will be colorful!
 
 ![Picture of a "INFO  Hello World!" message with the "INFO" text being blue](./Colorful_Log_Message.png)
+
+Now that we have a logger, let's update our panic handler:
+```rs
+#[panic_handler]
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    log::error!("{}", info);
+    hlt_loop();
+}
+```
+To check our panic handler, let's change `hlt_loop` to `todo!()` in our entry function. Now we should see
+```
+INFO  Hello World!
+ERROR panicked at kernel/src/main.rs:34:5:
+not yet implemented
+```
