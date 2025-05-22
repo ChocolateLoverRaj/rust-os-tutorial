@@ -1,6 +1,6 @@
 use limine::{
     BaseRevision,
-    request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker},
+    request::{FramebufferRequest, MpRequest, RequestsEndMarker, RequestsStartMarker},
 };
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -14,6 +14,10 @@ pub static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static FRAME_BUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MP_REQUEST: MpRequest = MpRequest::new();
 
 /// Define the stand and end markers for Limine requests.
 #[used]
