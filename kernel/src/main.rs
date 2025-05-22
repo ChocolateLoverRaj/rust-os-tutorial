@@ -31,11 +31,12 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     logger::init().unwrap();
     log::info!("Hello World!");
 
-    hlt_loop();
+    todo!()
 }
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    log::error!("{}", info);
     hlt_loop();
 }
 
