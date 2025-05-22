@@ -1,26 +1,13 @@
 #![no_std]
 #![no_main]
 
-use limine::BaseRevision;
-use limine::request::{RequestsEndMarker, RequestsStartMarker};
+use hlt_loop::hlt_loop;
+use limine_requests::{BASE_REVISION, MP_REQUEST};
 
+pub mod hlt_loop;
+pub mod limine_requests;
 pub mod logger;
-
-/// Sets the base revision to the latest revision supported by the crate.
-/// See specification for further info.
-/// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
-#[used]
-// The .requests section allows limine to find the requests faster and more safely.
-#[unsafe(link_section = ".requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-/// Define the stand and end markers for Limine requests.
-#[used]
-#[unsafe(link_section = ".requests_start_marker")]
-static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
-#[used]
-#[unsafe(link_section = ".requests_end_marker")]
-static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
+pub mod panic_handler;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_from_limine() -> ! {
@@ -31,17 +18,18 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     logger::init().unwrap();
     log::info!("Hello World!");
 
+    let mp_response = MP_REQUEST.get_response().unwrap();
+    let cpu_count = mp_response.cpus().len();
+    log::info!("CPU Count: {}", cpu_count);
+    for cpu in mp_response.cpus() {
+        cpu.goto_address.write(entry_point_from_limine_mp);
+    }
+
     todo!()
 }
 
-#[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    log::error!("{}", info);
-    hlt_loop();
-}
-
-fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
+unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
+    let cpu_id = cpu.id;
+    log::info!("Hello from CPU {}", cpu_id);
+    hlt_loop()
 }
