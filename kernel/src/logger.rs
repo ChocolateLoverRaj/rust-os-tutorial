@@ -15,7 +15,7 @@ impl Log for KernelLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        let mut serial_port = self.serial_port.try_lock().unwrap();
+        let mut serial_port = self.serial_port.lock();
         let level = record.level();
         let level: &dyn Display = match level {
             log::Level::Error => &level.bright_red(),
