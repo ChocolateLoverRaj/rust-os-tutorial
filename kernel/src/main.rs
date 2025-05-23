@@ -50,7 +50,6 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     unsafe { gdt::init() };
     idt::init();
-    x86_64::instructions::interrupts::int3();
 
     todo!()
 }
@@ -64,6 +63,6 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
 
     unsafe { gdt::init() };
     idt::init();
-    x86_64::instructions::interrupts::int3();
+
     hlt_loop()
 }
