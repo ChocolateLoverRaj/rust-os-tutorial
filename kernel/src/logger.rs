@@ -15,7 +15,9 @@ use spinning_top::Spinlock;
 use uart_16550::SerialPort;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics;
+use crate::{
+    cpu_local_data::try_get_local, frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics,
+};
 
 struct DisplayData {
     display: FrameBufferEmbeddedGraphics<'static>,
@@ -30,6 +32,7 @@ struct Inner {
 /// Represents a color in a terminal or screen. The default color may depend on if the theme is light or dark.
 enum Color {
     Default,
+    Gray,
     BrightRed,
     BrightYellow,
     BrightBlue,
@@ -43,6 +46,7 @@ impl Inner {
         {
             let string: &dyn Display = match color {
                 Color::Default => &string,
+                Color::Gray => &string.dimmed(),
                 Color::BrightRed => &string.bright_red(),
                 Color::BrightYellow => &string.bright_yellow(),
                 Color::BrightBlue => &string.bright_blue(),
@@ -122,6 +126,7 @@ impl Inner {
                 text_color: match color {
                     Color::Default => Rgb888::WHITE,
                     // Mimick the ANSI escape colors
+                    Color::Gray => Rgb888::new(128, 128, 128),
                     Color::BrightRed => Rgb888::new(255, 85, 85),
                     Color::BrightYellow => Rgb888::new(255, 255, 85),
                     Color::BrightBlue => Rgb888::new(85, 85, 255),
@@ -145,6 +150,12 @@ impl Log for KernelLogger {
 
     fn log(&self, record: &log::Record) {
         let mut inner = self.inner.lock();
+        if let Some(cpu_local_data) = try_get_local() {
+            let cpu_id = cpu_local_data.cpu.id;
+            inner.write_with_color(Color::Gray, format_args!("[CPU {}] ", cpu_id));
+        } else {
+            inner.write_with_color(Color::Gray, "[BSP] ");
+        };
         let level = record.level();
         inner.write_with_color(
             match level {
