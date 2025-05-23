@@ -5,6 +5,8 @@ use owo_colors::OwoColorize;
 use spinning_top::Spinlock;
 use uart_16550::SerialPort;
 
+use crate::cpu_local_data::try_get_local;
+
 struct KernelLogger {
     serial_port: Spinlock<SerialPort>,
 }
@@ -24,8 +26,14 @@ impl Log for KernelLogger {
             log::Level::Debug => &level.bright_cyan(),
             log::Level::Trace => &level.bright_magenta(),
         };
+        if let Some(cpu_local_data) = try_get_local() {
+            let cpu_id = cpu_local_data.cpu.id;
+            write!(serial_port, "{}", format_args!("[CPU {}]", cpu_id).dimmed()).unwrap();
+        } else {
+            write!(serial_port, "{}", "[BSP]".dimmed()).unwrap();
+        }
         let args = record.args();
-        writeln!(serial_port, "{:5} {}", level, args).unwrap();
+        writeln!(serial_port, " {:5} {}", level, args).unwrap();
     }
 
     fn flush(&self) {

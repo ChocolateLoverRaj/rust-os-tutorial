@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+conquer-once = { version = "0.4.0", default-features = false }
 limine = "0.4"
 linked_list_allocator = "0.10.5"
 log = "0.4.27"
