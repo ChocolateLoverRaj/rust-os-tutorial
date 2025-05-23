@@ -1,9 +1,13 @@
 #![no_std]
 #![no_main]
+#![feature(sync_unsafe_cell)]
+
+extern crate alloc;
 
 use hlt_loop::hlt_loop;
 use limine_requests::{BASE_REVISION, MP_REQUEST};
 
+pub mod global_allocator;
 pub mod hlt_loop;
 pub mod limine_requests;
 pub mod logger;
@@ -17,6 +21,9 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     logger::init().unwrap();
     log::info!("Hello World!");
+
+    // Safety: we are initializing this for the first time
+    unsafe { global_allocator::init() };
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
