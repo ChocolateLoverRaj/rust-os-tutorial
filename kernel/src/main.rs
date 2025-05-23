@@ -7,7 +7,6 @@ extern crate alloc;
 use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
 use limine_requests::{BASE_REVISION, MP_REQUEST};
-use x86_64::instructions::interrupts::int3;
 
 pub mod cpu_local_data;
 pub mod gdt;
@@ -51,7 +50,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     unsafe { gdt::init() };
     idt::init();
-    int3();
+    x86_64::instructions::interrupts::int3();
 
     todo!()
 }
@@ -65,6 +64,6 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
 
     unsafe { gdt::init() };
     idt::init();
-    int3();
+    x86_64::instructions::interrupts::int3();
     hlt_loop()
 }
