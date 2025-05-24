@@ -12,6 +12,8 @@
 				"-smp",
 				"2",
 				"-no-reboot",
+				"-d",
+				"int"
 			],
 			"problemMatcher": [
 				"$rustc",
