@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, allocator_api, ptr_as_uninit)]
 
 extern crate alloc;
 
