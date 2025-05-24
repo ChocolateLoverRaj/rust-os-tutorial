@@ -8,13 +8,16 @@ use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
 use limine_requests::{BASE_REVISION, MP_REQUEST};
 
+pub mod acpi;
 pub mod cpu_local_data;
+pub mod find_unused_virtual_range;
 pub mod gdt;
 pub mod global_allocator;
 pub mod hlt_loop;
 pub mod idt;
 pub mod limine_requests;
 pub mod logger;
+pub mod page_tables_traverser;
 pub mod panic_handler;
 
 #[unsafe(no_mangle)]
