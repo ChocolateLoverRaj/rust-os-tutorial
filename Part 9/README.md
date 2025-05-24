@@ -8,7 +8,7 @@ unsafe {
     (0xABCDEF as *mut u8).read_volatile();
 }
 ```
-here we are purposely triggering a [page fault](https://wiki.osdev.org/Exceptions#Page_Fault). The address `0xABCDEF` is invalid, and we are reading from it. If you run QEMU now, it will triple fault, and QEMU will reboot the VM, causing an endless loop of rebooting and triple faulting. Let's do two things to make this easier to debug. Let's pass `--no-reboot`, which makes QEMU exit without rebooting in the event of a triple fault. And also, `-d int`, which makes QEMU print all interrupts and exceptions that happen. Now, when we run the VM again, we should see:
+here we are purposely triggering a [page fault](https://wiki.osdev.org/Exceptions#Page_Fault). The address `0xABCDEF` is invalid, and we are reading from it. If you run QEMU now, it will triple fault, and QEMU will reboot the VM, causing an endless loop of rebooting and triple faulting. Let's do two things to make this easier to debug. Let's pass `--no-reboot`, which makes QEMU exit without rebooting in the event of a triple fault. And also, `-d int`, which makes QEMU print all interrupts and exceptions that happen. Let's add `-d int` to our `tasks.json` for convenience. Now, when we run the VM again, we should see:
 ```
 check_exception old: 0xffffffff new 0xe
    285: v=0e e=0000 i=0 cpl=0 IP=0008:ffffffff80007d43 pc=ffffffff80007d43 SP=0000:ffff800003be8e60 CR2=0000000000abcdef
@@ -48,17 +48,18 @@ Scrolling down, we can see `check_exception old: 0xe new 0xb`. `0xb` means a "Se
 ## A double fault handler
 Let's create a double fault handler:
 ```rs
-extern "x86-interrupt" fn double_fault_handler(
+extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
-    error_code: u64,
-) -> ! {
+    error_code: PageFaultErrorCode,
+) {
+    let accessed_address = Cr2::read().unwrap();
     panic!(
-        "Double Fault! Stack frame: {:#?}. Error code: {}.",
-        stack_frame, error_code
+        "Page fault! Stack frame: {:#?}. Error code: {:#?}. Accessed address: {:?}.",
+        stack_frame, error_code, accessed_address
     )
 }
 ```
-And then add it to our IDT
+In a page fault, we can read the `Cr2` register to get the accessed address that caused the page fault. Let's add the page fault handler to our IDT:
 ```rs
 idt.double_fault.set_handler_fn(double_fault_handler);
 ```
@@ -105,9 +106,10 @@ idt.page_fault.set_handler_fn(page_fault_handler);
 
 Now we should see this:
 ```
+[CPU 0] ERROR panicked at kernel/src/idt.rs:30:5:
 Page fault! Stack frame: InterruptStackFrame {
     instruction_pointer: VirtAddr(
-        0xffffffff80008133,
+        0xffffffff80008933,
     ),
     code_segment: SegmentSelector {
         index: 1,
@@ -117,14 +119,108 @@ Page fault! Stack frame: InterruptStackFrame {
         RESUME_FLAG | SIGN_FLAG | 0x2,
     ),
     stack_pointer: VirtAddr(
-        0xffff800003be8e60,
+        0xffff800003bc6e60,
     ),
     stack_segment: SegmentSelector {
-        index: 0,
+        index: 2,
         rpl: Ring0,
     },
 }. Error code: PageFaultErrorCode(
     0x0,
-).
+). Accessed address: VirtAddr(0xabcdef).
 ```
 If you want, you can add handler functions for other types of exceptions too.
+
+## Dedicated stacks
+Our page fault handler (and double fault handler) have problems: they won't work if a stack overflow happens. Let's test it:
+```rs
+fn cause_stack_overflow() {
+    cause_stack_overflow();
+}
+cause_stack_overflow();
+```
+Now our panic message will not print, and there will be a triple fault.
+```
+check_exception old: 0xffffffff new 0xe
+```
+```
+check_exception old: 0xe new 0xe
+```
+```
+check_exception old: 0x8 new 0xe
+```
+This is because a stack overflow causes a page fault because the stack pointer points to invalid memory. When our exception handlers are called, the stack pointer is still pointing to invalid memory. We can define up to 7 stacks that get switched on on certain interrupts or exceptions. Let's define two of them in `gdt.rs`. That way, our exception handlers can run even if there is a problem with the stack, and our double fault handler can run even if there is a problem with another exception handler's stack.
+```rs
+pub const FIRST_EXCEPTION_STACK_INDEX: u16 = 0;
+pub const DOUBLE_FAULT_STACK_INDEX: u16 = 1;
+```
+And then when we create the TSS:
+```rs
+|| {
+    let mut tss = TaskStateSegment::new();
+    tss.interrupt_stack_table[FIRST_EXCEPTION_STACK_INDEX as usize] =
+        VirtAddr::from_ptr(unsafe {
+            Global
+                .allocate(Layout::from_size_align(4 * 0x400, 16).unwrap())
+                .unwrap()
+                .as_uninit_slice_mut()
+                .as_mut_ptr_range()
+                .end
+        });
+    tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
+        VirtAddr::from_ptr(unsafe {
+            Global
+                .allocate(Layout::from_size_align(4 * 0x400, 16).unwrap())
+                .unwrap()
+                .as_uninit_slice_mut()
+                .as_mut_ptr_range()
+                .end
+        });
+    tss
+}
+```
+When we allocate memory for the stacks, we align it by 16 because the stack needs to be aligned by 16. We don't need to worry about keeping deallocating the manually allocated memory because we will never deallocate it. We'll need to enable the `allocator_api` and `ptr_as_uninit` features. Then in `idt.rs`, we set the stack index for the exception handlers:
+```rs
+let mut idt = InterruptDescriptorTable::new();
+unsafe {
+    idt.breakpoint
+        .set_handler_fn(breakpoint_handler)
+        .set_stack_index(FIRST_EXCEPTION_STACK_INDEX)
+};
+unsafe {
+    idt.double_fault
+        .set_handler_fn(double_fault_handler)
+        .set_stack_index(DOUBLE_FAULT_STACK_INDEX)
+};
+unsafe {
+    idt.page_fault
+        .set_handler_fn(page_fault_handler)
+        .set_stack_index(FIRST_EXCEPTION_STACK_INDEX)
+};
+idt
+```
+Now it doesn't triple fault:
+```rs
+[CPU 0] ERROR panicked at kernel/src/idt.rs:30:5:
+Page fault! Stack frame: InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff80002a91,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        RESUME_FLAG | SIGN_FLAG | PARITY_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff800003ba9000,
+    ),
+    stack_segment: SegmentSelector {
+        index: 2,
+        rpl: Ring0,
+    },
+}. Error code: PageFaultErrorCode(
+    CAUSED_BY_WRITE,
+). Accessed address: VirtAddr(0xffff800003ba8ff8).
+```
