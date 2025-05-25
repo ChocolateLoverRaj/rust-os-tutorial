@@ -120,9 +120,7 @@ The `int3` instruction triggers a breakpoint.
 
 Now when we run the OS, we'll see:
 ```
-[BSP] INFO  Hello World!
-[BSP] INFO  CPU Count: 2
-[CPU 1] INFO  Hello from CPU 1
+...
 [CPU 1] INFO  Breakpoint! Stack frame: InterruptStackFrame {
     instruction_pointer: VirtAddr(
         0xffffffff80000d11,
@@ -161,8 +159,7 @@ Now when we run the OS, we'll see:
         rpl: Ring0,
     },
 }
-[CPU 0] ERROR panicked at kernel/src/main.rs:55:5:
-not yet implemented
+...
 ```
 
 # Learn more
