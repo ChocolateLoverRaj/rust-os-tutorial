@@ -1,6 +1,6 @@
 use limine::{
     BaseRevision,
-    request::{MpRequest, RequestsEndMarker, RequestsStartMarker},
+    request::{HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker, RequestsStartMarker},
 };
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -14,6 +14,14 @@ pub static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static MP_REQUEST: MpRequest = MpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 /// Define the stand and end markers for Limine requests.
 #[used]

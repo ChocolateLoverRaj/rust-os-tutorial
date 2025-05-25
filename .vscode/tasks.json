@@ -11,6 +11,7 @@
 				"-nographic",
 				"-smp",
 				"2",
+				"-no-reboot",
 			],
 			"problemMatcher": [
 				"$rustc",
