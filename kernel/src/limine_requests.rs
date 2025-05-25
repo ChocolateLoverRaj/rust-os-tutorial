@@ -1,6 +1,11 @@
+use core::cell::SyncUnsafeCell;
+
 use limine::{
     BaseRevision,
-    request::{MpRequest, RequestsEndMarker, RequestsStartMarker},
+    request::{
+        ExecutableAddressRequest, ExecutableFileRequest, HhdmRequest, MemoryMapRequest, MpRequest,
+        RequestsEndMarker, RequestsStartMarker, RsdpRequest,
+    },
 };
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -13,7 +18,27 @@ pub static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-pub static MP_REQUEST: MpRequest = MpRequest::new();
+pub static MP_REQUEST: SyncUnsafeCell<MpRequest> = SyncUnsafeCell::new(MpRequest::new());
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static EXECUTABLE_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static EXECUTABLE_FILE_REQUEST: ExecutableFileRequest = ExecutableFileRequest::new();
 
 /// Define the stand and end markers for Limine requests.
 #[used]
