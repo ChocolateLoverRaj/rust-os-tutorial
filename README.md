@@ -1,3 +1,6 @@
+## 🚧 In Construction 🚧
+Feel free to follow parts 0-6. Part 7 and on still need to be rebased, since I changed part 6.
+
 A walkthrough for making your own operating system in Rust, inspired by [Philipp Oppermann's blog "Writing an OS in Rust"](https://os.phil-opp.com/)
 
 ## Contribution Welcome
