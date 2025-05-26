@@ -10,6 +10,7 @@ There are three things we need to set up: The GDT, TSS, and IDT. The IDT contain
 pub struct Gdt {
     gdt: GlobalDescriptorTable,
     kernel_code_selector: SegmentSelector,
+    kernel_data_selector: SegmentSelector,
     tss_selector: SegmentSelector,
 }
 ```
@@ -48,10 +49,12 @@ let gdt = {
         .try_init_once(|| {
             let mut gdt = GlobalDescriptorTable::new();
             let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
+            let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());
             let tss_selector = gdt.append(Descriptor::tss_segment(tss));
             Gdt {
                 gdt,
                 kernel_code_selector,
+                kernel_data_selector,
                 tss_selector,
             }
         })
@@ -66,9 +69,7 @@ gdt.gdt.load();
 We have to set some registers to specific values:
 ```rs
 unsafe { CS::set_reg(gdt.kernel_code_selector) };
-unsafe { SS::set_reg(SegmentSelector::NULL) };
-unsafe { DS::set_reg(SegmentSelector::NULL) };
-unsafe { ES::set_reg(SegmentSelector::NULL) };
+unsafe { SS::set_reg(gdt.kernel_data_selector) };
 ```
 And we load the tss:
 ```rs
