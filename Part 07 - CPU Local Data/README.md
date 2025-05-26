@@ -98,10 +98,8 @@ writeln!(serial_port, " {:5} {}", level, args).unwrap();
 ```
 Because we might want to log messages before initializing the `CPU_LOCAL_DATA`, we just print "BSP" instead of the CPU id. Now our kernel should log this:
 ```
-[BSP] INFO  Hello World!
+...
 [BSP] INFO  CPU Count: 2
 [CPU 0] INFO  Hello from BSP
 [CPU 1] INFO  Hello from CPU 1
-[CPU 0] ERROR panicked at kernel/src/main.rs:51:5:
-not yet implemented
 ```
