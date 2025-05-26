@@ -98,7 +98,7 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     hlt_loop();
 }
 ```
-To check our panic handler, let's change `hlt_loop` to `todo!()` in our entry function. Now we should see
+To check our panic handler, let's temporarily put `todo!()` before `hlt_loop` in our entry function. Now we should see
 ```
 INFO  Hello World!
 ERROR panicked at kernel/src/main.rs:34:5:
