@@ -520,6 +520,121 @@ unsafe { Cr3::write(memory.new_kernel_cr3, memory.new_kernel_cr3_flags) };
 ```
 Every CPU has its own `Cr3` register. We changed the `Cr3` value for the BSP, but we also have to change it for the APs. 
 
+Now we should see an output like this:
+```
+INFO  Hello World!
+DEBUG Physical memory usage: NoditMap {
+    inner: {
+        Interval {
+            start: 0x0,
+            end: 0xFFF,
+        }: UsedByKernel(
+            PageTables,
+        ),
+        Interval {
+            start: 0x1000,
+            end: 0x1FFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x2000,
+            end: 0x2FFF,
+        }: UsedByKernel(
+            PageTables,
+        ),
+        Interval {
+            start: 0x3000,
+            end: 0x9FFFF,
+        }: Usable,
+        Interval {
+            start: 0x100000,
+            end: 0x4FFFFF,
+        }: UsedByKernel(
+            GlobalAllocatorHeap,
+        ),
+        Interval {
+            start: 0x500000,
+            end: 0x7FFFFF,
+        }: Usable,
+        Interval {
+            start: 0x808000,
+            end: 0x80AFFF,
+        }: Usable,
+        Interval {
+            start: 0x80C000,
+            end: 0x810FFF,
+        }: Usable,
+        Interval {
+            start: 0x900000,
+            end: 0x23BEFFF,
+        }: Usable,
+        Interval {
+            start: 0x23F5000,
+            end: 0x2623FFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x2624000,
+            end: 0x263EFFF,
+        }: Usable,
+        Interval {
+            start: 0x263F000,
+            end: 0x265BFFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x265C000,
+            end: 0x3B7BFFF,
+        }: Usable,
+        Interval {
+            start: 0x3B7C000,
+            end: 0x3BE6FFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x3BE7000,
+            end: 0x66CFFFF,
+        }: Usable,
+        Interval {
+            start: 0x66D5000,
+            end: 0x66E6FFF,
+        }: Usable,
+        Interval {
+            start: 0x66E7000,
+            end: 0x6757FFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x6760000,
+            end: 0x6845FFF,
+        }: Usable,
+        Interval {
+            start: 0x6846000,
+            end: 0x6848FFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x684C000,
+            end: 0x74ECFFF,
+        }: Usable,
+        Interval {
+            start: 0x77FF000,
+            end: 0x7DFFFFF,
+        }: Usable,
+        Interval {
+            start: 0x7E00000,
+            end: 0x7E6DFFF,
+        }: UsedByLimine,
+        Interval {
+            start: 0x7E6E000,
+            end: 0x7EB0FFF,
+        }: Usable,
+        Interval {
+            start: 0x7EB7000,
+            end: 0x7EEBFFF,
+        }: Usable,
+    },
+    phantom: PhantomData<u64>,
+}
+INFO  CPU Count: 2
+INFO  Hello from CPU 1
+```
+Now let's remove the `log::debug!("Physical memory usage: {:#X?}", physical_memory);` because it takes up so much space in the output.
+
 # Learn More
 - https://os.phil-opp.com/paging-introduction/
 - https://os.phil-opp.com/paging-implementation
