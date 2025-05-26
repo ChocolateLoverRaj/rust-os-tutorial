@@ -120,29 +120,12 @@ The `int3` instruction triggers a breakpoint.
 
 Now when we run the OS, we'll see:
 ```
-...
-[CPU 1] INFO  Breakpoint! Stack frame: InterruptStackFrame {
-    instruction_pointer: VirtAddr(
-        0xffffffff80000d11,
-    ),
-    code_segment: SegmentSelector {
-        index: 1,
-        rpl: Ring0,
-    },
-    cpu_flags: RFlags(
-        SIGN_FLAG | 0x2,
-    ),
-    stack_pointer: VirtAddr(
-        0xffff800002659f38,
-    ),
-    stack_segment: SegmentSelector {
-        index: 0,
-        rpl: Ring0,
-    },
-}
+[BSP] INFO  Hello World!
+[BSP] INFO  CPU Count: 2
+[CPU 1] INFO  Hello from CPU 1
 [CPU 0] INFO  Breakpoint! Stack frame: InterruptStackFrame {
     instruction_pointer: VirtAddr(
-        0xffffffff80000d11,
+        0xffffffff8001e781,
     ),
     code_segment: SegmentSelector {
         index: 1,
@@ -152,15 +135,34 @@ Now when we run the OS, we'll see:
         SIGN_FLAG | PARITY_FLAG | 0x2,
     ),
     stack_pointer: VirtAddr(
-        0xffff800003bc6e88,
+        0xffff800003bc6e48,
     ),
     stack_segment: SegmentSelector {
         index: 0,
         rpl: Ring0,
     },
 }
-...
+[CPU 1] INFO  Breakpoint! Stack frame: InterruptStackFrame {
+    instruction_pointer: VirtAddr(
+        0xffffffff8001e781,
+    ),
+    code_segment: SegmentSelector {
+        index: 1,
+        rpl: Ring0,
+    },
+    cpu_flags: RFlags(
+        SIGN_FLAG | 0x2,
+    ),
+    stack_pointer: VirtAddr(
+        0xffff800002659ef8,
+    ),
+    stack_segment: SegmentSelector {
+        index: 0,
+        rpl: Ring0,
+    },
+}
 ```
+Now that we know breakpoint handling works, let's remove the `x86_64::instructions::interrupts::int3();`.
 
 # Learn more
 - https://os.phil-opp.com/cpu-exceptions/
