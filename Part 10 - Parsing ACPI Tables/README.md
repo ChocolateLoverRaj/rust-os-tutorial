@@ -3,12 +3,17 @@ ACPI tables is binary data that provides information about the computer to the o
 ```toml
 acpi = "5.2.0"
 ```
-Create a file `acpi.rs`. We'll be using the [`AcpiTables::from_rsdp`](https://docs.rs/acpi/5.2.0/acpi/struct.AcpiTables.html#method.from_rsdp) method. It needs a handler, which maps the ACPI memory, and the address of the [RSDP](https://wiki.osdev.org/RSDP). We can ask Limine for the RSDP address by adding the request:
+Create a file `acpi.rs`. We'll be using the [`AcpiTables::from_rsdp`](https://docs.rs/acpi/5.2.0/acpi/struct.AcpiTables.html#method.from_rsdp) method. It needs a handler, which maps the ACPI memory, and the address of the [RSDP](https://wiki.osdev.org/RSDP). 
+
+# RSDP request
+We can ask Limine for the RSDP address by adding the request:
 ```rs
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 ```
+
+## Implementing `AcpiHandler`
 For the handler, we'll need to make our own. In `acpi.rs`, add:
 ```rs
 #[derive(Debug, Clone)]
@@ -28,172 +33,262 @@ impl AcpiHandler for KernelAcpiHandler {
     }
 }
 ```
-As you can see, we need to implement a function that maps a physical memory region to a virtual memory region. See https://os.phil-opp.com/paging-introduction/ for an explanation of what is physical and virtual memory. In our handler, we need to:
+As you can see, we need to implement a function that maps a physical memory region to a virtual memory region. In our handler, we need to:
 - Find an unused virtual memory range
 - Map the physical memory to the virtual memory range
 - Return the mapping information
-To modify the page tables, we will use Limine's [HHDM](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#hhdm-higher-half-direct-map-feature) feature, which basically offset-maps free memory and existing page tables to a virtual memory range. So let's add the request:
+
+To modify the page tables, we will need the HHDM offset:
 ```rs
-#[used]
-#[unsafe(link_section = ".requests")]
-pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
-```
-Then we can make the response part of our handler:
-```rs
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct KernelAcpiHandler {
-    hhdm: &'static HhdmResponse,
+    hhdm_offset: HhdmOffset,
 }
 ```
+Next, we'll need to find unused virtual memory.
 
-To find unused page tables, we'll need to traverse page tables. Traversing page tables can be tedious and complicated, so let's create a helper function at `page_tables_traverser.rs`:
+## Keeping track of used virtual memory
+Currently, we don't keep track of virutla memory like we keep track of physical memory. Let's do it now. In the `Memory` struct, add
 ```rs
-use limine::response::HhdmResponse;
-use x86_64::{
-    VirtAddr,
-    structures::paging::{PageTable, PageTableFlags, PhysFrame, Size4KiB},
-};
-
-#[derive(Debug, Clone)]
-pub struct PageTableVirtualPage {
-    indexes: heapless::Vec<usize, 4>,
-}
-
-impl PageTableVirtualPage {
-    pub fn start_address(&self) -> VirtAddr {
-        let mut page_start_addr = 0;
-        let mut shift_by = 12 + 9 + 9 + 9;
-        for index in &self.indexes {
-            page_start_addr += index << shift_by;
-            shift_by -= 9;
-        }
-        VirtAddr::new_truncate(page_start_addr as u64)
-    }
-
-    /// Get the length of the page table (or missing entry) as a multiple of 4KiB
-    pub fn n_4kib_pages(&self) -> u64 {
-        512_u64.pow((4 - self.indexes.len()).try_into().unwrap())
-    }
-
-    /// Get the length of the page table (or missing entry)
-    pub fn page_len(&self) -> u64 {
-        0x1000 * self.n_4kib_pages()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PageTableEntry {
-    pub page_table_index_stack: PageTableVirtualPage,
-    /// If the present bit is set in the flags
-    pub present: bool,
-}
-
-/// Recursively traverses page table, returning every mapping / unused slot
-pub struct PageTablesTraverser {
-    hhdm: &'static HhdmResponse,
-    top_level_page_table: PhysFrame<Size4KiB>,
-    parent_page_tables_entry_index_stack: heapless::Vec<usize, 3>,
-    entry_index: usize,
-}
-
-impl PageTablesTraverser {
-    /// The `initial_entry_index` is initial entry index in the top level page table to start at.
-    /// For example, use 256 to start in the higher half of the virtual address space.
-    ///
-    /// # Safety
-    /// The top level page table and its entries must be actually mapped
-    pub unsafe fn new(
-        hhdm: &'static HhdmResponse,
-        top_level_page_table: PhysFrame<Size4KiB>,
-        initial_entry_index: usize,
-    ) -> Self {
-        Self {
-            hhdm,
-            top_level_page_table,
-            parent_page_tables_entry_index_stack: Default::default(),
-            entry_index: initial_entry_index,
-        }
+pub used_virtual_memory: Spinlock<NoditSet<u64, Interval<u64>>>,
+```
+And then in the memory init function, add
+```rs
+// Now let's keep track of the used virtual memory
+let mut used_virtual_memory = NoditSet::default();
+```
+and add
+```rs
+used_virtual_memory: Spinlock::new(used_virtual_memory)
+```
+when creating `Memory`. Let's mark all of the offset mapped region as used:
+```rs
+// Let's add all of the offset mapped regions, keeping in mind we used 1 GiB pages
+for entry in memory_map.entries() {
+    if [
+        EntryType::USABLE,
+        EntryType::BOOTLOADER_RECLAIMABLE,
+        EntryType::EXECUTABLE_AND_MODULES,
+        EntryType::FRAMEBUFFER,
+    ]
+    .contains(&entry.entry_type)
+    {
+        // Remember to canonicalize higher-half addresses
+        let start = VirtAddr::new_truncate(
+            u64::from(hhdm_offset) + entry.base / Size1GiB::SIZE * Size1GiB::SIZE,
+        )
+        .as_u64();
+        let end = start + (Size1GiB::SIZE - 1);
+        used_virtual_memory.insert_merge_touching_or_overlapping((start..=end).into());
     }
 }
+```
+We are also reserving the top 512 GiB since we are reusing Limine's L3 page table:
+```rs
+// Let's add the top 512 GiB
+used_virtual_memory
+    .insert_merge_touching(iu(0xFFFFFF8000000000))
+    .unwrap();
+``` 
+All other virtual memory is available and unmapped in our new page tables.
 
-impl Iterator for PageTablesTraverser {
-    type Item = PageTableEntry;
+## Finding unused virtual memory
+In our `map_physical_region` method, let's lock the physical and virtual memory, and find a contiguous region of virtual memory in the higher half, made up of 1 GiB pages: 
+```rs
+let memory = MEMORY.try_get().unwrap();
+let mut physical_memory = memory.physical_memory.lock();
+let mut virtual_higher_half = memory.used_virtual_memory.lock();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let active_l4_pt = {
-            let active_l4_pt = (self.top_level_page_table.start_address().as_u64()
-                + self.hhdm.offset()) as *const PageTable;
-            unsafe { &*active_l4_pt }
-        };
-
-        loop {
-            // We went through every entry in the table
-            if self.entry_index == 512 {
-                if let Some(parent_entry_index) = self.parent_page_tables_entry_index_stack.pop() {
-                    // We finished going through a L3, L2, or L1 page table, go to the next entry in the parent table
-                    self.entry_index = parent_entry_index + 1;
-                    continue;
-                } else {
-                    // We finished going through the L4 page table so we're done
-                    break None;
-                }
+let n_pages = (((size + physical_address) as u64).div_ceil(Size1GiB::SIZE)
+    - physical_address as u64 / Size1GiB::SIZE) as u64;
+let start_frame =
+    PhysFrame::<Size1GiB>::containing_address(PhysAddr::new(physical_address as u64));
+let start_page = Page::<Size1GiB>::from_start_address(VirtAddr::new({
+    let range = virtual_higher_half
+        .gaps_trimmed(iu(0xffff800000000000))
+        .find_map(|gap| {
+            let aligned_start = gap.start().next_multiple_of(Size1GiB::SIZE);
+            let required_end_inclusive = aligned_start + (n_pages * Size1GiB::SIZE - 1);
+            if required_end_inclusive <= gap.end() {
+                Some(aligned_start..=required_end_inclusive)
+            } else {
+                None
             }
-            // Get the current page table which has the entry that we're going to process
-            let pt = {
-                // Start with the L4 pt
-                let mut pt = active_l4_pt;
-                // Traverse the page tables until we get to the lowest level we want to process
-                for index in &self.parent_page_tables_entry_index_stack {
-                    let pt_ptr =
-                        (pt[*index].addr().as_u64() + self.hhdm.offset()) as *const PageTable;
-                    pt = unsafe { &*pt_ptr };
-                }
-                pt
-            };
-            let entry = &pt[self.entry_index];
-            let get_page_table_index_stack = || PageTableVirtualPage {
-                indexes: {
-                    let mut indexes = heapless::Vec::<_, 4>::from_slice(
-                        &self.parent_page_tables_entry_index_stack,
-                    )
-                    .unwrap();
-                    indexes.push(self.entry_index).unwrap();
-                    indexes
-                },
-            };
-            if entry.flags().contains(PageTableFlags::PRESENT) {
-                if entry.flags().contains(PageTableFlags::HUGE_PAGE)
-                    || self.parent_page_tables_entry_index_stack.len() == 3
-                {
-                    // This entry point to a phys frame, which could be 4KiB, 2MiB, or 1GiB
-                    // Note that just cuz PageTableFlags::HUGE_PAGE is 1 doesn't mean that it's >4KiB - see https://github.com/phil-opp/blog_os/issues/1403
-                    let page_table_entry = PageTableEntry {
-                        page_table_index_stack: get_page_table_index_stack(),
-                        present: true,
-                    };
-                    self.entry_index += 1;
-                    break Some(page_table_entry);
+        })
+        .unwrap();
+    let start = *range.start();
+    virtual_higher_half
+        .insert_merge_touching(Interval::from(range))
+        .unwrap();
+    start
+}))
+.unwrap();
+```
+We use `insert_merge_touching`, which will panic if our interval overlaps, making it easier to detect virtual memory management bugs.
+
+Next, let's get an `OffsetPageTable`:
+```rs
+let level_4_table_physical_frame = Cr3::read().0;
+let level_4_page_table = unsafe {
+    VirtAddr::new(
+        u64::from(self.hhdm_offset) + level_4_table_physical_frame.start_address().as_u64(),
+    )
+    .as_mut_ptr::<PageTable>()
+    .as_mut()
+    .unwrap()
+};
+let mut offset_page_table = unsafe {
+    OffsetPageTable::new(level_4_page_table, VirtAddr::new(self.hhdm_offset.into()))
+};
+```
+Next, we will use `map_to` to map the pages. But, we'll need a `FrameAllocator`. Last time, we used `InitialFrameAllocator`, but we can't use that anymore. This time, we'll need to implement `FrameAllocator` which allocates based on the physical memory map. 
+
+## New frame allocator
+For convenience, let's create a wrapper around the physical memory map which can implement `FrameAllocator`. Create `physical_memory.rs`:
+```rs
+pub struct PhysicalMemory {
+    pub map: NoditMap<u64, Interval<u64>, MemoryType>,
+}
+```
+And let's implement `FrameAllocator`:
+```rs
+unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemory {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+        let aligned_start = self.map.iter().find_map(|(interval, memory_type)| {
+            if let MemoryType::Usable = memory_type {
+                let aligned_start = interval.start().next_multiple_of(S::SIZE);
+                let required_end_inclusive = aligned_start + (S::SIZE - 1);
+                if required_end_inclusive <= interval.end() {
+                    Some(aligned_start)
                 } else {
-                    // This entry points to another entry
-                    self.parent_page_tables_entry_index_stack
-                        .push(self.entry_index)
-                        .unwrap();
-                    self.entry_index = 0;
-                    continue;
+                    None
                 }
             } else {
-                let page_table_entry = PageTableEntry {
-                    page_table_index_stack: get_page_table_index_stack(),
-                    present: false,
-                };
-                self.entry_index += 1;
-                break Some(page_table_entry);
+                None
             }
-        }
+        })?;
+        self.map
+            .insert_merge_touching_if_values_equal(
+                (aligned_start..=aligned_start + (S::SIZE - 1)).into(),
+                MemoryType::UsedByKernel(crate::memory::KernelMemoryUsageType::PageTables),
+            )
+            .unwrap();
+        Some(PhysFrame::from_start_address(PhysAddr::new(aligned_start)).unwrap())
     }
 }
 ```
+It's important that we use `insert_merge_touching_if_values_equal` to mark the now-allocated frame as used, so we don't allocate the same frame twice.
 
+Let's update the `Memory` struct to use this wrapper type:
+```rs
+pub physical_memory: Spinlock<PhysicalMemory>,
+```
+And when we create `Memory`:
+```rs
+physical_memory: Spinlock::new(PhysicalMemory {
+    map: physical_memory,
+}),
+```
+
+## Mapping the frames
+Now we can just use `PhysicalMemory` as a `FrameAllocator`:
+```rs
+for i in 0..n_pages {
+    unsafe {
+        offset_page_table
+            .map_to(
+                start_page + i,
+                start_frame + i,
+                PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                physical_memory.deref_mut(),
+            )
+            .unwrap()
+            .flush();
+    }
+}
+```
+Finally, we return a `PhysicalMapping`, which tells the `acpi` crate about where we mapped the memory:
+```rs
+unsafe {
+    PhysicalMapping::new(
+        physical_address,
+        NonNull::new(
+            (start_page.start_address() + physical_address as u64 % Size1GiB::SIZE)
+                .as_mut_ptr(),
+        )
+        .unwrap(),
+        size,
+        (n_pages * Size1GiB::SIZE) as usize,
+        self.clone(),
+    )
+}
+```
+
+## Implementing `unmap_physical_region`
+Unmapping the physical region is pretty straightforward:
+```rs
+let level_4_table_physical_frame = Cr3::read().0;
+let level_4_page_table = unsafe {
+    VirtAddr::new(
+        u64::from(region.handler().hhdm_offset)
+            + level_4_table_physical_frame.start_address().as_u64(),
+    )
+    .as_mut_ptr::<PageTable>()
+    .as_mut()
+    .unwrap()
+};
+let mut offset_page_table = unsafe {
+    OffsetPageTable::new(
+        level_4_page_table,
+        VirtAddr::new(region.handler().hhdm_offset.into()),
+    )
+};
+let start_page = Page::<Size1GiB>::containing_address(VirtAddr::new(
+    region.virtual_start().as_ptr() as u64,
+));
+let n_pages = region.mapped_length() as u64 / Size1GiB::SIZE;
+for i in 0..n_pages {
+    offset_page_table.unmap(start_page + i).unwrap().1.flush();
+}
+let _ = MEMORY.try_get().unwrap().used_virtual_memory.lock().cut({
+    let start = start_page.start_address().as_u64();
+    Interval::from(start..=start + (region.mapped_length() as u64 - 1))
+});
+```
+We use the `cut` function to mark the virtual memory as usable again.
+
+## Using our ACPI handler
+In `acpi.rs`, add:
+```rs
+/// Safety: You can store the returned value in CPU local data, but you cannot send it across CPUs because the other CPUs did not flush their cache for changes in page tables
+pub unsafe fn get_acpi_tables(
+    rsdp: &RsdpResponse,
+    hhdm_offset: HhdmOffset,
+) -> AcpiTables<impl AcpiHandler> {
+    let handler = KernelAcpiHandler { hhdm_offset };
+    let address = rsdp.address();
+    unsafe { AcpiTables::from_rsdp(handler, address) }.unwrap()
+}
+```
+Then, in `main.rs`, after calling `memory::init`, add:
+```rs
+let rsdp = RSDP_REQUEST.get_response().unwrap();
+unsafe {
+    acpi::get_acpi_tables(rsdp, hhdm_offset)
+        .headers()
+        .for_each(|header| log::info!("ACPI Table: {:#?}", header.signature))
+};
+```
+This should log:
+```
+[BSP] INFO  ACPI Table: "FACP"
+[BSP] INFO  ACPI Table: "APIC"
+[BSP] INFO  ACPI Table: "HPET"
+[BSP] INFO  ACPI Table: "WAET"
+[BSP] INFO  ACPI Table: "BGRT"
+```
+We definitely will be using `APIC` and `HPET` later, so it's good that we are able to successfully parse those tables.
 
 # Learn More
-- https://os.phil-opp.com/paging-introduction/
+- https://wiki.osdev.org/RSDP
+- https://wiki.osdev.org/ACPI
