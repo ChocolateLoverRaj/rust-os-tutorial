@@ -87,20 +87,16 @@ Now we should see this:
 INFO  Hello World!
 INFO  CPU Count: 2
 INFO  Hello from CPU 1
-ERROR panicked at kernel/src/main.rs:27:5:
-not yet implemented
 ```
 But the order is not necessarily consistent. We can try using even more CPUs. This is what happened when I ran it with 8 CPUs:
 ```rs
 INFO  Hello World!
 INFO  CPU Count: 8
 INFO  Hello from CPU 3
-ERROR panicked at kernel/src/main.rs:27:5:
-not yet implemented
-INFO  Hello from CPU 4
-INFO  Hello from CPU 1
 INFO  Hello from CPU 6
 INFO  Hello from CPU 5
-INFO  Hello from CPU 2
 INFO  Hello from CPU 7
+INFO  Hello from CPU 2
+INFO  Hello from CPU 1
+INFO  Hello from CPU 4
 ```
