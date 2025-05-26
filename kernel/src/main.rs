@@ -31,7 +31,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     logger::init().unwrap();
     log::info!("Hello World!");
 
-    todo!()
+    hlt_loop();
 }
 
 #[panic_handler]
