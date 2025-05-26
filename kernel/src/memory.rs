@@ -199,8 +199,6 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffs
         MemoryType::UsedByKernel(KernelMemoryUsageType::GlobalAllocatorHeap),
     );
 
-    log::debug!("Physical memory usage: {:#X?}", physical_memory);
-
     MEMORY
         .try_init_once(|| Memory {
             physical_memory: Spinlock::new(physical_memory),
