@@ -9,7 +9,7 @@
             "type": "lldb",
             "request": "launch",
             "targetCreateCommands": [
-                "target create ${workspaceFolder}/runner/kernel",
+                "target create ${workspaceFolder}/runner/out_dir/iso_root/kernel",
             ],
             "processCreateCommands": [
                 "gdb-remote localhost:1234",

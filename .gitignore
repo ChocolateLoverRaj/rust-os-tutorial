@@ -2,4 +2,4 @@
 
 target
 
-runner/kernel
+runner/out_dir

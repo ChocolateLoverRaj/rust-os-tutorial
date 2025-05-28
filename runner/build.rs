@@ -17,8 +17,8 @@ fn main() {
     // Cargo passes us the path the to kernel executable because it is an artifact dep
     let kernel_executable_file = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
 
-    // Symlink the kernel so we get a constnat path to it
-    ensure_symlink(&kernel_executable_file, runner_dir.join("kernel")).unwrap();
+    // Symlink the out dir so we get a constant path to it
+    ensure_symlink(&out_dir, runner_dir.join("out_dir")).unwrap();
 
     // We will create an ISO file for our OS
     // First we create a folder which will be used to generate the ISO
