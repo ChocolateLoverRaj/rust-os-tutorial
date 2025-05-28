@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+embedded-graphics = "0.8.1"
 limine = "0.4"
 uart_16550 = "0.3.2"
 x86_64 = "0.15.2"
