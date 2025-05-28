@@ -41,13 +41,13 @@ We can also nicely view the values of variables. We don't have any local variabl
 ![Screenshot of the `BASE_REVISION` global variable](./Base_Revision_Screenshot.png)
 You can verify that `BASE_REVISION` has a `loaded` value of `3` and `revision` value of `0`. The `revision` being `0` indicates that Limine successfully processed our base revision request. The `loaded` value of `3` indicates that our kernel was loaded with version `3` of the Limine protocol (which is the version we want).
 
-## kernel symlink
-One annoying thing is that the kernel path is not constant (it could change whenever Cargo feels like it). We can workaround that by creating a symlink in `build.rs` which makes `runner/kernel` point to the kernel executable file:
+## Out dir symlink
+One inconvenient thing is that the kernel path is not constant (it could change whenever Cargo feels like it). We can workaround that by creating a symlink in `build.rs` which makes `runner/out_dir` point to the `out_dir`, where we create the `iso_root` folder and `os.iso`:
 ```rs
-// Symlink the kernel so we get a constnat path to it
-ensure_symlink(&kernel_executable_file, runner_dir.join("kernel")).unwrap();
+// Symlink the out dir so we get a constant path to it
+ensure_symlink(&out_dir, runner_dir.join("out_dir")).unwrap();
 ```
-Also add `runner/kernel` to `.gitignore`. Then change the target create command to `target create ${workspaceFolder}/runner/kernel`.
+Also add `runner/out_dir` to `.gitignore`. Then change the target create command to `target create ${workspaceFolder}/runner/out_dir/iso_root/kernel`.
 
 ## Automating `cargo run`
 Create a `.vscode/tasks.json` file:
