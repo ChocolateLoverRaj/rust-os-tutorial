@@ -85,18 +85,24 @@ pub fn try_get_local() -> Option<&'static CpuLocalData> {
 Note that we check that `CPU_LOCAL_DATA` is initialized, because if it's not initialized, then `GsBase` isn't loaded with the right pointer either.
 
 ## Showing the CPU in our logger
-It is useful to know which CPU logged what message. Let's prefix all of our log messages with the CPU id. Let's replace the `writeln!` in our logger with this:
+It is useful to know which CPU logged what message. Let's prefix all of our log messages with the CPU id. Let's add `Color::Gray`, with
+```rs
+Color::Gray => &string.dimmed()
+```
+for the serial logger and
+```rs
+Color::Gray => Rgb888::new(128, 128, 128)
+```
+for the screen. Then in the `log` method, add this before printing the log level:
 ```rs
 if let Some(cpu_local_data) = try_get_local() {
     let cpu_id = cpu_local_data.cpu.id;
-    write!(serial_port, "{}", format_args!("[CPU {}]", cpu_id).dimmed()).unwrap();
+    inner.write_with_color(Color::Gray, format_args!("[CPU {}] ", cpu_id));
 } else {
-    write!(serial_port, "{}", "[BSP]".dimmed()).unwrap();
-}
-let args = record.args();
-writeln!(serial_port, " {:5} {}", level, args).unwrap();
+    inner.write_with_color(Color::Gray, "[BSP] ");
+};
 ```
-Because we might want to log messages before initializing the `CPU_LOCAL_DATA`, we just print "BSP" instead of the CPU id. Now our kernel should log this:
+Because we might want to log messages before initializing the `CPU_LOCAL_DATA`, we just print "BSP" instead of the CPU id if the cpu local data is not initialized. Now our kernel should log this:
 ```
 [BSP] INFO  Hello World!
 [BSP] INFO  CPU Count: 2
