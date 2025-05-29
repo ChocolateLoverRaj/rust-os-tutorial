@@ -10,6 +10,7 @@ use limine_requests::*;
 use rgb_pixel_info::*;
 use translate_addr::*;
 
+mod cpu_local_data;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod hhdm_offset;
@@ -35,6 +36,11 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
     // Safety: we are initializing this for the first time
     unsafe { memory::init(memory_map) };
 
+    // Safety: We are calling this function on the BSP
+    unsafe {
+        cpu_local_data::init_bsp();
+    }
+
     let mp_response = MP_REQUEST.get_response().unwrap();
     for cpu in mp_response.cpus() {
         cpu.goto_address.write(entry_point_ap);
@@ -43,7 +49,10 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
     hlt_loop();
 }
 
-unsafe extern "C" fn entry_point_ap(_cpu: &limine::mp::Cpu) -> ! {
+unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
+    // Safety: We're actually calling the function on this CPU
+    unsafe { cpu_local_data::init_ap(cpu) };
+
     log::info!("Hello from AP");
     hlt_loop()
 }
