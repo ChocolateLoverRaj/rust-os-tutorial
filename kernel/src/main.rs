@@ -3,25 +3,16 @@
 
 use core::fmt::Write;
 
-use limine::BaseRevision;
-use limine::request::{RequestsEndMarker, RequestsStartMarker};
+use embedded_graphics::{
+    pixelcolor::Rgb888,
+    prelude::{DrawTarget, RgbColor},
+};
+use frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics;
+use limine_requests::{BASE_REVISION, FRAME_BUFFER_REQUEST};
 use uart_16550::SerialPort;
 
-/// Sets the base revision to the latest revision supported by the crate.
-/// See specification for further info.
-/// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
-#[used]
-// The .requests section allows limine to find the requests faster and more safely.
-#[unsafe(link_section = ".requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-/// Define the stand and end markers for Limine requests.
-#[used]
-#[unsafe(link_section = ".requests_start_marker")]
-static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
-#[used]
-#[unsafe(link_section = ".requests_end_marker")]
-static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
+pub mod frame_buffer_embedded_graphics;
+pub mod limine_requests;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_from_limine() -> ! {
@@ -32,6 +23,12 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let mut serial_port = unsafe { SerialPort::new(0x3F8) };
     serial_port.init();
     writeln!(serial_port, "Hello World!\r").unwrap();
+
+    let frame_buffer = FRAME_BUFFER_REQUEST.get_response().unwrap();
+    if let Some(frame_buffer) = frame_buffer.framebuffers().next() {
+        let mut frame_buffer = FrameBufferEmbeddedGraphics::new(frame_buffer);
+        frame_buffer.clear(Rgb888::MAGENTA).unwrap();
+    }
 
     hlt_loop();
 }
