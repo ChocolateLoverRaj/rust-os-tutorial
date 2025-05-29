@@ -4,7 +4,7 @@ We are in a state where we have a function that gets executed on boot. We have a
 You might be thinking, *don't most computers just have 1 CPU?*. But from the kernel's perspective, every core in the CPU is like its own CPU. And actually, every thread in a CPU with hyper-threading cores counts as a CPU from the kernel's perspective. For example, on a laptop with the [i7-10610U](https://www.intel.com/content/www/us/en/products/sku/201896/intel-core-i710610u-processor-8m-cache-up-to-4-90-ghz/specifications.html) processor, looking at the specs, we would say it's a laptop with 1 CPU, with 4 cores and 8 threads. From the kernel's perspective, it's a computer with 8 CPUs.
 
 # Limine MP Request
-Limine makes running code on all CPUs very easy. We just need to use [Limine's MP request](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#mp-multiprocessor-feature). Before we add the request, let's move all of the Limine-related stuff to it's own module, `limine_requests.rs`. Then let's create the request:
+Limine makes running code on all CPUs very easy. We just need to use [Limine's MP request](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#mp-multiprocessor-feature).
 ```rs
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -80,7 +80,7 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
 Let's also move our panic handler to a separate file, `panic_handler.rs`, and move `hlt_loop` to `hlt_loop.rs`. Now at most, we can have two panics. And the second panic is guaranteed not to cause further panics because the `hlt_loop` function cannot cause panics. This way, if we have another bug in the logger, we don't have recursive panics again.
 
 # Spinning to wait
-Now let's replace `self.serial_port.try_lock().unwrap()` with `self.serial_port.lock()`. Now instead of panicking if the lock is held by something else, it will continuously check if the lock is free, until it becomes free. This will solve our problem, but again, be aware that we could have deadlocks and the CPU will just spin forever and it will be harder to debug deadlocks.
+Now let's replace `self.inner.try_lock().unwrap()` with `self.inner.lock()`. Now instead of panicking if the lock is held by something else, it will continuously check if the lock is free, until it becomes free. This will solve our problem, but again, be aware that we could have deadlocks and the CPU will just spin forever and it will be harder to debug deadlocks.
 
 Now we should see this:
 ```rs
