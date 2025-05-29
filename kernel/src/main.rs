@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
 extern crate alloc;
 
@@ -14,8 +15,10 @@ use x86_64::registers::control::Cr3;
 pub mod cpu_local_data;
 pub mod cut_range;
 pub mod frame_buffer_embedded_graphics;
+pub mod gdt;
 pub mod hhdm_offset;
 pub mod hlt_loop;
+pub mod idt;
 pub mod initial_frame_allocator;
 pub mod initial_usable_frames_iterator;
 pub mod limine_requests;
@@ -50,7 +53,8 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
         cpu.goto_address.write(entry_point_from_limine_mp);
     }
 
-    log::info!("Hello from BSP");
+    unsafe { gdt::init() };
+    idt::init();
 
     hlt_loop();
 }
@@ -64,5 +68,9 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
 
     let cpu_id = cpu.id;
     log::info!("Hello from CPU {}", cpu_id);
+
+    unsafe { gdt::init() };
+    idt::init();
+
     hlt_loop()
 }
