@@ -41,6 +41,13 @@ impl<'a> FrameBufferEmbeddedGraphics<'a> {
             << self.frame_buffer.blue_mask_shift();
         n.to_ne_bytes()
     }
+
+    /// Moves everything on the screen up, leaving the bottom the same as it was before
+    pub fn shift_up(&mut self, amount: u32) {
+        let pitch = self.frame_buffer.pitch();
+        let buffer = self.frame_buffer_mut();
+        buffer.copy_within(amount as usize * pitch as usize..buffer.len(), 0);
+    }
 }
 
 impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
