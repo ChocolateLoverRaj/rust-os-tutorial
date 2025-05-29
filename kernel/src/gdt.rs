@@ -7,7 +7,12 @@ use x86_64::{
     },
 };
 
-use crate::cpu_local_data::get_local;
+use crate::{boxed_stack::BoxedStack, cpu_local_data::get_local};
+
+pub struct TssStacks {
+    first_exception: BoxedStack,
+    double_fault: BoxedStack,
+}
 
 pub struct Gdt {
     gdt: GlobalDescriptorTable,
@@ -16,11 +21,25 @@ pub struct Gdt {
     tss_selector: SegmentSelector,
 }
 
+pub const FIRST_EXCEPTION_STACK_INDEX: u16 = 0;
+pub const DOUBLE_FAULT_STACK_INDEX: u16 = 1;
+
 /// # Safety
 /// This function must be called exactly once
 pub unsafe fn init() {
     let local = get_local();
-    let tss = local.tss.call_once(TaskStateSegment::new);
+    let tss_stacks = local.tss_stacks.call_once(|| TssStacks {
+        first_exception: BoxedStack::new_uninit(8 * 0x400),
+        double_fault: BoxedStack::new_uninit(8 * 0x400),
+    });
+    let tss = local.tss.call_once(|| {
+        let mut tss = TaskStateSegment::new();
+        tss.interrupt_stack_table[FIRST_EXCEPTION_STACK_INDEX as usize] =
+            tss_stacks.first_exception.top();
+        tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
+            tss_stacks.double_fault.top();
+        tss
+    });
     let gdt = local.gdt.call_once(|| {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());

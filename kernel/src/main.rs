@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, sync_unsafe_cell)]
 
 extern crate alloc;
 
@@ -10,6 +10,7 @@ use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST,
 };
 
+pub mod boxed_stack;
 pub mod cpu_local_data;
 pub mod frame_buffer_embedded_graphics;
 pub mod gdt;
