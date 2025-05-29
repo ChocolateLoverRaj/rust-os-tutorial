@@ -1,10 +1,19 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use limine::{mp::Cpu, response::MpResponse};
 use spin::Once;
-use x86_64::{VirtAddr, registers::model_specific::GsBase};
+use x86_64::{
+    VirtAddr,
+    registers::model_specific::GsBase,
+    structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
+};
+
+use crate::gdt::Gdt;
 
 pub struct CpuLocalData {
     pub cpu: &'static Cpu,
+    pub tss: Once<TaskStateSegment>,
+    pub gdt: Once<Gdt>,
+    pub idt: Once<InterruptDescriptorTable>,
 }
 
 static CPU_LOCAL_DATA: Once<BTreeMap<u32, Box<CpuLocalData>>> = Once::new();
@@ -14,7 +23,17 @@ pub fn init(mp_response: &'static MpResponse) {
         mp_response
             .cpus()
             .iter()
-            .map(|cpu| (cpu.lapic_id, Box::new(CpuLocalData { cpu })))
+            .map(|cpu| {
+                (
+                    cpu.lapic_id,
+                    Box::new(CpuLocalData {
+                        cpu,
+                        tss: Once::new(),
+                        gdt: Once::new(),
+                        idt: Once::new(),
+                    }),
+                )
+            })
             .collect()
     });
 }
