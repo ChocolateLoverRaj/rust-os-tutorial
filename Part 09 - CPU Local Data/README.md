@@ -13,8 +13,10 @@ We can't just use a `BTreeMap` as a global variable directly, since we'll need t
 conquer-once = { version = "0.4.0", default-features = false }
 ```
 ```rs
-static CPU_LOCAL_DATA: OnceCell<BTreeMap<u32, CpuLocalData>> = OnceCell::uninit();
+static CPU_LOCAL_DATA: OnceCell<BTreeMap<u32, Box<CpuLocalData>>> = OnceCell::uninit();
 ```
+We use a `Box` to avoid stack overflows. As we add more members to `CpuLocalData`, it can get large and cause stack overflows it we move it around a lot. 
+
 Then let's create a function to initialize them:
 ```rs
 pub fn init(mp_response: &'static MpResponse) {
@@ -22,8 +24,8 @@ pub fn init(mp_response: &'static MpResponse) {
         .try_init_once(|| {
             mp_response
                 .cpus()
-                .iter()
-                .map(|cpu| (cpu.lapic_id, CpuLocalData { cpu }))
+                .into_iter()
+                .map(|cpu| (cpu.lapic_id, Box::new(CpuLocalData { cpu })))
                 .collect()
         })
         .unwrap();
@@ -37,18 +39,25 @@ cpu_local_data::init(mp_response);
 ```
 Now every CPU has it's own `CpuLocalData`. But we still need to know what the index is in the slice for the current CPU. For that, we'll use the `GsBase` register. This register, like other registers, is not shared between CPUs. It's used to store a pointer. So let's set the `GsBase` register to point to our specific CPU's data:
 ```rs
+/// This function makes sure that we are writing a valid pointer to CPU local data to GsBase
+fn write_gs_base(ptr: &'static CpuLocalData) {
+    GsBase::write(VirtAddr::from_ptr(ptr));
+}
+
 /// # Safety
 /// The Local APIC id must match the actual CPU that this function is called on
 pub unsafe fn init_cpu(local_apic_id: u32) {
-    GsBase::write(VirtAddr::from_ptr(
+    write_gs_base(
         CPU_LOCAL_DATA
             .try_get()
             .unwrap()
             .get(&local_apic_id)
             .unwrap(),
-    ));
+    );
 }
 ```
+Converting references to and from raw pointers without mistakes can be really tricky, even in Rust. The `fn write_gs_base(ptr: &'static CpuLocalData) {}` will make it so we don't accidentally store a pointer to the *`Box<CpuLocalData>`* istead of a pointer to `CpuLocalData`. 
+
 Right away, let's call this function to initialize the BSP's CPU local data in `entry_point_from_limine`:
 ```rs
 // Safety: We are calling this function on the BSP
@@ -70,14 +79,12 @@ pub fn get_local() -> &'static CpuLocalData {
 }
 
 pub fn try_get_local() -> Option<&'static CpuLocalData> {
-    if CPU_LOCAL_DATA.is_initialized() {
-        unsafe { Some(GsBase::read().as_ptr::<CpuLocalData>().as_ref().unwrap()) }
-    } else {
-        None
-    }
+    let ptr = GsBase::read().as_ptr::<CpuLocalData>();
+    // Safety: we only wrote to GsBase using `write_gs_base`, which ensures that the pointer is `&'static CpuLocalData`
+    unsafe { ptr.as_ref() }
 }
 ```
-Note that we check that `CPU_LOCAL_DATA` is initialized, because if it's not initialized, then `GsBase` isn't loaded with the right pointer.
+Note that we check that if the CPU local data is not initialized, `GsBase` will be `0` (because Limine sets it to zero), and we return `None` since it's a null pointer.
 
 ## Showing the CPU in our logger
 It is useful to know which CPU logged what message. Let's prefix all of our log messages with the CPU id. Let's add `Color::Gray`, with
