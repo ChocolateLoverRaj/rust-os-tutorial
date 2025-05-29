@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, sync_unsafe_cell)]
 
 extern crate alloc;
 
@@ -12,6 +12,7 @@ use limine_requests::{
 use memory::MEMORY;
 use x86_64::registers::control::Cr3;
 
+pub mod boxed_stack;
 pub mod cpu_local_data;
 pub mod cut_range;
 pub mod frame_buffer_embedded_graphics;

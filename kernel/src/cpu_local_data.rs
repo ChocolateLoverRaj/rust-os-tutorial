@@ -7,10 +7,11 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::gdt::Gdt;
+use crate::gdt::{Gdt, TssStacks};
 
 pub struct CpuLocalData {
     pub cpu: &'static Cpu,
+    pub tss_stacks: OnceCell<TssStacks>,
     pub tss: OnceCell<TaskStateSegment>,
     pub gdt: OnceCell<Gdt>,
     pub idt: OnceCell<InterruptDescriptorTable>,
@@ -29,6 +30,7 @@ pub fn init(mp_response: &'static MpResponse) {
                         cpu.lapic_id,
                         Box::new(CpuLocalData {
                             cpu,
+                            tss_stacks: OnceCell::uninit(),
                             tss: OnceCell::uninit(),
                             gdt: OnceCell::uninit(),
                             idt: OnceCell::uninit(),
