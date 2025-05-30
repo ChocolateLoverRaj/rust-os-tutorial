@@ -1,16 +1,17 @@
-use core::mem::MaybeUninit;
+use core::{fmt::Debug, mem::MaybeUninit, ops::RangeInclusive, slice};
 
 use conquer_once::noblock::OnceCell;
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use linked_list_allocator::LockedHeap;
 use nodit::{Interval, NoditMap};
+use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::{Cr3, Cr3Flags},
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags,
-        PhysFrame, Size1GiB, Size4KiB,
+        PhysFrame, Size1GiB, Size2MiB, Size4KiB,
     },
 };
 
@@ -109,30 +110,59 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffs
                 }
             };
             if let Some(range_to_map) = range_to_map {
-                let first_frame = PhysFrame::<Size1GiB>::containing_address(*range_to_map.start());
-                let last_frame = PhysFrame::<Size1GiB>::containing_address(*range_to_map.end());
-                let page_count = last_frame - first_frame + 1;
+                fn map<S: PageSize + Debug>(
+                    range_to_map: RangeInclusive<PhysAddr>,
+                    hhdm_offset: HhdmOffset,
+                    last_mapped_address: &mut Option<PhysAddr>,
+                    new_offset_page_table: &mut impl Mapper<S>,
+                    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+                ) {
+                    let first_frame = PhysFrame::<S>::containing_address(*range_to_map.start());
+                    let last_frame = PhysFrame::<S>::containing_address(*range_to_map.end());
+                    let page_count = last_frame - first_frame + 1;
 
-                for i in 0..page_count {
-                    let frame = first_frame + i;
-                    let page = Page::<Size1GiB>::from_start_address(VirtAddr::new(
-                        frame.start_address().as_u64() + u64::from(hhdm_offset),
-                    ))
-                    .unwrap();
-                    unsafe {
-                        new_offset_page_table
-                            .map_to(
-                                page,
-                                frame,
-                                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                                &mut frame_allocator,
-                            )
-                            .unwrap()
-                            // Cache will be reloaded anyways when we change Cr3
-                            .ignore()
-                    };
+                    for i in 0..page_count {
+                        let frame = first_frame + i;
+                        let page = Page::<S>::from_start_address(VirtAddr::new(
+                            frame.start_address().as_u64() + u64::from(hhdm_offset),
+                        ))
+                        .unwrap();
+                        unsafe {
+                            new_offset_page_table
+                                .map_to(
+                                    page,
+                                    frame,
+                                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                                    frame_allocator,
+                                )
+                                .unwrap()
+                                // Cache will be reloaded anyways when we change Cr3
+                                .ignore()
+                        };
+                    }
+                    *last_mapped_address = Some(last_frame.start_address() + (S::SIZE - 1));
                 }
-                last_mapped_address = Some(last_frame.start_address() + (Size1GiB::SIZE - 1));
+                if CpuId::new()
+                    .get_extended_processor_and_feature_identifiers()
+                    .unwrap()
+                    .has_1gib_pages()
+                {
+                    map::<Size1GiB>(
+                        range_to_map,
+                        hhdm_offset,
+                        &mut last_mapped_address,
+                        &mut new_offset_page_table,
+                        &mut frame_allocator,
+                    );
+                } else {
+                    map::<Size2MiB>(
+                        range_to_map,
+                        hhdm_offset,
+                        &mut last_mapped_address,
+                        &mut new_offset_page_table,
+                        &mut frame_allocator,
+                    );
+                }
             }
         }
     }
@@ -151,12 +181,15 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffs
     unsafe { Cr3::write(new_l4_frame, cr3_flags) };
 
     // Safety: We've reserved the physical memory and it is already offset mapped
-    unsafe {
-        GLOBAL_ALLOCATOR.lock().init(
-            VirtAddr::new(u64::from(hhdm_offset) + global_allocator_physical_start).as_mut_ptr(),
+    let global_allocator_mem = unsafe {
+        slice::from_raw_parts_mut(
+            (u64::from(hhdm_offset) + global_allocator_physical_start) as *mut _,
             global_allocator_size as usize,
         )
     };
+    GLOBAL_ALLOCATOR
+        .lock()
+        .init_from_slice(global_allocator_mem);
 
     // Now let's keep track of the physical memory used
     let mut physical_memory = NoditMap::default();
