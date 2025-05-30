@@ -4,14 +4,16 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
 use limine_requests::{
-    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST,
+    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
 use memory::MEMORY;
 use x86_64::registers::control::Cr3;
 
+pub mod acpi;
 pub mod boxed_stack;
 pub mod cpu_local_data;
 pub mod cut_range;
@@ -26,6 +28,7 @@ pub mod limine_requests;
 pub mod logger;
 pub mod memory;
 pub mod panic_handler;
+pub mod physical_memory;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_from_limine() -> ! {
@@ -41,6 +44,14 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let hhdm_offset = HHDM_REQUEST.get_response().unwrap().into();
     // Safety: we are initializing this for the first time
     unsafe { memory::init(memory_map, hhdm_offset) };
+
+    let rsdp = RSDP_REQUEST.get_response().unwrap();
+    // Safety: We're not sending this across CPUs
+    let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp, hhdm_offset) }
+        .headers()
+        .map(|header| header.signature)
+        .collect::<Box<[_]>>();
+    log::info!("ACPI Tables: {:?}", acpi_tables);
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
