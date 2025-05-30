@@ -3,9 +3,11 @@ use core::{fmt::Debug, mem::MaybeUninit, slice};
 use conquer_once::noblock::OnceCell;
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use linked_list_allocator::LockedHeap;
-use nodit::{Interval, NoditMap, NoditSet, interval::iu};
+use nodit::{NoditMap, NoditSet, interval::iu};
+pub use physical_memory::PhysicalMemory;
 use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
+pub use virtual_memory::VirtualMemory;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::{Cr3, Cr3Flags},
@@ -15,10 +17,10 @@ use x86_64::{
     },
 };
 
-use crate::{
-    hhdm_offset::HhdmOffset, initial_frame_allocator::InitialFrameAllocator,
-    physical_memory::PhysicalMemory,
-};
+use crate::{hhdm_offset::HhdmOffset, initial_frame_allocator::InitialFrameAllocator};
+
+mod physical_memory;
+mod virtual_memory;
 
 #[global_allocator]
 static GLOBAL_ALLOCATOR: LockedHeap = LockedHeap::empty();
@@ -39,9 +41,10 @@ pub enum MemoryType {
 
 pub struct Memory {
     pub physical_memory: Spinlock<PhysicalMemory>,
-    pub used_virtual_memory: Spinlock<NoditSet<u64, Interval<u64>>>,
+    pub virtual_memory: Spinlock<VirtualMemory>,
     pub new_kernel_cr3: PhysFrame<Size4KiB>,
     pub new_kernel_cr3_flags: Cr3Flags,
+    pub hhdm_offset: HhdmOffset,
 }
 
 pub static MEMORY: OnceCell<Memory> = OnceCell::uninit();
@@ -237,9 +240,14 @@ fn init_with_page_size<S: PageSize + Debug>(
             physical_memory: Spinlock::new(PhysicalMemory {
                 map: physical_memory,
             }),
-            used_virtual_memory: Spinlock::new(used_virtual_memory),
+            virtual_memory: Spinlock::new(VirtualMemory {
+                map: used_virtual_memory,
+                cr3: new_l4_frame,
+                hhdm_offset,
+            }),
             new_kernel_cr3: new_l4_frame,
             new_kernel_cr3_flags: cr3_flags,
+            hhdm_offset,
         })
         .unwrap();
 }

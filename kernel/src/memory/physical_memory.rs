@@ -7,7 +7,7 @@ use x86_64::{
 use crate::memory::MemoryType;
 
 pub struct PhysicalMemory {
-    pub map: NoditMap<u64, Interval<u64>, MemoryType>,
+    pub(super) map: NoditMap<u64, Interval<u64>, MemoryType>,
 }
 
 unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemory {

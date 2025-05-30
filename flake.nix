@@ -45,6 +45,7 @@
               xorriso
               limine
               gdb
+              tio
             ];
           };
       }

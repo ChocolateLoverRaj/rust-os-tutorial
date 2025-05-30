@@ -28,7 +28,8 @@ pub mod limine_requests;
 pub mod logger;
 pub mod memory;
 pub mod panic_handler;
-pub mod physical_memory;
+pub mod spcr;
+pub mod writer_with_cr;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_from_limine() -> ! {
@@ -47,11 +48,14 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     let rsdp = RSDP_REQUEST.get_response().unwrap();
     // Safety: We're not sending this across CPUs
-    let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp, hhdm_offset) }
+    let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
+    spcr::init(&acpi_tables);
+
+    let acpi_tables = acpi_tables
         .headers()
         .map(|header| header.signature)
         .collect::<Box<[_]>>();
-    log::info!("ACPI Tables: {:?}", acpi_tables);
+    log::info!("ACPI Tables: {:#?}", acpi_tables);
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
