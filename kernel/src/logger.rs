@@ -1,5 +1,9 @@
-use core::fmt::{Display, Write};
+use core::{
+    fmt::{Display, Write},
+    ops::{Deref, DerefMut},
+};
 
+use alloc::boxed::Box;
 use embedded_graphics::{
     Drawable,
     mono_font::{MonoTextStyleBuilder, iso_8859_16::FONT_10X20},
@@ -16,6 +20,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     cpu_local_data::try_get_local, frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics,
+    writer_with_cr::WriterWithCr,
 };
 
 struct DisplayData {
@@ -23,8 +28,33 @@ struct DisplayData {
     position: Point,
 }
 
+pub enum AnyWriter {
+    Com1(SerialPort),
+    Boxed(Box<dyn Write + Send + Sync>),
+}
+
+impl Deref for AnyWriter {
+    type Target = dyn Write;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Com1(r) => r,
+            Self::Boxed(b) => b.as_ref(),
+        }
+    }
+}
+
+impl DerefMut for AnyWriter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Com1(r) => r,
+            Self::Boxed(b) => b.as_mut(),
+        }
+    }
+}
+
 struct Inner {
-    serial_port: SerialPort,
+    serial_port: Option<AnyWriter>,
     display: Option<DisplayData>,
 }
 
@@ -42,7 +72,7 @@ enum Color {
 impl Inner {
     fn write_with_color(&mut self, color: Color, string: impl Display) {
         // Write to serial
-        {
+        if let Some(serial_port) = &mut self.serial_port {
             let string: &dyn Display = match color {
                 Color::Default => &string,
                 Color::Gray => &string.dimmed(),
@@ -52,7 +82,9 @@ impl Inner {
                 Color::BrightCyan => &string.bright_cyan(),
                 Color::BrightMagenta => &string.bright_magenta(),
             };
-            write!(self.serial_port, "{string}").unwrap();
+            // Replace \n with \r\n so that it works with tio / screen
+            let mut writer = WriterWithCr::new(serial_port.deref_mut());
+            write!(writer, "{string}").unwrap();
         }
 
         // Write to screen
@@ -177,14 +209,19 @@ impl Log for KernelLogger {
 
 static LOGGER: KernelLogger = KernelLogger {
     inner: spin::Mutex::new(Inner {
-        serial_port: unsafe { SerialPort::new(0x3F8) },
+        serial_port: None,
         display: None,
     }),
 };
 
 pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLoggerError> {
     let mut inner = LOGGER.inner.try_lock().unwrap();
-    inner.serial_port.init();
+    inner.serial_port = Some(AnyWriter::Com1({
+        // Safety: this is the only code that is accessing COM1
+        let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+        serial_port.init();
+        serial_port
+    }));
     inner.display = frame_buffer
         .framebuffers()
         .next()
@@ -194,4 +231,9 @@ pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLo
         });
     log::set_max_level(LevelFilter::max());
     log::set_logger(&LOGGER)
+}
+
+/// Replaces the serial logger, setting it to `None` if specified
+pub fn replace_serial_logger(new_serial_logger: Option<AnyWriter>) {
+    LOGGER.inner.lock().serial_port = new_serial_logger;
 }

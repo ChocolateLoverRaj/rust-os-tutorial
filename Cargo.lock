@@ -125,6 +125,7 @@ dependencies = [
  "raw-cpuid 11.5.0",
  "spin",
  "talc",
+ "uart",
  "uart_16550",
  "unicode-segmentation",
  "x86_64",
@@ -246,6 +247,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fcad3be1cfe36eb7d716a04791eba36a197da9d9b6ea1e28e64ac569da3701d"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "uart"
+version = "2.0.0"
+source = "git+https://github.com/ChocolateLoverRaj/uart?branch=send-sync#75ca2ad84af6cfed2ae42ac5ed3da61e4cd1e20c"
+dependencies = [
+ "bitflags 2.9.1",
 ]
 
 [[package]]
