@@ -1,31 +1,53 @@
-use core::{mem::MaybeUninit, slice};
+use core::{fmt::Debug, mem::MaybeUninit, slice};
 
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
+use nodit::{NoditMap, NoditSet, interval::iu};
+use physical_memory::{KernelMemoryUsageType, MemoryType, PhysicalMemory};
+use raw_cpuid::CpuId;
+use spin::{Mutex, Once};
 use talc::{ErrOnOom, Talc, Talck};
+use virtual_memory::VirtualMemory;
+use x86_64::{
+    PhysAddr, VirtAddr,
+    registers::control::{Cr3, Cr3Flags},
+    structures::paging::{
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags,
+        PhysFrame, Size1GiB, Size2MiB, Size4KiB,
+    },
+};
 
 use crate::hhdm_offset::HhdmOffset;
 
-// This tells Rust that global allocations will use this static variable's allocation functions
-#[global_allocator]
-static GLOBAL_ALLOCATOR: 
-    // Talck is talc's allocator, but behind a lock, so that it can implement `GlobalAlloc`
-    Talck<
-        // This tells talc to use a `spin::Mutex` as the locking method
-        spin::Mutex<()>, 
-        // If talc runs out of memory, it runs an OOM (out of memory) handler. 
-        // For now, we do not implement a method of allocating more memory for the global allocator, so we just error on OOM
-        ErrOnOom
-    > =
-    Talck::new(
-        // Initially, there is no memory backing `Talc`. We will add memory at run time
-        Talc::new(ErrOnOom)
-    );
+mod physical_memory;
+mod virtual_memory;
 
-/// Finds unused physical memory for the global allocator and initializes the global allocator
-///
-/// # Safety
-/// This function must be called exactly once, and no page tables should be modified before calling this function.
-pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffset) {
+// This tells Rust that global allocations will use this static variable's allocation functions
+// Talck is talc's allocator, but behind a lock, so that it can implement `GlobalAlloc`
+// We tell talc to use a `spin::Mutex` as the locking method
+// If talc runs out of memory, it runs an OOM (out of memory) handler.
+// For now, we do not implement a method of allocating more memory for the global allocator, so we just error on OOM
+#[global_allocator]
+static GLOBAL_ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = Talck::new({
+    // Initially, there is no memory backing `Talc`. We will add memory at run time
+    Talc::new(ErrOnOom)
+});
+
+#[non_exhaustive]
+pub struct Memory {
+    pub physical_memory: spin::Mutex<PhysicalMemory>,
+    pub virtual_memory: spin::Mutex<VirtualMemory>,
+    pub new_kernel_cr3: PhysFrame<Size4KiB>,
+    pub new_kernel_cr3_flags: Cr3Flags,
+}
+
+pub static MEMORY: Once<Memory> = Once::new();
+
+fn init_with_page_size<S: PageSize + Debug>(
+    memory_map: &'static MemoryMapResponse,
+    hhdm_offset: HhdmOffset,
+) where
+    for<'a> OffsetPageTable<'a>: Mapper<S>,
+{
     let global_allocator_size = {
         // 4 MiB
         4 * 0x400 * 0x400
@@ -46,8 +68,184 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffs
             global_allocator_size as usize,
         )
     };
-    let mut talc = GLOBAL_ALLOCATOR.lock();
-    let span = global_allocator_mem.into();
-    // Safety: We got the span from valid memory
-    unsafe { talc.claim(span) }.unwrap();
+    // Make sure to drop the mutex guard so that we can allocate without a deadlock
+    {
+        let mut talc = GLOBAL_ALLOCATOR.lock();
+        let span = global_allocator_mem.into();
+        // Safety: We got the span from valid memory
+        unsafe { talc.claim(span) }.unwrap();
+    }
+
+    let mut physical_memory = PhysicalMemory {
+        map: {
+            let mut map = NoditMap::default();
+            // We start with the state when Limine booted our kernel
+            for entry in memory_map.entries() {
+                let should_insert = match entry.entry_type {
+                    EntryType::USABLE => Some(MemoryType::Usable),
+                    EntryType::BOOTLOADER_RECLAIMABLE => Some(MemoryType::UsedByLimine),
+                    _ => {
+                        // The entry might overlap, so let's not add it
+                        None
+                    }
+                };
+                if let Some(memory_type) = should_insert {
+                    map
+                        // Although they are guaranteed to not overlap and be ascending, Limine doesn't specify that they aren't guaranteed to not be touching even if they are the same.
+                        .insert_merge_touching_if_values_equal(
+                            (entry.base..entry.base + entry.length).into(),
+                            memory_type,
+                        )
+                        .unwrap();
+                }
+            }
+            // We track the memory used for the global allocator
+            let _ = map.insert_overwrite(
+                (global_allocator_physical_start
+                    ..=global_allocator_physical_start + (global_allocator_size - 1))
+                    .into(),
+                MemoryType::UsedByKernel(KernelMemoryUsageType::GlobalAllocatorHeap),
+            );
+            map
+        },
+    };
+
+    let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut physical_memory).unwrap();
+    // Safety: The allocated frame is in usable memory, which is offset mapped
+    let new_l4_page_table =
+        VirtAddr::new(u64::from(hhdm_offset) + new_l4_frame.start_address().as_u64())
+            // We use `MaybeUninit` because the memory is uninitialized
+            .as_mut_ptr::<MaybeUninit<PageTable>>();
+    let new_l4_page_table = unsafe {
+        new_l4_page_table
+            .as_mut()
+            .unwrap()
+            // We initialize the page table to be blank
+            .write(Default::default())
+    };
+    // Safety: We are only using usable memory, which is offset mapped
+    let mut new_offset_page_table =
+        unsafe { OffsetPageTable::new(new_l4_page_table, VirtAddr::new(hhdm_offset.into())) };
+
+    // Offset map everything that is currently offset mapped
+    let mut last_mapped_address = None::<PhysAddr>;
+    for entry in memory_map.entries() {
+        if [
+            EntryType::USABLE,
+            EntryType::BOOTLOADER_RECLAIMABLE,
+            EntryType::EXECUTABLE_AND_MODULES,
+            EntryType::FRAMEBUFFER,
+        ]
+        .contains(&entry.entry_type)
+        {
+            let range_to_map = {
+                let first = PhysAddr::new(entry.base);
+                let last = first + (entry.length - 1);
+                match last_mapped_address {
+                    Some(last_mapped_address) => {
+                        if first > last_mapped_address {
+                            Some(first..=last)
+                        } else if last > last_mapped_address {
+                            Some(last_mapped_address + 1..=last)
+                        } else {
+                            None
+                        }
+                    }
+                    None => Some(first..=last),
+                }
+            };
+            if let Some(range_to_map) = range_to_map {
+                let first_frame = PhysFrame::<S>::containing_address(*range_to_map.start());
+                let last_frame = PhysFrame::<S>::containing_address(*range_to_map.end());
+                let page_count = last_frame - first_frame + 1;
+
+                for i in 0..page_count {
+                    let frame = first_frame + i;
+                    let page = Page::<S>::from_start_address(VirtAddr::new(
+                        frame.start_address().as_u64() + u64::from(hhdm_offset),
+                    ))
+                    .unwrap();
+                    unsafe {
+                        new_offset_page_table
+                            .map_to(
+                                page,
+                                frame,
+                                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                                &mut physical_memory,
+                            )
+                            .unwrap()
+                            // Cache will be reloaded anyways when we change Cr3
+                            .ignore()
+                    };
+                }
+                last_mapped_address = Some(last_frame.start_address() + (S::SIZE - 1));
+            }
+        }
+    }
+
+    // We must map the kernel, which lies in the top 2 GiB of virtual memory
+    // We can just reuse Limine's mappings for the top 512 GiB
+    let (current_l4_frame, cr3_flags) = Cr3::read();
+    let current_l4_page_table = unsafe {
+        VirtAddr::new(u64::from(hhdm_offset) + current_l4_frame.start_address().as_u64())
+            .as_mut_ptr::<PageTable>()
+            .as_mut()
+            .unwrap()
+    };
+    new_l4_page_table[511].clone_from(&current_l4_page_table[511]);
+
+    // Safety: Everything that needs to be mapped is mapped
+    unsafe { Cr3::write(new_l4_frame, cr3_flags) };
+
+    let virtual_memory = VirtualMemory {
+        set: {
+            // Now let's keep track of the used virtual memory
+            let mut set = NoditSet::default();
+            // Let's add all of the offset mapped regions, keeping in mind we used 1 GiB pages
+            for entry in memory_map.entries() {
+                if [
+                    EntryType::USABLE,
+                    EntryType::BOOTLOADER_RECLAIMABLE,
+                    EntryType::EXECUTABLE_AND_MODULES,
+                    EntryType::FRAMEBUFFER,
+                ]
+                .contains(&entry.entry_type)
+                {
+                    let start = u64::from(hhdm_offset) + entry.base / S::SIZE * S::SIZE;
+                    let end = u64::from(hhdm_offset)
+                        + (entry.base + (entry.length - 1)) / S::SIZE * S::SIZE
+                        + (S::SIZE - 1);
+                    set.insert_merge_touching_or_overlapping((start..=end).into());
+                }
+            }
+            // Let's add the top 512 GiB
+            set.insert_merge_touching(iu(0xFFFFFF8000000000)).unwrap();
+            set
+        },
+        cr3: new_l4_frame,
+        hhdm_offset,
+    };
+
+    MEMORY.call_once(|| Memory {
+        physical_memory: Mutex::new(physical_memory),
+        virtual_memory: Mutex::new(virtual_memory),
+        new_kernel_cr3: new_l4_frame,
+        new_kernel_cr3_flags: cr3_flags,
+    });
+}
+
+/// Finds unused physical memory for the global allocator and initializes the global allocator
+///
+/// # Safety
+/// This function must be called exactly once, and no page tables should be modified before calling this function.
+pub unsafe fn init(memory_map: &'static MemoryMapResponse, hhdm_offset: HhdmOffset) {
+    if CpuId::new()
+        .get_extended_processor_and_feature_identifiers()
+        .unwrap()
+        .has_1gib_pages()
+    {
+        init_with_page_size::<Size1GiB>(memory_map, hhdm_offset);
+    } else {
+        init_with_page_size::<Size2MiB>(memory_map, hhdm_offset);
+    }
 }
