@@ -5,7 +5,7 @@ use std::{
 
 fn main() {
     let iso = env::var("ISO").unwrap();
-    println!("ISO path: {:?}", iso);
+    println!("ISO path: {iso:?}");
     let ovmf = env::var("OVMF_PATH").unwrap();
 
     // Qemu runs our OS in a virtual

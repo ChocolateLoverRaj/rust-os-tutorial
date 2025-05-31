@@ -98,7 +98,8 @@ fn main() {
     assert!(status.success());
 
     // This will let `main.rs` see the path of the ISO we created
-    println!("cargo:rustc-env=ISO={}", output_iso.display());
+    let output_iso = output_iso.display();
+    println!("cargo:rustc-env=ISO={output_iso}");
 }
 
 pub fn ensure_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> io::Result<()> {
