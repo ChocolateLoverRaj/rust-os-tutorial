@@ -1,13 +1,19 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use hlt_loop::hlt_loop;
-use limine_requests::{BASE_REVISION, FRAME_BUFFER_REQUEST, MP_REQUEST};
+use limine_requests::{
+    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST,
+};
 
 pub mod frame_buffer_embedded_graphics;
+pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod limine_requests;
 pub mod logger;
+pub mod memory;
 pub mod panic_handler;
 
 #[unsafe(no_mangle)]
@@ -19,6 +25,11 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
     logger::init(frame_buffer_response).unwrap();
     log::info!("Hello World!");
+
+    let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
+    let hhdm_offset = HHDM_REQUEST.get_response().unwrap().into();
+    // Safety: we are initializing this for the first time
+    unsafe { memory::init(memory_map, hhdm_offset) };
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
