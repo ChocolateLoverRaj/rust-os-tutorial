@@ -43,6 +43,7 @@
               rust-analyzer
               xorriso
               limine
+              gdb
             ];
           };
       }
