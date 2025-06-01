@@ -48,15 +48,11 @@ Scrolling down, we can see `check_exception old: 0xe new 0xb`. `0xb` means a "Se
 ## A double fault handler
 Let's create a double fault handler:
 ```rs
-extern "x86-interrupt" fn page_fault_handler(
+extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    let accessed_address = Cr2::read().unwrap();
-    panic!(
-        "Page fault! Stack frame: {:#?}. Error code: {:#?}. Accessed address: {:?}.",
-        stack_frame, error_code, accessed_address
-    )
+    error_code: u64,
+) -> ! {
+    panic!("Double Fault! Stack frame: {stack_frame:#?}. Error code: {error_code}.")
 }
 ```
 In a page fault, we can read the `Cr2` register to get the accessed address that caused the page fault. Let's add the page fault handler to our IDT:
@@ -90,13 +86,13 @@ Double Fault! Stack frame: InterruptStackFrame {
 ## A page fault handler
 Now let's add a page fault, as page faults will probably be the most common type of exception that happens:
 ```rs
-extern "x86-interrupt" fn double_fault_handler(
+extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
-    error_code: u64,
-) -> ! {
+    error_code: PageFaultErrorCode,
+) {
+    let accessed_address = Cr2::read().unwrap();
     panic!(
-        "Double Fault! Stack frame: {:#?}. Error code: {}.",
-        stack_frame, error_code
+        "Page fault! Stack frame: {stack_frame:#?}. Error code: {error_code:#?}. Accessed address: {accessed_address:?}."
     )
 }
 ```
@@ -263,34 +259,22 @@ pub struct TssStacks {
 ```
 And in `CpuLocalData`, add
 ```rs
-    pub tss_stacks: OnceCell<TssStacks>,
+pub tss_stacks: Once<TssStacks>,
 ```
 And then when we create the TSS:
 ```rs
-let tss_stacks = {
-    local
-        .tss_stacks
-        .try_init_once(|| TssStacks {
-            first_exception: BoxedStack::new_uninit(4 * 0x400),
-            double_fault: BoxedStack::new_uninit(4 * 0x400),
-        })
-        .unwrap();
-    local.tss_stacks.try_get().unwrap()
-};
-let tss = {
-    local
-        .tss
-        .try_init_once(|| {
-            let mut tss = TaskStateSegment::new();
-            tss.interrupt_stack_table[FIRST_EXCEPTION_STACK_INDEX as usize] =
-                tss_stacks.first_exception.top();
-            tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
-                tss_stacks.double_fault.top();
-            tss
-        })
-        .unwrap();
-    local.tss.try_get().unwrap()
-};
+let tss_stacks = local.tss_stacks.call_once(|| TssStacks {
+    first_exception: BoxedStack::new_uninit(8 * 0x400),
+    double_fault: BoxedStack::new_uninit(8 * 0x400),
+});
+let tss = local.tss.call_once(|| {
+    let mut tss = TaskStateSegment::new();
+    tss.interrupt_stack_table[FIRST_EXCEPTION_STACK_INDEX as usize] =
+        tss_stacks.first_exception.top();
+    tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
+        tss_stacks.double_fault.top();
+    tss
+});
 ```
 Then in `idt.rs`, set the stack index for the exception handlers:
 ```rs

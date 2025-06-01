@@ -8,27 +8,22 @@ pub struct CpuLocalData {
 ```
 For now, we can just have a reference to the CPU. Later, we'll add more data.
 
-We can't just use a `BTreeMap` as a global variable directly, since we'll need to initialize (which involves mutating) it at runtime. We could use a mutex for this, but there is a better data type. We'll use `OnceCell` from the `conquer-once` crate. It's useful for global variables that will be initialized in run time and then never modified after that.
-```toml
-conquer-once = { version = "0.4.0", default-features = false }
-```
+We can't just use a `BTreeMap` as a global variable directly, since we'll need to initialize (which involves mutating) it at runtime. We could use a mutex for this, but there is a better data type. We'll use `spin::Once`. It's useful for global variables that will be initialized in run time and then never modified after that.
 ```rs
-static CPU_LOCAL_DATA: OnceCell<BTreeMap<u32, Box<CpuLocalData>>> = OnceCell::uninit();
+static CPU_LOCAL_DATA: Once<BTreeMap<u32, Box<CpuLocalData>>> = Once::new();
 ```
 We use a `Box` to avoid stack overflows. As we add more members to `CpuLocalData`, it can get large and cause stack overflows it we move it around a lot. 
 
 Then let's create a function to initialize them:
 ```rs
 pub fn init(mp_response: &'static MpResponse) {
-    CPU_LOCAL_DATA
-        .try_init_once(|| {
-            mp_response
-                .cpus()
-                .into_iter()
-                .map(|cpu| (cpu.lapic_id, Box::new(CpuLocalData { cpu })))
-                .collect()
-        })
-        .unwrap();
+    CPU_LOCAL_DATA.call_once(|| {
+        mp_response
+            .cpus()
+            .iter()
+            .map(|cpu| (cpu.lapic_id, Box::new(CpuLocalData { cpu })))
+            .collect()
+    });
 }
 ```
 Here we can use `collect` to conveniently create the `BTreeMap` from the existing iterator, because [`BTreeMap` implements `FromIterator`](https://doc.rust-lang.org/std/collections/struct.BTreeMap.html#impl-FromIterator%3C(K,+V)%3E-for-BTreeMap%3CK,+V%3E).
@@ -47,13 +42,7 @@ fn write_gs_base(ptr: &'static CpuLocalData) {
 /// # Safety
 /// The Local APIC id must match the actual CPU that this function is called on
 pub unsafe fn init_cpu(local_apic_id: u32) {
-    write_gs_base(
-        CPU_LOCAL_DATA
-            .try_get()
-            .unwrap()
-            .get(&local_apic_id)
-            .unwrap(),
-    );
+    write_gs_base(CPU_LOCAL_DATA.get().unwrap().get(&local_apic_id).unwrap());
 }
 ```
 Converting references to and from raw pointers without mistakes can be really tricky, even in Rust. The `fn write_gs_base(ptr: &'static CpuLocalData) {}` will make it so we don't accidentally store a pointer to the *`Box<CpuLocalData>`* istead of a pointer to `CpuLocalData`. 
@@ -99,7 +88,7 @@ for the screen. Then in the `log` method, add this before printing the log level
 ```rs
 if let Some(cpu_local_data) = try_get_local() {
     let cpu_id = cpu_local_data.cpu.id;
-    inner.write_with_color(Color::Gray, format_args!("[CPU {}] ", cpu_id));
+    inner.write_with_color(Color::Gray, format_args!("[CPU {cpu_id}] "));
 } else {
     inner.write_with_color(Color::Gray, "[BSP] ");
 };

@@ -18,14 +18,11 @@ We create a `struct Gdt` which contains the actual GDT along with segment select
 
 Let's add the TSS, GDT, and IDT to the `CpuLocalData`:
 ```rs
-pub struct CpuLocalData {
-    pub cpu: &'static Cpu,
-    pub tss: OnceCell<TaskStateSegment>,
-    pub gdt: OnceCell<Gdt>,
-    pub idt: OnceCell<InterruptDescriptorTable>,
-}
+pub tss: Once<TaskStateSegment>,
+pub gdt: Once<Gdt>,
+pub idt: Once<InterruptDescriptorTable>,
 ```
-And make them initially `OnceCell::uninit()`.
+And make them initially `Cell::new()`.
 
 Now we create an `init` function in `gdt.rs`:
 ```rs
@@ -36,31 +33,22 @@ pub unsafe fn init() { }
 Because the GDT requires a pointer to the TSS, we first initialize the TSS:
 ```rs
 let local = get_local();
-let tss = {
-    local.tss.try_init_once(|| TaskStateSegment::new()).unwrap();
-    local.tss.try_get().unwrap()
-};
+let tss = local.tss.call_once(TaskStateSegment::new);
 ```
 For now, we won't put anything in the TSS, and we'll have an empty TSS. Next, we create the GDT:
 ```rs
-let gdt = {
-    local
-        .gdt
-        .try_init_once(|| {
-            let mut gdt = GlobalDescriptorTable::new();
-            let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
-            let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());
-            let tss_selector = gdt.append(Descriptor::tss_segment(tss));
-            Gdt {
-                gdt,
-                kernel_code_selector,
-                kernel_data_selector,
-                tss_selector,
-            }
-        })
-        .unwrap();
-    local.gdt.try_get().unwrap()
-};
+let gdt = local.gdt.call_once(|| {
+    let mut gdt = GlobalDescriptorTable::new();
+    let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
+    let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());
+    let tss_selector = gdt.append(Descriptor::tss_segment(tss));
+    Gdt {
+        gdt,
+        kernel_code_selector,
+        kernel_data_selector,
+        tss_selector,
+    }
+});
 ```
 Next, we load the GDT:
 ```rs
@@ -80,7 +68,7 @@ Note that we don't input the pointer to the TSS directly when loading the TSS. I
 Next let's set up the IDT. Create `idt.rs`. First let's create our breakpoint handler function:
 ```rs
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    log::info!("Breakpoint! Stack frame: {:#?}", stack_frame);
+    log::info!("Breakpoint! Stack frame: {stack_frame:#?}");
 }
 ```
 When we specify `extern "x86-interrupt"`, Rust will handle restoring what the CPU was previously doing for us. It will also restore any registers that it changed. We need to add
@@ -92,16 +80,11 @@ to `main.rs` in order to use the `x86-interrupt` calling convention.
 Next, we create a function to create and load the idt:
 ```rs
 pub fn init() {
-    let idt = &get_local().idt;
-    let idt = {
-        idt.try_init_once(|| {
-            let mut idt = InterruptDescriptorTable::new();
-            idt.breakpoint.set_handler_fn(breakpoint_handler);
-            idt
-        })
-        .unwrap();
-        idt.try_get().unwrap()
-    };
+    let idt = get_local().idt.call_once(|| {
+        let mut idt = InterruptDescriptorTable::new();
+        idt.breakpoint.set_handler_fn(breakpoint_handler);
+        idt
+    });
     idt.load();
 }
 ```

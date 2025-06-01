@@ -48,7 +48,7 @@ If you're on NixOS, you will already have Limine from `flake.nix`. If you're not
 Writing an operating system in Rust requires using nightly features, so we will specify a nightly toolchain. So create a `rust-toolchain.toml` file:
 ```toml
 [toolchain]
-channel = "nightly-2025-05-19"
+channel = "nightly-2025-05-31"
 components = ["rust-src"]
 ```
 
@@ -212,14 +212,15 @@ assert!(status.success());
 ```
 Now our `build.rs` will create a `os.iso` file! The location of this file is not fixed, and is decided by Cargo. To pass the ISO's path to `main.rs`, we add:
 ```rs
-println!("cargo:rustc-env=ISO={}", output_iso.display());
+let output_iso = output_iso.display();
+println!("cargo:rustc-env=ISO={output_iso}");
 ```
 
 # `main.rs`
 Let's start out with checking that `ISO` gets set:
 ```rs
 let iso = env::var("ISO").unwrap();
-println!("ISO path: {:?}", iso);
+println!("ISO path: {iso:?}");
 ```
 Then run 
 ```bash

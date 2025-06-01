@@ -27,16 +27,16 @@ impl Log for KernelLogger {
 ```
 
 ## Spin lock
-We have to implement the `log` function, but we are only given an `&self` function. We need to put `SerialPort` in something which has interior mutability. We can use a [mutex](https://en.wikipedia.org/wiki/Lock_(computer_science)) to achieve this. Normally, we would use the `Mutex` from `std`. In `no_std`, we can use the `spinning_top` crate for a simple mutex. It works by continuously checking in a loop if the mutex is available.
+We have to implement the `log` function, but we are only given an `&self` function. We need to put `SerialPort` in something which has interior mutability. We can use a [mutex](https://en.wikipedia.org/wiki/Lock_(computer_science)) to achieve this. Normally, we would use the `Mutex` from `std`. In `no_std`, we can use the `spin` crate for a simple mutex. It works by continuously checking in a loop if the mutex is available.
 ```toml
-spinning_top = "0.3.0"
+spin = "0.10.0"
 ```
 We can create a struct `Inner` which will store the mutable data, and put it in a spin lock:
 ```rs
 struct Inner {}
 
 struct KernelLogger {
-    inner: Spinlock<Inner>,
+    inner: spin::Mutex<Inner>,
 }
 ```
 
@@ -73,7 +73,7 @@ fn log(&self, record: &log::Record) {
             Level::Debug => Color::BrightCyan,
             Level::Trace => Color::BrightMagenta,
         },
-        format_args!("{:5} ", level),
+        format_args!("{level:5} "),
     );
     inner.write_with_color(Color::Default, record.args());
     inner.write_with_color(Color::Default, "\n");
@@ -102,7 +102,7 @@ And then in `write_with_color`:
         Color::BrightCyan => &string.bright_cyan(),
         Color::BrightMagenta => &string.bright_magenta(),
     };
-    write!(self.serial_port, "{}", string).unwrap();
+    write!(self.serial_port, "{string}").unwrap();
 }
 ```
 
@@ -233,7 +233,7 @@ Now we're done implementing the `Log` trait!
 Now let's have a global variable for our logger and a function to initialize our logger.
 ```rs
 static LOGGER: KernelLogger = KernelLogger {
-    inner: Spinlock::new(Inner {
+    inner: spin::Mutex::new(Inner {
         serial_port: unsafe { SerialPort::new(0x3F8) },
         display: None,
     }),
@@ -269,7 +269,7 @@ Now that we have a logger, let's update our panic handler:
 ```rs
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    log::error!("{}", info);
+    log::error!("{info}");
     hlt_loop();
 }
 ```

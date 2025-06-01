@@ -14,7 +14,7 @@ Now we can get information about the number of CPUs:
 ```rs
 let mp_response = MP_REQUEST.get_response().unwrap();
 let cpu_count = mp_response.cpus().len();
-log::info!("CPU Count: {}", cpu_count);
+log::info!("CPU Count: {cpu_count}");
 ```
 We should see
 ```
@@ -54,7 +54,7 @@ log::error!("{}", info);
 And in fact, that does happen. If we add this to our `entry_point_from_limine_mp` function:
 ```rs
 let cpu_id = cpu.id;
-log::info!("Hello from CPU {}", cpu_id);
+log::info!("Hello from CPU {cpu_id}");
 ```
 The first CPU will be printing its panic message while the second CPU also tries to print at the same time, causing a panic because we `.try_lock().unwrap()`. We can see the recursive panic with the debugger:
 
@@ -68,7 +68,7 @@ static DID_PANIC: AtomicBool = AtomicBool::new(false);
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     match DID_PANIC.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
         Ok(_) => {
-            log::error!("{}", info);
+            log::error!("{info}");
             hlt_loop();
         }
         Err(_) => {
