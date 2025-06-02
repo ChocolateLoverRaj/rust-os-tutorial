@@ -1,4 +1,4 @@
 [workspace]
 resolver = "3"
-members = ["runner", "kernel"]
+members = ["runner", "kernel", "user_mode_program"]
 default-members = ["runner"]

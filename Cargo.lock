@@ -71,6 +71,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteio"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1628aaab25b23803453d80873600ebffe6326577c1db81f5a3d123290e6287af"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -87,6 +93,12 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
+name = "elf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55dd888a213fc57e957abf2aa305ee3e8a28dbe05687a251f33b637cd46b0070"
 
 [[package]]
 name = "embedded-graphics"
@@ -140,16 +152,19 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "atomic_enum",
+ "elf",
  "embedded-graphics",
  "force-send-sync",
  "limine",
  "log",
+ "nano-leb128",
  "nodit",
  "num_enum",
  "owo-colors",
  "raw-cpuid 11.5.0",
  "spin",
  "talc",
+ "thiserror",
  "uart",
  "uart_16550",
  "unicode-segmentation",
@@ -187,6 +202,15 @@ name = "micromath"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
+
+[[package]]
+name = "nano-leb128"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f778a7433cee0fc957551fe7e8bb7abb5caa7ea5d5ed52f9fabb63873415728e"
+dependencies = [
+ "byteio",
+]
 
 [[package]]
 name = "nodit"
@@ -281,6 +305,7 @@ name = "runner"
 version = "0.1.0"
 dependencies = [
  "kernel",
+ "user_mode_program",
 ]
 
 [[package]]
@@ -331,6 +356,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "thiserror"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "uart"
 version = "2.0.0"
 source = "git+https://github.com/ChocolateLoverRaj/uart?branch=send-sync#75ca2ad84af6cfed2ae42ac5ed3da61e4cd1e20c"
@@ -360,6 +405,10 @@ name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
+name = "user_mode_program"
+version = "0.1.0"
 
 [[package]]
 name = "volatile"

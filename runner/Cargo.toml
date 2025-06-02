@@ -7,3 +7,4 @@ publish = false
 
 [build-dependencies]
 kernel = { path = "../kernel", artifact = "bin", target = "x86_64-unknown-none" }
+user_mode_program = { path = "../user_mode_program", artifact = "bin", target = "x86_64-unknown-none" }
