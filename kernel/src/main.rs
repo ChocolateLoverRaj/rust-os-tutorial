@@ -26,6 +26,7 @@ pub mod limine_requests;
 pub mod local_apic;
 pub mod logger;
 pub mod memory;
+pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod spcr;
 pub mod writer_with_cr;
@@ -62,6 +63,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
     log::info!("CPU Count: {cpu_count}");
+    nmi_handler_states::init(mp_response);
     cpu_local_data::init(mp_response);
     // Safety: We are calling this function on the BSP
     unsafe {

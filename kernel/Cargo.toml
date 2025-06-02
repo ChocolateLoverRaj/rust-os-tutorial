@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 acpi = "5.2.0"
+atomic_enum = "0.3.0"
 embedded-graphics = "0.8.1"
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
 limine = "0.4"
@@ -19,7 +20,7 @@ talc = "4.4.2"
 uart = { git = "https://github.com/ChocolateLoverRaj/uart", branch = "send-sync" }
 uart_16550 = "0.3.2"
 unicode-segmentation = "1.12.0"
-x2apic = "0.5.0"
+x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", branch = "fix-id", version = "0.5.0" }
 x86_64 = "0.15.2"
 
 [[bin]]
