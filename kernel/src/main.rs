@@ -21,7 +21,9 @@ pub mod gdt;
 pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod idt;
+pub mod interrupt_vector;
 pub mod limine_requests;
+pub mod local_apic;
 pub mod logger;
 pub mod memory;
 pub mod panic_handler;
@@ -48,11 +50,14 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
     spcr::init(&acpi_tables);
 
-    let acpi_tables = acpi_tables
-        .headers()
-        .map(|header| header.signature)
-        .collect::<Box<[_]>>();
-    log::info!("ACPI Tables: {acpi_tables:?}");
+    {
+        let acpi_tables = acpi_tables
+            .headers()
+            .map(|header| header.signature)
+            .collect::<Box<[_]>>();
+        log::info!("ACPI Tables: {acpi_tables:?}");
+    }
+    local_apic::map_if_needed(&acpi_tables);
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
@@ -68,6 +73,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     unsafe { gdt::init() };
     idt::init();
+    local_apic::init();
 
     hlt_loop();
 }
@@ -87,6 +93,7 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
 
     unsafe { gdt::init() };
     idt::init();
+    local_apic::init();
 
     hlt_loop()
 }

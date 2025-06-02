@@ -7,9 +7,11 @@ publish = false
 [dependencies]
 acpi = "5.2.0"
 embedded-graphics = "0.8.1"
+force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
 limine = "0.4"
 log = "0.4.27"
 nodit = "0.9.2"
+num_enum = { version = "0.7.3", default-features = false }
 owo-colors = "4.2.1"
 raw-cpuid = "11.5.0"
 spin = "0.10.0"
@@ -17,6 +19,7 @@ talc = "4.4.2"
 uart = { git = "https://github.com/ChocolateLoverRaj/uart", branch = "send-sync" }
 uart_16550 = "0.3.2"
 unicode-segmentation = "1.12.0"
+x2apic = "0.5.0"
 x86_64 = "0.15.2"
 
 [[bin]]

@@ -1,6 +1,8 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use force_send_sync::SendSync;
 use limine::{mp::Cpu, response::MpResponse};
 use spin::Once;
+use x2apic::lapic::LocalApic;
 use x86_64::{
     VirtAddr,
     registers::model_specific::GsBase,
@@ -15,6 +17,7 @@ pub struct CpuLocalData {
     pub tss: Once<TaskStateSegment>,
     pub gdt: Once<Gdt>,
     pub idt: Once<InterruptDescriptorTable>,
+    pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
 }
 
 static CPU_LOCAL_DATA: Once<BTreeMap<u32, Box<CpuLocalData>>> = Once::new();
@@ -33,6 +36,7 @@ pub fn init(mp_response: &'static MpResponse) {
                         tss: Once::new(),
                         gdt: Once::new(),
                         idt: Once::new(),
+                        local_apic: Once::new(),
                     }),
                 )
             })
