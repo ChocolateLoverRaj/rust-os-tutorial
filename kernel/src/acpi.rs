@@ -1,4 +1,4 @@
-use core::{fmt::Debug, ops::DerefMut, ptr::NonNull};
+use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use limine::response::RsdpResponse;
@@ -27,6 +27,7 @@ impl KernelAcpiHandler {
     {
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
+        let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
         let mut virtual_memory = memory.virtual_memory.lock();
 
         let n_pages = ((size + physical_address) as u64).div_ceil(S::SIZE)
@@ -42,7 +43,7 @@ impl KernelAcpiHandler {
                     start_page + i,
                     start_frame + i,
                     PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
-                    physical_memory.deref_mut(),
+                    &mut frame_allocator,
                 );
             }
         }

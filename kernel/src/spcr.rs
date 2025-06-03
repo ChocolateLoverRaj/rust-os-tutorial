@@ -1,4 +1,4 @@
-use core::{fmt::Debug, ops::DerefMut};
+use core::fmt::Debug;
 
 use acpi::{
     AcpiHandler, AcpiTables,
@@ -55,6 +55,7 @@ where
             let end_frame =
                 PhysFrame::containing_address(PhysAddr::new(phys_end_address_inclusive));
             let mut physical_memory = memory.physical_memory.lock();
+            let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
             let n_pages = start_frame - end_frame + 1;
             let mut allocated_pages = virtual_memory.allocate_contiguous_pages(n_pages).unwrap();
@@ -71,7 +72,7 @@ where
                             | PageTableFlags::WRITABLE
                             | PageTableFlags::NO_EXECUTE
                             | PageTableFlags::NO_CACHE,
-                        physical_memory.deref_mut(),
+                        &mut frame_allocator,
                     )
                 };
             }

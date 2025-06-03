@@ -1,5 +1,3 @@
-use core::ops::DerefMut;
-
 use acpi::{AcpiHandler, AcpiTables, InterruptModel};
 use force_send_sync::SendSync;
 use raw_cpuid::CpuId;
@@ -38,6 +36,7 @@ pub fn map_if_needed(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             let frame = PhysFrame::<Size4KiB>::from_start_address(addr).unwrap();
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
+            let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
             let mut pages = virtual_memory.allocate_contiguous_pages(1).unwrap();
             let page = *pages.range().start();
@@ -50,7 +49,7 @@ pub fn map_if_needed(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                         | PageTableFlags::WRITABLE
                         | PageTableFlags::NO_CACHE
                         | PageTableFlags::NO_EXECUTE,
-                    physical_memory.deref_mut(),
+                    &mut frame_allocator,
                 )
             };
             LocalApicAccess::Mmio(page.start_address())

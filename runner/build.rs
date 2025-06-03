@@ -16,6 +16,7 @@ fn main() {
     let limine_dir = PathBuf::from(env::var("LIMINE_PATH").unwrap());
     // Cargo passes us the path the to kernel executable because it is an artifact dep
     let kernel_executable_file = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
+    let user_mode_program_executable_file = env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM").unwrap();
 
     // Symlink the out dir so we get a constant path to it
     ensure_symlink(&out_dir, runner_dir.join("out_dir")).unwrap();
@@ -33,6 +34,12 @@ fn main() {
     // Symlink the kernel binary to `kernel`
     let kernel_dest = iso_dir.join("kernel");
     ensure_symlink(&kernel_executable_file, &kernel_dest).unwrap();
+
+    ensure_symlink(
+        user_mode_program_executable_file,
+        iso_dir.join("user_mode_program"),
+    )
+    .unwrap();
 
     let boot_dir = iso_dir.join("boot");
     create_dir_all(&boot_dir).unwrap();
