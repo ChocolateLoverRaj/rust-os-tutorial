@@ -8,7 +8,8 @@ use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
 use limine_requests::{
-    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST, RSDP_REQUEST,
+    BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
+    RSDP_REQUEST,
 };
 use memory::MEMORY;
 use x86_64::registers::control::Cr3;
@@ -16,8 +17,11 @@ use x86_64::registers::control::Cr3;
 pub mod acpi;
 pub mod boxed_stack;
 pub mod cpu_local_data;
+pub mod elf_flags_to_page_table_flags;
+pub mod enter_user_mode;
 pub mod frame_buffer_embedded_graphics;
 pub mod gdt;
+pub mod get_page_table;
 pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod idt;
@@ -28,7 +32,11 @@ pub mod logger;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
+pub mod run_user_mode_program;
 pub mod spcr;
+pub mod syscalls;
+pub mod translate_addr;
+pub mod user_mode_program_path;
 pub mod writer_with_cr;
 
 #[unsafe(no_mangle)]
@@ -42,9 +50,8 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     log::info!("Hello World!");
 
     let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
-    let hhdm_offset = HHDM_REQUEST.get_response().unwrap().into();
     // Safety: we are initializing this for the first time
-    unsafe { memory::init(memory_map, hhdm_offset) };
+    unsafe { memory::init(memory_map) };
 
     let rsdp = RSDP_REQUEST.get_response().unwrap();
     // Safety: We're not sending this across CPUs
@@ -77,7 +84,10 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     idt::init();
     local_apic::init();
 
-    hlt_loop();
+    syscalls::init();
+
+    let module_response = MODULE_REQUEST.get_response().unwrap();
+    run_user_mode_program::run_user_mode_program(module_response);
 }
 
 unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {

@@ -1,10 +1,13 @@
 use limine::{
     BaseRevision,
+    modules::InternalModule,
     request::{
-        FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
-        RequestsStartMarker, RsdpRequest,
+        FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest,
+        RequestsEndMarker, RequestsStartMarker, RsdpRequest,
     },
 };
+
+use crate::user_mode_program_path::USER_MODE_PROGRAM_PATH;
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -33,6 +36,11 @@ pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new()
+    .with_internal_modules(&[&InternalModule::new().with_path(USER_MODE_PROGRAM_PATH)]);
 
 /// Define the stand and end markers for Limine requests.
 #[used]

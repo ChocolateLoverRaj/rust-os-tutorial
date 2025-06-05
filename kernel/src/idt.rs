@@ -1,8 +1,9 @@
 use core::sync::atomic::Ordering;
 
+use page_fault_handler::page_fault_handler;
 use x86_64::{
-    registers::control::Cr2,
-    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+    PrivilegeLevel,
+    structures::idt::{InterruptDescriptorTable, InterruptStackFrame},
 };
 
 use crate::{
@@ -13,6 +14,8 @@ use crate::{
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
 };
 
+mod page_fault_handler;
+
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     log::info!("Breakpoint! Stack frame: {stack_frame:#?}");
 }
@@ -22,16 +25,6 @@ extern "x86-interrupt" fn double_fault_handler(
     error_code: u64,
 ) -> ! {
     panic!("Double Fault! Stack frame: {stack_frame:#?}. Error code: {error_code}.")
-}
-
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    let accessed_address = Cr2::read().unwrap();
-    panic!(
-        "Page fault! Stack frame: {stack_frame:#?}. Error code: {error_code:#?}. Accessed address: {accessed_address:?}."
-    )
 }
 
 extern "x86-interrupt" fn apic_timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
@@ -58,6 +51,9 @@ pub fn init() {
             idt.breakpoint
                 .set_handler_fn(breakpoint_handler)
                 .set_stack_index(FIRST_EXCEPTION_STACK_INDEX)
+                // This let's Ring3 do int3 and trigger our breakpoint handler.
+                // Without this, a GP fault will happen if Ring3 does int3.
+                .set_privilege_level(PrivilegeLevel::Ring3)
         };
         unsafe {
             idt.double_fault

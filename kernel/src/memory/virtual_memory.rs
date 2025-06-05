@@ -4,17 +4,16 @@ use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     VirtAddr,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags,
-        PhysFrame, Size4KiB,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame,
+        Size4KiB,
     },
 };
 
-use crate::hhdm_offset::HhdmOffset;
+use crate::get_page_table::get_page_table;
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
     pub(super) cr3: PhysFrame<Size4KiB>,
-    pub(super) hhdm_offset: HhdmOffset,
 }
 
 impl VirtualMemory {
@@ -73,23 +72,6 @@ impl<S: PageSize> AllocatedPages<'_, S> {
         &self.range
     }
 
-    fn get_offset_page_table(&self) -> OffsetPageTable<'_> {
-        let level_4_page_table = VirtAddr::new(
-            u64::from(self.virtual_memory.hhdm_offset)
-                + self.virtual_memory.cr3.start_address().as_u64(),
-        )
-        .as_mut_ptr::<PageTable>();
-        // Safety: We can access it through HHDM
-        let level_4_page_table = unsafe { level_4_page_table.as_mut() }.unwrap();
-        // Safety: No other code is currently modifying page tables
-        unsafe {
-            OffsetPageTable::new(
-                level_4_page_table,
-                VirtAddr::new(self.virtual_memory.hhdm_offset.into()),
-            )
-        }
-    }
-
     /// # Safety
     /// See the safety for [`x86_64::structures::paging::mapper::Mapper::map_to`]
     pub unsafe fn map_to(
@@ -103,7 +85,8 @@ impl<S: PageSize> AllocatedPages<'_, S> {
         for<'a> OffsetPageTable<'a>: Mapper<S>,
     {
         if self.range.contains(&page) {
-            let mut offset_page_table = self.get_offset_page_table();
+            // Safety: Nothing else is accessing the page tables right now
+            let mut offset_page_table = unsafe { get_page_table(self.virtual_memory.cr3, false) };
             // Safety: same as this function's safety, plus we ensure that the page we are mapping is allocated properly
             unsafe { offset_page_table.map_to(page, frame, flags, frame_allocator) }
                 .unwrap()
@@ -122,7 +105,8 @@ impl<S: PageSize> AllocatedPages<'_, S> {
         for<'a> OffsetPageTable<'a>: Mapper<S>,
     {
         let pages = self.range.clone();
-        let mut offset_page_table = self.get_offset_page_table();
+        // Safety: Nothing else is accessing the page tables right now
+        let mut offset_page_table = unsafe { get_page_table(self.virtual_memory.cr3, false) };
         for page in pages.clone() {
             offset_page_table.unmap(page).unwrap().1.flush();
         }
