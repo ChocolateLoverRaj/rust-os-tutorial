@@ -34,6 +34,7 @@ pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod run_user_mode_program;
 pub mod spcr;
+pub mod syscall_handlers;
 pub mod syscalls;
 pub mod translate_addr;
 pub mod user_mode_program_path;

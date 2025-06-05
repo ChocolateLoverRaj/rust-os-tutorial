@@ -10,4 +10,7 @@ test = false
 bench = false
 
 [dependencies]
+common = { version = "0.1.0", path = "../common", default-features = false, features = [
+    "user_mode",
+] }
 x86_64 = "0.15.2"

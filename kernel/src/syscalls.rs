@@ -1,8 +1,6 @@
-use core::{
-    arch::{asm, naked_asm},
-    mem::offset_of,
-};
+use core::{arch::naked_asm, mem::offset_of};
 
+use spin::Lazy;
 use x86_64::{
     VirtAddr,
     registers::{
@@ -15,7 +13,35 @@ use x86_64::{
 use crate::{
     boxed_stack::BoxedStack,
     cpu_local_data::{CpuLocalData, get_local},
+    syscall_handlers::SyscallHandlers,
 };
+
+/// We use `Lazy` because we cannot initialize `SyscallHandlers` without the global allocator enabled
+static SYSCALL_HANDLERS: Lazy<SyscallHandlers> = Lazy::new(Default::default);
+
+unsafe extern "sysv64" fn syscall_handler(
+    input0: u64,
+    input1: u64,
+    input2: u64,
+    input3: u64,
+    input4: u64,
+    input5: u64,
+    input6: u64,
+    rflags: u64,
+    return_instruction_pointer: u64,
+) -> ! {
+    SYSCALL_HANDLERS.handle_syscall(
+        input0,
+        input1,
+        input2,
+        input3,
+        input4,
+        input5,
+        input6,
+        rflags,
+        return_instruction_pointer,
+    )
+}
 
 #[unsafe(naked)]
 unsafe extern "sysv64" fn raw_syscall_handler() -> ! {
@@ -41,45 +67,6 @@ unsafe extern "sysv64" fn raw_syscall_handler() -> ! {
         user_mode_stack_pointer_offset = const offset_of!(CpuLocalData, user_mode_stack_pointer),
         syscall_handler_stack_pointer_offset = const offset_of!(CpuLocalData, syscall_handler_stack_pointer)
     )
-}
-
-unsafe extern "sysv64" fn syscall_handler(
-    input0: u64,
-    input1: u64,
-    input2: u64,
-    input3: u64,
-    input4: u64,
-    input5: u64,
-    input6: u64,
-    rflags: u64,
-    return_instruction_pointer: u64,
-) -> ! {
-    let mut inputs = [input0, input1, input2, input3, input4, input5, input6];
-    for input in &mut inputs {
-        *input = input.wrapping_add(5);
-    }
-    let user_mode_stack_pointer_ptr = get_local().user_mode_stack_pointer.get();
-    // Safety: the stack pointer was saved by the raw_syscall_handler
-    let user_mode_stack_pointer = unsafe { user_mode_stack_pointer_ptr.read() };
-    unsafe {
-        asm!(
-            "
-                mov rsp, {}
-                sysretq
-            ",
-            in(reg) user_mode_stack_pointer,
-            in("rcx") return_instruction_pointer,
-            in("r11") rflags,
-            in("rdi") inputs[0],
-            in("rsi") inputs[1],
-            in("rdx") inputs[2],
-            in("r10") inputs[3],
-            in("r8") inputs[4],
-            in("r9") inputs[5],
-            in("rax") inputs[6],
-            options(noreturn)
-        );
-    }
 }
 
 pub fn init() {
