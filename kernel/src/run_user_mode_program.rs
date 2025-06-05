@@ -27,6 +27,7 @@ use crate::{
 pub struct Task {
     pub stack_size: u64,
     pub cr3: PhysFrame,
+    pub mapped_virtual_memory: NoditSet<u64, Interval<u64>>,
 }
 
 pub static TASK: spin::Mutex<Option<Task>> = spin::Mutex::new(None);
@@ -217,6 +218,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     *TASK.lock() = Some(Task {
                         stack_size: 0,
                         cr3: user_l4_frame,
+                        mapped_virtual_memory,
                     });
                     EnterUserModeInput {
                         rip: VirtAddr::new(entry_point.into()),

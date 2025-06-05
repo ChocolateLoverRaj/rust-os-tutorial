@@ -4,11 +4,13 @@ use alloc::collections::btree_map::{self, BTreeMap};
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit::SyscallExitHandler;
+use log::SyscallLogHandler;
 
 use crate::cpu_local_data::get_local;
 
 mod exists;
 mod exit;
+mod log;
 
 struct ExtraData<'a> {
     rflags: u64,
@@ -61,7 +63,7 @@ impl<S: Syscall> SyscallInput<'_, S> {
 pub trait GenericSyscallHandler: Sync {
     type S: Syscall;
 
-    fn handle_syscall_simple(input: SyscallInput<Self::S>) -> !;
+    fn handle_decoded_syscall(input: SyscallInput<Self::S>) -> !;
 }
 
 trait SyscallHandler: Sync {
@@ -75,7 +77,7 @@ impl<T: GenericSyscallHandler> SyscallHandler for T {
     }
     fn handle_syscall(&self, input: [u64; 6], extra_data: ExtraData) -> ! {
         match T::S::try_decode_input(&input) {
-            Ok(input) => T::handle_syscall_simple(SyscallInput { input, extra_data }),
+            Ok(input) => T::handle_decoded_syscall(SyscallInput { input, extra_data }),
             Err(e) => {
                 let id = T::S::ID;
                 todo!(
@@ -86,7 +88,11 @@ impl<T: GenericSyscallHandler> SyscallHandler for T {
     }
 }
 
-static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[&SyscallExistsHandler, &SyscallExitHandler];
+static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
+    &SyscallExistsHandler,
+    &SyscallExitHandler,
+    &SyscallLogHandler,
+];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,
 }

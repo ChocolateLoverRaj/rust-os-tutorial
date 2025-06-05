@@ -3,10 +3,11 @@
 
 use core::arch::asm;
 
-use common::{Syscall, SyscallExists, SyscallExit};
+use common::{Syscall, SyscallExists, SyscallExit, SyscallLog, SyscallLogInput, log};
 
 #[panic_handler]
 fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+    syscall_log(log::Level::Error, "panicked");
     syscall_exit()
 }
 
@@ -46,11 +47,23 @@ fn syscall_exit() -> ! {
     unreachable!()
 }
 
+fn syscall_log(level: log::Level, message: &str) {
+    unsafe {
+        syscall::<SyscallLog>(&SyscallLogInput {
+            level,
+            message: message.as_bytes().into(),
+        })
+    }
+    // &str means it should be valid
+    .unwrap()
+}
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point() -> ! {
     let should_be_true = syscall_exists(SyscallExit::ID);
     let should_be_false = syscall_exists(0);
     assert!(should_be_true);
     assert!(!should_be_false);
-    syscall_exit()
+    syscall_log(log::Level::Info, "Hello from user mode program 🚀");
+    panic!("test panick")
 }
