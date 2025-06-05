@@ -3,7 +3,10 @@ use zerocopy::IntoBytes;
 
 fn get_bincode_config() -> impl bincode::config::Config {
     bincode::config::standard()
+        // This is what x86_64 uses natively
         .with_little_endian()
+        // We do not want to optimize for saving space when numbers are small
+        // We want to optimize for encoding and decoding speed
         .with_fixed_int_encoding()
 }
 
