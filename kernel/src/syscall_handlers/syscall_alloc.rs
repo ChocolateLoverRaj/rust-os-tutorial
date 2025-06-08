@@ -25,7 +25,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let align = u64::from(helper.input().align);
         if align.checked_next_power_of_two() == Some(align) {
-            helper.syscall_return(&(|| {
+            let get_output = || {
                 let len = u64::from(helper.input().len);
                 fn map_with_page_size<S: PageSize + Debug>(
                     len: u64,
@@ -93,7 +93,8 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 } else {
                     map_with_page_size::<Size2MiB>(len, align)
                 }
-            })())
+            };
+            helper.syscall_return(&get_output())
         } else {
             todo!()
         }

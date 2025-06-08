@@ -2,7 +2,8 @@ use core::{alloc::Layout, arch::asm};
 
 use common::{
     Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExit, SyscallLog,
-    SyscallLogInput, log,
+    SyscallLogInput, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
+    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput, log,
 };
 
 /// # Safety
@@ -56,4 +57,15 @@ pub fn syscall_alloc(layout: Layout) -> Result<*mut [u8], SyscallAllocError> {
     let input = layout.into();
     let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
     Ok(unsafe { slice.to_slice_mut() })
+}
+
+pub fn syscall_take_frame_buffer()
+-> Result<SyscallTakeFrameBufferOutput, SyscallTakeFrameBufferError> {
+    // Safety: input is correct
+    unsafe { syscall::<SyscallTakeFrameBuffer>(&()) }
+}
+
+pub fn syscall_release_frame_buffer() {
+    // Safety: input is correct
+    unsafe { syscall::<SyscallReleaseFrameBuffer>(&()) }
 }

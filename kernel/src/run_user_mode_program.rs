@@ -98,7 +98,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                         .filter(|segment| segment.p_type == 1)
                         .filter(|segment| segment.p_memsz > 0)
                     {
-                        log::debug!("Segment: {segment:#X?}");
+                        // log::debug!("Segment: {segment:#X?}");
                         let segment_data = elf
                             .segment_data(&segment)
                             .map_err(LoadUserModeProgramError::ElfParseError)?;
@@ -135,7 +135,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                             let flags = PageTableFlags::PRESENT
                                 | PageTableFlags::USER_ACCESSIBLE
                                 | elf_flags_to_page_table_flags(segment.p_flags);
-                            log::info!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
+                            // log::info!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
                             unsafe {
                                 mapper.map_to(
                                     page,
@@ -153,7 +153,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                                 .saturating_sub(page.start_address().as_u64())
                                 .min(Size4KiB::SIZE);
                             let range_before_to_zero = ..bytes_to_zero_before as usize;
-                            log::debug!("Zeroeing (before) {range_before_to_zero:X?}");
+                            // log::debug!("Zeroeing (before) {range_before_to_zero:X?}");
                             frame_data[range_before_to_zero].fill(0);
 
                             let copy_start = bytes_to_zero_before;
@@ -166,14 +166,14 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                                 .min(Size4KiB::SIZE);
                             let copy_len = copy_end - copy_start;
                             let range_to_copy = copy_start as usize..copy_end as usize;
-                            log::debug!("Copying {range_to_copy:X?}");
+                            // log::debug!("Copying {range_to_copy:X?}");
                             frame_data[range_to_copy].copy_from_slice(
                                 &segment_data
                                     [already_copied as usize..(already_copied + copy_len) as usize],
                             );
 
                             let range_after_to_zero = copy_end as usize..;
-                            log::debug!("Zeroing (after): {range_after_to_zero:X?}");
+                            // log::debug!("Zeroing (after): {range_after_to_zero:X?}");
                             frame_data[range_after_to_zero].fill(0);
                         }
                     }

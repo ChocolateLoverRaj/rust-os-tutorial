@@ -18,8 +18,10 @@ console = { version = "0.15.11", git = "https://github.com/ChocolateLoverRaj/con
 elf = { version = "0.8.0", default-features = false }
 embedded-graphics = "0.8.1"
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
-limine = "0.4"
-log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode", version = "0.4.27", features = ["bincode"] }
+limine = "0.5"
+log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode", version = "0.4.27", features = [
+    "bincode",
+] }
 nodit = "0.9.2"
 num_enum = { version = "0.7.3", default-features = false }
 owo-colors = "4.2.1"

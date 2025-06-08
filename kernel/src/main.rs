@@ -19,7 +19,6 @@ pub mod boxed_stack;
 pub mod cpu_local_data;
 pub mod elf_flags_to_page_table_flags;
 pub mod enter_user_mode;
-pub mod frame_buffer_embedded_graphics;
 pub mod gdt;
 pub mod get_page_table;
 pub mod hhdm_offset;
@@ -46,8 +45,9 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     // removed by the linker.
     assert!(BASE_REVISION.is_supported());
 
+    logger::init().unwrap();
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
-    logger::init(frame_buffer_response).unwrap();
+    logger::init_frame_buffer(frame_buffer_response);
     log::info!("Hello World!");
 
     let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();

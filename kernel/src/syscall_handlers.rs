@@ -4,6 +4,7 @@ use alloc::collections::btree_map::{self, BTreeMap};
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit::SyscallExitHandler;
+use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
 use log::SyscallLogHandler;
 use syscall_alloc::SyscallAllocHandler;
 
@@ -11,6 +12,7 @@ use crate::cpu_local_data::get_local;
 
 mod exists;
 mod exit;
+mod frame_buffer;
 mod log;
 mod syscall_alloc;
 
@@ -95,6 +97,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallExitHandler,
     &SyscallLogHandler,
     &SyscallAllocHandler,
+    &SyscallTakeFrameBufferHandler,
+    &SyscallReleaseFrameBufferHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

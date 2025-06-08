@@ -4,6 +4,7 @@ use core::{
 };
 
 use alloc::boxed::Box;
+use common::FrameBufferEmbeddedGraphics;
 use embedded_graphics::{
     Drawable,
     mono_font::{MonoTextStyleBuilder, iso_8859_16::FONT_10X20},
@@ -18,10 +19,7 @@ use owo_colors::OwoColorize;
 use uart_16550::SerialPort;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{
-    cpu_local_data::try_get_local, frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics,
-    writer_with_cr::WriterWithCr,
-};
+use crate::{cpu_local_data::try_get_local, writer_with_cr::WriterWithCr};
 
 struct DisplayData {
     display: FrameBufferEmbeddedGraphics<'static>,
@@ -220,7 +218,7 @@ static LOGGER: KernelLogger = KernelLogger {
     }),
 };
 
-pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLoggerError> {
+pub fn init() -> Result<(), log::SetLoggerError> {
     let mut inner = LOGGER.inner.try_lock().unwrap();
     inner.serial_port = Some(AnyWriter::Com1({
         // Safety: this is the only code that is accessing COM1
@@ -228,13 +226,6 @@ pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLo
         serial_port.init();
         serial_port
     }));
-    inner.display = frame_buffer
-        .framebuffers()
-        .next()
-        .map(|frame_buffer| DisplayData {
-            display: FrameBufferEmbeddedGraphics::new(frame_buffer),
-            position: Point::zero(),
-        });
     log::set_max_level(LevelFilter::max());
     log::set_logger(&LOGGER)
 }
@@ -251,4 +242,25 @@ pub fn log_for_user_mode(level: log::Level, message: impl Display) {
     inner.write_with_color(Color::BrightGreen, "U ");
     inner.write_with_color(Color::for_log_level(level), format_args!("{level:5} "));
     inner.write_with_color(Color::Default, format_args!("{message}\n"));
+}
+
+/// Start logging to the frame buffer from now on
+pub fn init_frame_buffer(frame_buffer_response: &'static FramebufferResponse) {
+    LOGGER.inner.lock().display = frame_buffer_response
+        .framebuffers()
+        .next()
+        .map(|frame_buffer| DisplayData {
+            display: {
+                // Safety: The frame buffer is mapped by Limine
+                unsafe {
+                    FrameBufferEmbeddedGraphics::new(frame_buffer.addr(), (&frame_buffer).into())
+                }
+            },
+            position: Point::zero(),
+        });
+}
+
+/// Stop logging to the frame buffer
+pub fn take_frame_buffer() -> Option<()> {
+    LOGGER.inner.lock().display.take().map(|_| ())
 }
