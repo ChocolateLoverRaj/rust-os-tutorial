@@ -16,6 +16,8 @@ pub enum UserModeMemoryUsageType {
     PageTables,
     Elf,
     Stack,
+    /// Memory that the user mode program requested in run time
+    Heap,
 }
 
 /// Note that there are other memory types (such as ACPI memory) that are not included here

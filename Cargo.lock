@@ -456,6 +456,8 @@ name = "user_mode_program"
 version = "0.1.0"
 dependencies = [
  "common",
+ "spin",
+ "talc",
  "x86_64",
 ]
 

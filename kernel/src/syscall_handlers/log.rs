@@ -11,12 +11,12 @@ use super::GenericSyscallHandler;
 pub struct SyscallLogHandler;
 impl GenericSyscallHandler for SyscallLogHandler {
     type S = SyscallLog;
-    fn handle_decoded_syscall(input: super::SyscallInput<Self::S>) -> ! {
+    fn handle_decoded_syscall(input: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
             Return(<SyscallLog as Syscall>::Output),
             Terminate,
         }
-        match {
+        let action = {
             let actual_input = input.input();
             if actual_input.message.len() > 0 {
                 let task = TASK.lock();
@@ -46,7 +46,8 @@ impl GenericSyscallHandler for SyscallLogHandler {
             } else {
                 Action::Return(Ok(()))
             }
-        } {
+        };
+        match action {
             Action::Return(output) => input.syscall_return(&output),
             Action::Terminate => {
                 todo!("Invalid memory. Terminate process")
