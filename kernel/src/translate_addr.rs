@@ -1,7 +1,7 @@
 use alloc::slice;
 use x86_64::{
     PhysAddr, VirtAddr,
-    structures::paging::{Page, PageSize, PhysFrame, Size1GiB, Size2MiB, Size4KiB},
+    structures::paging::{Page, PageSize, PhysFrame},
 };
 
 use crate::hhdm_offset::HhdmOffset;
@@ -58,38 +58,13 @@ pub trait ZeroFrame {
     unsafe fn zero(self);
 }
 
-impl ZeroFrame for PhysFrame<Size4KiB> {
+impl<S: PageSize> ZeroFrame for PhysFrame<S> {
     unsafe fn zero(self) {
-        let ptr = self.start_address().to_virt().as_mut_ptr::<[u8; 0x1000]>();
+        let ptr = self.start_address().to_virt().as_mut_ptr::<u8>();
+        let len = S::SIZE as usize;
         // Safety: frame is offset mapped
         unsafe {
-            ptr.write_bytes(0, 1);
-        };
-    }
-}
-
-impl ZeroFrame for PhysFrame<Size2MiB> {
-    unsafe fn zero(self) {
-        let ptr = self
-            .start_address()
-            .to_virt()
-            .as_mut_ptr::<[u8; 0x200000]>();
-        // Safety: frame is offset mapped
-        unsafe {
-            ptr.write_bytes(0, 1);
-        };
-    }
-}
-
-impl ZeroFrame for PhysFrame<Size1GiB> {
-    unsafe fn zero(self) {
-        let ptr = self
-            .start_address()
-            .to_virt()
-            .as_mut_ptr::<[u8; 0x40000000]>();
-        // Safety: frame is offset mapped
-        unsafe {
-            ptr.write_bytes(0, 1);
+            ptr.write_bytes(0, len);
         };
     }
 }
