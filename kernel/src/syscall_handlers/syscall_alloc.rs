@@ -5,7 +5,7 @@ use nodit::interval::ue;
 use x86_64::{
     VirtAddr,
     structures::paging::{
-        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size2MiB, Size4KiB,
+        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
         mapper::MapToError,
     },
 };
@@ -14,7 +14,7 @@ use crate::{
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
     run_user_mode_program::TASK,
-    translate_addr::GetFrameSlice,
+    translate_addr::ZeroFrame,
 };
 
 use super::GenericSyscallHandler;
@@ -33,6 +33,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 ) -> Result<SliceData, SyscallAllocError>
                 where
                     for<'a> OffsetPageTable<'a>: Mapper<S>,
+                    PhysFrame<S>: ZeroFrame,
                 {
                     let n_pages = len.div_ceil(S::SIZE);
                     let mut task = TASK.lock();
@@ -69,8 +70,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                                 UserModeMemoryUsageType::Heap,
                             ))
                             .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
-                        // Zero the frame
-                        unsafe { frame.get_slice_mut() }.fill(Default::default());
+                        unsafe { frame.zero() }
                         let flags = PageTableFlags::PRESENT
                             | PageTableFlags::USER_ACCESSIBLE
                             | PageTableFlags::WRITABLE

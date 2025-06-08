@@ -20,7 +20,7 @@ use crate::{
     get_page_table::get_page_table,
     hlt_loop::hlt_loop,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
-    translate_addr::GetFrameSlice,
+    translate_addr::{GetFrameSlice, ZeroFrame},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,
 };
 
@@ -194,6 +194,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                                 UserModeMemoryUsageType::Stack,
                             ))
                             .ok_or(LoadUserModeProgramError::OutOfMemory)?;
+                        // Safety: We just claimed this frame
+                        unsafe { frame.zero() };
                         let flags = PageTableFlags::PRESENT
                             | PageTableFlags::USER_ACCESSIBLE
                             | PageTableFlags::WRITABLE

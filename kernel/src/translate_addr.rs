@@ -1,7 +1,7 @@
 use alloc::slice;
 use x86_64::{
     PhysAddr, VirtAddr,
-    structures::paging::{Page, PageSize, PhysFrame},
+    structures::paging::{Page, PageSize, PhysFrame, Size1GiB, Size2MiB, Size4KiB},
 };
 
 use crate::hhdm_offset::HhdmOffset;
@@ -49,5 +49,47 @@ impl<S: PageSize> GetFrameSlice for PhysFrame<S> {
         let ptr = self.start_address().to_virt().as_mut_ptr();
         let len = self.size() as usize;
         unsafe { slice::from_raw_parts_mut(ptr, len) }
+    }
+}
+
+pub trait ZeroFrame {
+    /// # Safety
+    /// Frame must be offset mapped. Do not have another ref to the frame while zeroing it.
+    unsafe fn zero(self);
+}
+
+impl ZeroFrame for PhysFrame<Size4KiB> {
+    unsafe fn zero(self) {
+        let ptr = self.start_address().to_virt().as_mut_ptr::<[u8; 0x1000]>();
+        // Safety: frame is offset mapped
+        unsafe {
+            ptr.write_bytes(0, 1);
+        };
+    }
+}
+
+impl ZeroFrame for PhysFrame<Size2MiB> {
+    unsafe fn zero(self) {
+        let ptr = self
+            .start_address()
+            .to_virt()
+            .as_mut_ptr::<[u8; 0x200000]>();
+        // Safety: frame is offset mapped
+        unsafe {
+            ptr.write_bytes(0, 1);
+        };
+    }
+}
+
+impl ZeroFrame for PhysFrame<Size1GiB> {
+    unsafe fn zero(self) {
+        let ptr = self
+            .start_address()
+            .to_virt()
+            .as_mut_ptr::<[u8; 0x40000000]>();
+        // Safety: frame is offset mapped
+        unsafe {
+            ptr.write_bytes(0, 1);
+        };
     }
 }
