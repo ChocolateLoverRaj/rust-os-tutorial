@@ -51,10 +51,11 @@ impl PhysicalMemory {
                 None
             }
         })?;
-        let _ = self.map.insert_overwrite(
-            (aligned_start..=aligned_start + (S::SIZE - 1)).into(),
-            memory_type,
-        );
+        let range = aligned_start..=aligned_start + (S::SIZE - 1);
+        let _ = self.map.cut(Interval::from(range.clone()));
+        self.map
+            .insert_merge_touching_if_values_equal(range.into(), memory_type)
+            .unwrap();
         Some(PhysFrame::from_start_address(PhysAddr::new(aligned_start)).unwrap())
     }
 
@@ -86,7 +87,10 @@ impl PhysicalMemory {
             })
             .collect::<Box<[_]>>();
         for interval in intervals_to_remove {
-            let _ = self.map.insert_overwrite(interval, MemoryType::Usable);
+            let _ = self.map.cut(interval);
+            self.map
+                .insert_merge_touching_if_values_equal(interval, MemoryType::Usable)
+                .unwrap();
         }
     }
 }

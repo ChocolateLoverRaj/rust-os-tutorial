@@ -1,7 +1,7 @@
 use core::{fmt::Debug, mem::MaybeUninit, slice};
 
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
-use nodit::{NoditMap, NoditSet, interval::iu};
+use nodit::{Interval, NoditMap, NoditSet, interval::iu};
 pub use physical_memory::{
     KernelMemoryUsageType, MemoryType, PhysicalMemory, UserModeMemoryUsageType,
 };
@@ -104,12 +104,16 @@ where
                 }
             }
             // We track the memory used for the global allocator
-            let _ = map.insert_overwrite(
-                (global_allocator_physical_start
-                    ..=global_allocator_physical_start + (global_allocator_size - 1))
-                    .into(),
-                MemoryType::UsedByKernel(KernelMemoryUsageType::GlobalAllocatorHeap),
+            let interval = Interval::from(
+                global_allocator_physical_start
+                    ..=global_allocator_physical_start + (global_allocator_size - 1),
             );
+            let _ = map.cut(interval);
+            map.insert_merge_touching_if_values_equal(
+                interval,
+                MemoryType::UsedByKernel(KernelMemoryUsageType::GlobalAllocatorHeap),
+            )
+            .unwrap();
             map
         },
     };
