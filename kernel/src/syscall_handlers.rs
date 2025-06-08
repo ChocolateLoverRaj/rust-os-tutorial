@@ -5,12 +5,14 @@ use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit::SyscallExitHandler;
 use log::SyscallLogHandler;
+use syscall_alloc::SyscallAllocHandler;
 
 use crate::cpu_local_data::get_local;
 
 mod exists;
 mod exit;
 mod log;
+mod syscall_alloc;
 
 struct ExtraData<'a> {
     rflags: u64,
@@ -18,12 +20,12 @@ struct ExtraData<'a> {
     syscall_handlers: &'a SyscallHandlers,
 }
 
-pub struct SyscallInput<'a, S: Syscall> {
+pub struct SyscallHelper<'a, S: Syscall> {
     input: S::Input,
     extra_data: ExtraData<'a>,
 }
 
-impl<S: Syscall> SyscallInput<'_, S> {
+impl<S: Syscall> SyscallHelper<'_, S> {
     pub fn input(&self) -> &S::Input {
         &self.input
     }
@@ -63,7 +65,7 @@ impl<S: Syscall> SyscallInput<'_, S> {
 pub trait GenericSyscallHandler: Sync {
     type S: Syscall;
 
-    fn handle_decoded_syscall(input: SyscallInput<Self::S>) -> !;
+    fn handle_decoded_syscall(helper: SyscallHelper<Self::S>) -> !;
 }
 
 trait SyscallHandler: Sync {
@@ -77,7 +79,7 @@ impl<T: GenericSyscallHandler> SyscallHandler for T {
     }
     fn handle_syscall(&self, input: [u64; 6], extra_data: ExtraData) -> ! {
         match T::S::try_decode_input(&input) {
-            Ok(input) => T::handle_decoded_syscall(SyscallInput { input, extra_data }),
+            Ok(input) => T::handle_decoded_syscall(SyscallHelper { input, extra_data }),
             Err(e) => {
                 let id = T::S::ID;
                 todo!(
@@ -92,6 +94,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallExistsHandler,
     &SyscallExitHandler,
     &SyscallLogHandler,
+    &SyscallAllocHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

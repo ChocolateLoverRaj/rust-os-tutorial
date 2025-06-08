@@ -13,4 +13,7 @@ bench = false
 common = { version = "0.1.0", path = "../common", default-features = false, features = [
     "user_mode",
 ] }
+heapless = "0.8.0"
+spin = "0.10.0"
+talc = { version = "4.4.2", features = ["counters"] }
 x86_64 = "0.15.2"

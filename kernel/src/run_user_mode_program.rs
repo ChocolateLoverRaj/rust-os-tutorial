@@ -25,7 +25,6 @@ use crate::{
 };
 
 pub struct Task {
-    pub stack_size: u64,
     pub cr3: PhysFrame,
     pub mapped_virtual_memory: NoditSet<u64, Interval<u64>>,
 }
@@ -62,6 +61,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
             InvalidVirtAddr(VirtAddrNotValid),
             #[error("ELF segments overlap with the stack")]
             OverlappingElfSegmentsAndStack(OverlapError<()>),
+            #[error("The ELF has 0 segments")]
+            NoSegments,
         }
         fn run_user_mode_program(
             elf: &[u8],
@@ -86,9 +87,13 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     let mut mapper = unsafe { get_page_table(user_l4_frame, true) };
 
                     let mut mapped_virtual_memory = NoditSet::<u64, Interval<_>>::default();
-                    for segment in elf
+                    let segments = elf
                         .segments()
-                        .ok_or(LoadUserModeProgramError::NoSegmentTable)?
+                        .ok_or(LoadUserModeProgramError::NoSegmentTable)?;
+                    if segments.is_empty() {
+                        Err(LoadUserModeProgramError::NoSegments)?;
+                    }
+                    for segment in segments
                         .iter()
                         .filter(|segment| segment.p_type == 1)
                         .filter(|segment| segment.p_memsz > 0)
@@ -155,7 +160,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                             let already_copied = page
                                 .start_address()
                                 .as_u64()
-                                .saturating_sub(segment.p_vaddr);
+                                .saturating_sub(segment.p_vaddr)
+                                .min(segment.p_filesz);
                             let copy_end = (copy_start + (segment.p_filesz - already_copied))
                                 .min(Size4KiB::SIZE);
                             let copy_len = copy_end - copy_start;
@@ -173,16 +179,15 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     }
                     // Map the stack
                     let stack_size = 64 * 0x400;
-                    let stack_end_exclusive = INITIAL_RSP;
-                    let stack_start = stack_end_exclusive - stack_size;
+                    let stack_end_inclusive = INITIAL_RSP - 1;
+                    let stack_start = INITIAL_RSP - stack_size;
                     mapped_virtual_memory
-                        .insert_merge_touching((stack_start..=stack_end_exclusive).into())
+                        .insert_merge_touching((stack_start..=stack_end_inclusive).into())
                         .map_err(LoadUserModeProgramError::OverlappingElfSegmentsAndStack)?;
                     let stack_start_page =
                         Page::<Size4KiB>::from_start_address(VirtAddr::new(stack_start)).unwrap();
-                    let stack_end_page_inclusive = Page::<Size4KiB>::containing_address(
-                        VirtAddr::new(stack_end_exclusive - 1),
-                    );
+                    let stack_end_page_inclusive =
+                        Page::<Size4KiB>::containing_address(VirtAddr::new(stack_end_inclusive));
                     for page in stack_start_page..=stack_end_page_inclusive {
                         let frame = physical_memory
                             .allocate_frame_with_type(MemoryType::UsedByUserMode(
@@ -216,7 +221,6 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     }
                     unsafe { Cr3::write(user_l4_frame, memory.new_kernel_cr3_flags) };
                     *TASK.lock() = Some(Task {
-                        stack_size: 0,
                         cr3: user_l4_frame,
                         mapped_virtual_memory,
                     });

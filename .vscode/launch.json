@@ -17,5 +17,18 @@
             ],
             "preLaunchTask": "Start QEMU with GDB Debugging",
         },
+        {
+            "name": "Debug user mode program in QEMU",
+            "type": "lldb",
+            "request": "launch",
+            "targetCreateCommands": [
+                "target create ${workspaceFolder}/runner/out_dir/iso_root/user_mode_program",
+            ],
+            "processCreateCommands": [
+                "gdb-remote localhost:1234",
+                "continue",
+            ],
+            "preLaunchTask": "Start QEMU with GDB Debugging",
+        },
     ],
 }

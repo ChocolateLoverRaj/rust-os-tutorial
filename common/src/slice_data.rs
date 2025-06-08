@@ -10,21 +10,18 @@ pub struct SliceData {
 }
 
 impl SliceData {
-    pub fn from_slice<T>(slice: &[T]) -> Self {
-        Self {
-            pointer: slice.as_ptr() as u64,
-            len: slice.len() as u64,
-        }
+    pub fn new(pointer: u64, len: u64) -> Self {
+        Self { pointer, len }
     }
 
     /// # Safety
-    /// See `core::slice::from_raw_parts`
+    /// See [`core::slice::from_raw_parts`]
     pub unsafe fn to_slice<'a, T>(&self) -> &'a [T] {
         unsafe { slice::from_raw_parts(self.pointer as *const _, self.len as usize) }
     }
 
     /// # Safety
-    /// See `core::slice::from_raw_parts`
+    /// See [`core::slice::from_raw_parts_mut`]
     pub unsafe fn to_slice_mut<'a, T>(&self) -> &'a mut [T] {
         unsafe { slice::from_raw_parts_mut(self.pointer as *mut _, self.len as usize) }
     }
