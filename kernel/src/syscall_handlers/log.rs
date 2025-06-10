@@ -4,7 +4,7 @@ use common::{Syscall, SyscallLog, SyscallLogError};
 use console::strip_ansi_codes;
 use nodit::Interval;
 
-use crate::{logger::log_for_user_mode, run_user_mode_program::TASK};
+use crate::{logger::log_for_user_mode, task::TASK};
 
 use super::GenericSyscallHandler;
 

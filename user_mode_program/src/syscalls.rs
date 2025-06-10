@@ -1,9 +1,10 @@
-use core::{alloc::Layout, arch::asm};
+use core::{alloc::Layout, arch::asm, mem::MaybeUninit};
 
 use common::{
     Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExit, SyscallLog,
-    SyscallLogInput, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
-    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput, log,
+    SyscallLogInput, SyscallReadKeyboard, SyscallReleaseFrameBuffer, SyscallSubscribeToKeyboard,
+    SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
+    SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -68,4 +69,24 @@ pub fn syscall_take_frame_buffer()
 pub fn syscall_release_frame_buffer() {
     // Safety: input is correct
     unsafe { syscall::<SyscallReleaseFrameBuffer>(&()) }
+}
+
+pub fn syscall_subscribe_to_keyboard() -> u64 {
+    // Safety: input is correct
+    unsafe { syscall::<SyscallSubscribeToKeyboard>(&()) }
+}
+
+pub fn syscall_read_keyboard(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
+    let input = buffer.into();
+    // Safety: The input is valid
+    let count = unsafe { syscall::<SyscallReadKeyboard>(&input) };
+    // Safety: the kernel initialized them
+    unsafe { buffer[..count as usize].assume_init_mut() }
+}
+
+pub fn syscall_wait_until_event(events: &mut [u64]) -> &mut [u64] {
+    let input = events.into();
+    // Safety: The input is valid
+    let count = unsafe { syscall::<SyscallWaitUntilEvent>(&input) };
+    &mut events[..count as usize]
 }

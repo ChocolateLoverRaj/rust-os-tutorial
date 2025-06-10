@@ -13,7 +13,7 @@ use x86_64::{
 use crate::{
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
-    run_user_mode_program::TASK,
+    task::{TASK, VirtualMemoryPermissions},
     translate_addr::ZeroFrame,
 };
 
@@ -55,7 +55,13 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                         })
                         .ok_or(SyscallAllocError::OutOfVirtualMemory)?;
                     task.mapped_virtual_memory
-                        .insert_merge_touching(range.clone().into())
+                        .insert_merge_touching_if_values_equal(
+                            range.clone().into(),
+                            VirtualMemoryPermissions {
+                                write: true,
+                                execute: false,
+                            },
+                        )
                         .unwrap();
                     let mut mapper = unsafe { get_page_table(task.cr3, false) };
                     let start_page =

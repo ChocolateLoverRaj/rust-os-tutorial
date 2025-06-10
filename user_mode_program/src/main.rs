@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
+#![feature(maybe_uninit_slice)]
 
-use core::ops::DerefMut;
+use core::{mem::MaybeUninit, ops::DerefMut};
 
-use alloc::string::ToString;
+use alloc::{format, string::ToString};
 use common::{
     Syscall, SyscallExit,
     embedded_graphics::{
@@ -14,7 +15,10 @@ use common::{
     log,
 };
 use frame_buffer::FrameBuffer;
-use syscalls::{syscall_exists, syscall_exit, syscall_log};
+use syscalls::{
+    syscall_exists, syscall_log, syscall_read_keyboard, syscall_subscribe_to_keyboard,
+    syscall_wait_until_event,
+};
 
 extern crate alloc;
 
@@ -42,5 +46,14 @@ unsafe extern "C" fn entry_point() -> ! {
             frame_buffer.deref_mut(),
         )
         .unwrap();
-    syscall_exit()
+
+    let keyboard_event = syscall_subscribe_to_keyboard();
+    let mut buffer = [MaybeUninit::uninit(); 64];
+    loop {
+        let input = syscall_read_keyboard(&mut buffer);
+        if !input.is_empty() {
+            syscall_log(log::Level::Debug, &format!("Received input: {input:?}"));
+        }
+        syscall_wait_until_event(&mut [keyboard_event]);
+    }
 }

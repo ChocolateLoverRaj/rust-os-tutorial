@@ -1,24 +1,25 @@
-use core::arch::asm;
-
 use alloc::collections::btree_map::{self, BTreeMap};
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit::SyscallExitHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
+use keyboard::{SyscallReadKeyboardHandler, SyscallSubscribeToKeyboardHandler};
 use log::SyscallLogHandler;
 use syscall_alloc::SyscallAllocHandler;
+use wait_until_event::SyscallWaitUntilEventHandler;
 
-use crate::cpu_local_data::get_local;
+use crate::syscall_saved_regs::SyscallSavedRegs;
 
 mod exists;
 mod exit;
 mod frame_buffer;
+mod keyboard;
 mod log;
 mod syscall_alloc;
+mod wait_until_event;
 
 struct ExtraData<'a> {
-    rflags: u64,
-    return_instruction_pointer: u64,
+    saved_regs: &'a mut SyscallSavedRegs,
     syscall_handlers: &'a SyscallHandlers,
 }
 
@@ -34,33 +35,15 @@ impl<S: Syscall> SyscallHelper<'_, S> {
 
     pub fn syscall_return(&self, output: &S::Output) -> ! {
         let output = S::encode_output(output);
-
-        let user_mode_stack_pointer_ptr = get_local().user_mode_stack_pointer.get();
-        // Safety: the stack pointer was saved by the raw_syscall_handler
-        let user_mode_stack_pointer = unsafe { user_mode_stack_pointer_ptr.read() };
-        unsafe {
-            asm!(
-                "
-                mov rsp, {}
-                sysretq
-            ",
-                in(reg) user_mode_stack_pointer,
-                in("rcx") self.extra_data.return_instruction_pointer,
-                in("r11") self.extra_data.rflags,
-                in("rdi") output[0],
-                in("rsi") output[1],
-                in("rdx") output[2],
-                in("r10") output[3],
-                in("r8") output[4],
-                in("r9") output[5],
-                in("rax") output[6],
-                options(noreturn)
-            );
-        }
+        unsafe { self.extra_data.saved_regs.sysretq(output) }
     }
 
     pub fn handler_exists(&self, id: &u64) -> bool {
         self.extra_data.syscall_handlers.map.contains_key(id)
+    }
+
+    pub fn saved_regs(&self) -> &SyscallSavedRegs {
+        self.extra_data.saved_regs
     }
 }
 
@@ -99,6 +82,9 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallAllocHandler,
     &SyscallTakeFrameBufferHandler,
     &SyscallReleaseFrameBufferHandler,
+    &SyscallSubscribeToKeyboardHandler,
+    &SyscallReadKeyboardHandler,
+    &SyscallWaitUntilEventHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,
@@ -132,8 +118,7 @@ impl SyscallHandlers {
         input4: u64,
         input5: u64,
         input6: u64,
-        rflags: u64,
-        return_instruction_pointer: u64,
+        syscall_saved_regs: &mut SyscallSavedRegs,
     ) -> ! {
         let id = input0;
         let input = [input1, input2, input3, input4, input5, input6];
@@ -141,8 +126,7 @@ impl SyscallHandlers {
             Some(handler) => handler.handle_syscall(
                 input,
                 ExtraData {
-                    rflags,
-                    return_instruction_pointer,
+                    saved_regs: syscall_saved_regs,
                     syscall_handlers: self,
                 },
             ),

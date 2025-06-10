@@ -1,8 +1,8 @@
-use acpi::{AcpiHandler, AcpiTables, InterruptModel};
+use acpi::platform::interrupt::Apic;
+use alloc::alloc::Allocator;
 use force_send_sync::SendSync;
-use raw_cpuid::CpuId;
 use spin::Once;
-use x2apic::lapic::LocalApicBuilder;
+use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
 use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{PageTableFlags, PhysFrame, Size4KiB},
@@ -21,16 +21,11 @@ pub enum LocalApicAccess {
 pub static LOCAL_APIC_ACCESS: Once<LocalApicAccess> = Once::new();
 
 /// Maps the Local APIC memory if needed, and initializes LOCAL_APIC_ACCESS
-pub fn map_if_needed(acpi_tables: &AcpiTables<impl AcpiHandler>) {
+pub fn map_if_needed(apic: &Apic<impl Allocator>) {
     LOCAL_APIC_ACCESS.call_once(|| {
-        if CpuId::new().get_feature_info().unwrap().has_x2apic() {
+        if cpu_has_x2apic() {
             LocalApicAccess::RegisterBased
         } else {
-            let platform_info = acpi_tables.platform_info().unwrap();
-            let apic = match platform_info.interrupt_model {
-                InterruptModel::Apic(apic) => apic,
-                interrupt_model => panic!("Unknown interrupt model: {:#?}", interrupt_model),
-            };
             let addr = PhysAddr::new(apic.local_apic_address);
             // Local APIC is always exactly 4 KiB, aligned to 4 KiB
             let frame = PhysFrame::<Size4KiB>::from_start_address(addr).unwrap();

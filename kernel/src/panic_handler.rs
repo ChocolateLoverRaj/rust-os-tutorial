@@ -1,5 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use x86_64::instructions::interrupts;
+
 use crate::{
     cpu_local_data::try_get_local,
     hlt_loop::hlt_loop,
@@ -9,6 +11,7 @@ use crate::{
 static DID_PANIC: AtomicBool = AtomicBool::new(false);
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    interrupts::disable();
     match DID_PANIC.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
         Ok(_) => {
             // Since the OS panicked, we need to tell the other CPUs to stop immediately

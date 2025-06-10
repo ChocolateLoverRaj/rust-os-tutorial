@@ -14,6 +14,7 @@ use crate::{
     boxed_stack::BoxedStack,
     cpu_local_data::{CpuLocalData, get_local},
     syscall_handlers::SyscallHandlers,
+    syscall_saved_regs::SyscallSavedRegs,
 };
 
 /// We use `Lazy` because we cannot initialize `SyscallHandlers` without the global allocator enabled
@@ -27,8 +28,7 @@ unsafe extern "sysv64" fn syscall_handler(
     input4: u64,
     input5: u64,
     input6: u64,
-    rflags: u64,
-    return_instruction_pointer: u64,
+    syscall_saved_regs: &mut SyscallSavedRegs,
 ) -> ! {
     SYSCALL_HANDLERS.handle_syscall(
         input0,
@@ -38,8 +38,7 @@ unsafe extern "sysv64" fn syscall_handler(
         input4,
         input5,
         input6,
-        rflags,
-        return_instruction_pointer,
+        syscall_saved_regs,
     )
 }
 
@@ -52,15 +51,25 @@ unsafe extern "sysv64" fn raw_syscall_handler() -> ! {
             // Switch to the kernel stack pointer
             mov rsp, gs:[{syscall_handler_stack_pointer_offset}]
 
-            // This is input[8]
-            // Make sure to save `rcx` before modifying it
+            // backup registers for sysretq
+            push gs:[{user_mode_stack_pointer_offset}]
             push rcx
-            // This is input[7]
             push r11
-            // This is input[6]
-            push rax
+
+            // save callee-saved registers on the stack
+            push rbp
+            push rbx
+            push r12
+            push r13
+            push r14
+            push r15
+
+            // Call the function
             // Convert `syscall`s `r10` input to `sysv64`s `rcx` input
             mov rcx, r10
+            // After the first 6 inputs, additional inputs go on the stack **in reverse order**. So we put `rax` on the stack
+            push rsp // I added an extra input which is the kernel's stack pointer
+            push rax // Move rax to the stack which is where additional inputs go in sysv64
             call {syscall_handler}
         ",
         syscall_handler = sym syscall_handler,

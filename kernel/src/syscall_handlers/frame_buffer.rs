@@ -12,7 +12,7 @@ use x86_64::{
 
 use crate::{
     get_page_table::get_page_table, hhdm_offset::HhdmOffset, limine_requests::FRAME_BUFFER_REQUEST,
-    logger, memory::MEMORY, run_user_mode_program::TASK,
+    logger, memory::MEMORY, task::TASK,
 };
 
 use super::GenericSyscallHandler;

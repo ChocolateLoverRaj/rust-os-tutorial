@@ -2,34 +2,27 @@ use core::{num::NonZero, slice};
 
 use elf::{ElfBytes, endian::NativeEndian};
 use limine::response::ModuleResponse;
-use nodit::{Interval, NoditSet, OverlapError};
+use nodit::{Interval, NoditMap, OverlapError};
 use thiserror::Error;
 use x86_64::{
     VirtAddr,
     addr::VirtAddrNotValid,
     registers::{control::Cr3, rflags::RFlags},
     structures::paging::{
-        FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB,
-        mapper::MapToError,
+        FrameAllocator, Mapper, Page, PageSize, PageTableFlags, Size4KiB, mapper::MapToError,
     },
 };
 
 use crate::{
-    elf_flags_to_page_table_flags::elf_flags_to_page_table_flags,
+    elf_segment_flags::ElfSegmentFlags,
     enter_user_mode::{EnterUserModeInput, enter_user_mode},
     get_page_table::get_page_table,
     hlt_loop::hlt_loop,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
+    task::{TASK, Task, TaskState, VirtualMemoryPermissions},
     translate_addr::{GetFrameSlice, ZeroFrame},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,
 };
-
-pub struct Task {
-    pub cr3: PhysFrame,
-    pub mapped_virtual_memory: NoditSet<u64, Interval<u64>>,
-}
-
-pub static TASK: spin::Mutex<Option<Task>> = spin::Mutex::new(None);
 
 // If this was a normal pointer and not the stack pointer, this address would be invalid because it is not canonical.
 // However, since this is a stack pointer it is still technically pointing to the lower half so this actually works.
@@ -52,7 +45,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
             #[error("No segment table")]
             NoSegmentTable,
             #[error("ELF has overlapping loadable segments")]
-            OverlappingElfSegments(OverlapError<()>),
+            OverlappingElfSegments(OverlapError<VirtualMemoryPermissions>),
             #[error("Error creating a page table mapping")]
             MapToError(MapToError<Size4KiB>),
             #[error("ELF tried to use higher half virtual memory")]
@@ -60,7 +53,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
             #[error("The ELF specified an invalid virtual address")]
             InvalidVirtAddr(VirtAddrNotValid),
             #[error("ELF segments overlap with the stack")]
-            OverlappingElfSegmentsAndStack(OverlapError<()>),
+            OverlappingElfSegmentsAndStack(OverlapError<VirtualMemoryPermissions>),
             #[error("The ELF has 0 segments")]
             NoSegments,
         }
@@ -86,7 +79,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     // Safety: frame is offset mapped and it's a new table
                     let mut mapper = unsafe { get_page_table(user_l4_frame, true) };
 
-                    let mut mapped_virtual_memory = NoditSet::<u64, Interval<_>>::default();
+                    let mut mapped_virtual_memory =
+                        NoditMap::<u64, Interval<_>, VirtualMemoryPermissions>::default();
                     let segments = elf
                         .segments()
                         .ok_or(LoadUserModeProgramError::NoSegmentTable)?;
@@ -99,6 +93,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                         .filter(|segment| segment.p_memsz > 0)
                     {
                         // log::debug!("Segment: {segment:#X?}");
+                        let flags = ElfSegmentFlags::from(segment);
                         let segment_data = elf
                             .segment_data(&segment)
                             .map_err(LoadUserModeProgramError::ElfParseError)?;
@@ -120,10 +115,11 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                             .map_err(LoadUserModeProgramError::InvalidVirtAddr)?,
                         );
                         mapped_virtual_memory
-                            .insert_merge_touching(
+                            .insert_merge_touching_if_values_equal(
                                 (start_page.start_address().as_u64()
                                     ..=(end_page.start_address() + (end_page.size() - 1)).as_u64())
                                     .into(),
+                                flags.into(),
                             )
                             .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                         for page in start_page..=end_page {
@@ -134,7 +130,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                                 .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                             let flags = PageTableFlags::PRESENT
                                 | PageTableFlags::USER_ACCESSIBLE
-                                | elf_flags_to_page_table_flags(segment.p_flags);
+                                | flags.to_page_table_flags();
                             // log::info!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
                             unsafe {
                                 mapper.map_to(
@@ -182,7 +178,13 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     let stack_end_inclusive = INITIAL_RSP - 1;
                     let stack_start = INITIAL_RSP - stack_size;
                     mapped_virtual_memory
-                        .insert_merge_touching((stack_start..=stack_end_inclusive).into())
+                        .insert_merge_touching(
+                            (stack_start..=stack_end_inclusive).into(),
+                            VirtualMemoryPermissions {
+                                write: true,
+                                execute: false,
+                            },
+                        )
                         .map_err(LoadUserModeProgramError::OverlappingElfSegmentsAndStack)?;
                     let stack_start_page =
                         Page::<Size4KiB>::from_start_address(VirtAddr::new(stack_start)).unwrap();
@@ -225,6 +227,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     *TASK.lock() = Some(Task {
                         cr3: user_l4_frame,
                         mapped_virtual_memory,
+                        keyboard: None,
+                        state: TaskState::Running,
                     });
                     EnterUserModeInput {
                         rip: VirtAddr::new(entry_point.into()),

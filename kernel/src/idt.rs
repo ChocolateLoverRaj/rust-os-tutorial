@@ -1,8 +1,10 @@
 use core::sync::atomic::Ordering;
 
+use keyboard_interrupt_handler::raw_keyboard_interrupt_handler;
 use page_fault_handler::page_fault_handler;
 use x86_64::{
-    PrivilegeLevel,
+    PrivilegeLevel, VirtAddr,
+    instructions::interrupts,
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame},
 };
 
@@ -14,6 +16,7 @@ use crate::{
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
 };
 
+mod keyboard_interrupt_handler;
 mod page_fault_handler;
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -36,6 +39,7 @@ extern "x86-interrupt" fn apic_timer_interrupt_handler(_stack_frame: InterruptSt
 }
 
 fn handle_panic_originating_on_other_cpu() -> ! {
+    interrupts::disable();
     hlt_loop()
 }
 
@@ -67,6 +71,11 @@ pub fn init() {
         };
         idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
         idt[u8::from(InterruptVector::LocalApicTimer)].set_handler_fn(apic_timer_interrupt_handler);
+        unsafe {
+            idt[u8::from(InterruptVector::Keyboard)].set_handler_addr(VirtAddr::from_ptr(
+                raw_keyboard_interrupt_handler as *const (),
+            ))
+        };
         idt
     });
     idt.load();

@@ -15,6 +15,7 @@ use crate::{boxed_stack::BoxedStack, cpu_local_data::get_local};
 pub struct TssStacks {
     first_exception: BoxedStack,
     double_fault: BoxedStack,
+    privilege_switch: BoxedStack,
 }
 
 pub struct Gdt {
@@ -36,6 +37,7 @@ pub unsafe fn init() {
     let tss_stacks = local.tss_stacks.call_once(|| TssStacks {
         first_exception: BoxedStack::new_uninit(64 * 0x400),
         double_fault: BoxedStack::new_uninit(64 * 0x400),
+        privilege_switch: BoxedStack::new_uninit(64 * 0x400),
     });
     let tss = local.tss.call_once(|| {
         let mut tss = TaskStateSegment::new();
@@ -43,6 +45,7 @@ pub unsafe fn init() {
             tss_stacks.first_exception.top();
         tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
             tss_stacks.double_fault.top();
+        tss.privilege_stack_table[0] = tss_stacks.privilege_switch.top();
         tss
     });
     let gdt = local.gdt.call_once(|| {

@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt, sync_unsafe_cell)]
+#![feature(abi_x86_interrupt, sync_unsafe_cell, allocator_api)]
 
 extern crate alloc;
 
+use ::acpi::InterruptModel;
 use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
@@ -17,7 +18,7 @@ use x86_64::registers::control::Cr3;
 pub mod acpi;
 pub mod boxed_stack;
 pub mod cpu_local_data;
-pub mod elf_flags_to_page_table_flags;
+pub mod elf_segment_flags;
 pub mod enter_user_mode;
 pub mod gdt;
 pub mod get_page_table;
@@ -25,16 +26,20 @@ pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod idt;
 pub mod interrupt_vector;
+pub mod io_apics;
 pub mod limine_requests;
 pub mod local_apic;
 pub mod logger;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
+pub mod pic8259_interrupts;
 pub mod run_user_mode_program;
 pub mod spcr;
 pub mod syscall_handlers;
+pub mod syscall_saved_regs;
 pub mod syscalls;
+pub mod task;
 pub mod translate_addr;
 pub mod user_mode_program_path;
 pub mod writer_with_cr;
@@ -66,7 +71,13 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
             .collect::<Box<[_]>>();
         log::info!("ACPI Tables: {acpi_tables:?}");
     }
-    local_apic::map_if_needed(&acpi_tables);
+    let platform_info = acpi_tables.platform_info().unwrap();
+    let apic = match platform_info.interrupt_model {
+        InterruptModel::Apic(apic) => apic,
+        interrupt_model => panic!("Unknown interrupt model: {:#?}", interrupt_model),
+    };
+    local_apic::map_if_needed(&apic);
+    io_apics::init(&apic);
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
