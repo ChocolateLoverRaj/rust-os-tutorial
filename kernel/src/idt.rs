@@ -4,7 +4,7 @@ use keyboard_interrupt_handler::raw_keyboard_interrupt_handler;
 use page_fault_handler::page_fault_handler;
 use x86_64::{
     PrivilegeLevel, VirtAddr,
-    instructions::interrupts,
+    instructions::{interrupts, port::PortReadOnly},
     structures::idt::{InterruptDescriptorTable, InterruptStackFrame},
 };
 
@@ -13,6 +13,7 @@ use crate::{
     gdt::{DOUBLE_FAULT_STACK_INDEX, FIRST_EXCEPTION_STACK_INDEX},
     hlt_loop::hlt_loop,
     interrupt_vector::InterruptVector,
+    mouse::MOUSE,
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
 };
 
@@ -47,6 +48,23 @@ extern "x86-interrupt" fn nmi_handler(_stack_frame: InterruptStackFrame) {
     handle_panic_originating_on_other_cpu()
 }
 
+extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    let mut port = PortReadOnly::new(0x60);
+    let byte = unsafe { port.read() };
+    if let Some(packet) = MOUSE.try_lock().unwrap().as_mut().unwrap().add_byte(byte) {
+        log::info!("Received mouse packet: {packet:?}");
+    }
+    unsafe {
+        get_local()
+            .local_apic
+            .get()
+            .unwrap()
+            .try_lock()
+            .unwrap()
+            .end_of_interrupt()
+    };
+}
+
 pub fn init() {
     let local = get_local();
     let idt = local.idt.call_once(|| {
@@ -76,6 +94,7 @@ pub fn init() {
                 raw_keyboard_interrupt_handler as *const (),
             ))
         };
+        idt[u8::from(InterruptVector::Mouse)].set_handler_fn(mouse_interrupt_handler);
         idt
     });
     idt.load();

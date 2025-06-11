@@ -15,6 +15,7 @@ mod exit;
 mod frame_buffer;
 mod keyboard;
 mod log;
+mod mouse;
 mod syscall_alloc;
 mod wait_until_event;
 

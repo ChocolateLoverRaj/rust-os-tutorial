@@ -1,10 +1,13 @@
+use core::ops::Deref;
+
+use alloc::boxed::Box;
 use common::SyscallWaitUntilEvent;
 use nodit::interval::ie;
 use x86_64::instructions::interrupts;
 
 use crate::{
     hlt_loop::hlt_loop,
-    syscall_handlers::keyboard::KEYBOARD_EVENT_ID,
+    syscall_handlers::{keyboard::KEYBOARD_EVENT_ID, mouse::MOUSE_EVENT_ID},
     task::{TASK, TaskState, WaitingState},
 };
 
@@ -23,19 +26,31 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let task = task.as_mut().unwrap();
             let input = helper.input();
 
-            if !task.mapped_virtual_memory.contains_interval(ie(
-                input.pointer(),
-                input.pointer().saturating_add(input.len()),
-            )) {
+            if !task
+                .mapped_virtual_memory
+                .overlapping(ie(
+                    input.pointer(),
+                    input.pointer().saturating_add(input.len()),
+                ))
+                .all(|(_interval, mem)| mem.write)
+            {
                 Err(())?;
             }
-            let events = unsafe { input.try_to_slice::<u64>() }.ok_or(())?;
-            for event in events {
-                if *event != KEYBOARD_EVENT_ID {
+            let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
+            let input_events = events.iter().copied().collect::<Box<_>>();
+            for event in events.deref() {
+                if ![KEYBOARD_EVENT_ID, MOUSE_EVENT_ID].contains(event) {
                     Err(())?;
                 }
+                if *event == KEYBOARD_EVENT_ID {
+                    if let Some(keyboard) = task.keyboard.as_mut() {
+                        if keyboard.pending_event {
+                            events
+                        }
+                    }
+                }
             }
-            let keyboard = task.keyboard.as_mut().unwrap();
+
             Ok::<_, ()>(if keyboard.pending_event {
                 keyboard.pending_event = false;
                 // TODO: When there are more possible events, make sure to write to the slice which events happened

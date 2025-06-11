@@ -9,8 +9,7 @@ use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
 use hlt_loop::hlt_loop;
 use limine_requests::{
-    BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
-    RSDP_REQUEST,
+    BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
 use memory::MEMORY;
 use x86_64::registers::control::Cr3;
@@ -31,6 +30,7 @@ pub mod limine_requests;
 pub mod local_apic;
 pub mod logger;
 pub mod memory;
+pub mod mouse;
 pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod pic8259_interrupts;
@@ -98,8 +98,11 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
 
     syscalls::init();
 
-    let module_response = MODULE_REQUEST.get_response().unwrap();
-    run_user_mode_program::run_user_mode_program(module_response);
+    mouse::init();
+    x86_64::instructions::interrupts::enable();
+    hlt_loop()
+    // let module_response = MODULE_REQUEST.get_response().unwrap();
+    // run_user_mode_program::run_user_mode_program(module_response);
 }
 
 unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {

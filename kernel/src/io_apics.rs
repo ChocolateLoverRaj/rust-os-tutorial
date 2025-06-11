@@ -12,17 +12,22 @@ use crate::{
 
 pub fn init(apic: &Apic<impl Allocator>) {
     if apic.also_has_legacy_pics {
-        let keyboard_global_system_interrupt = apic
-            .interrupt_source_overrides
-            .iter()
-            .find_map(|interrupt_source_override| {
-                if interrupt_source_override.isa_source == Pic8259Interrupts::Keyboard.into() {
-                    Some(interrupt_source_override.global_system_interrupt)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(u32::from(u8::from(Pic8259Interrupts::Keyboard)));
+        let find_global_system_interrupt = |isa_interrupt: u8| {
+            apic.interrupt_source_overrides
+                .iter()
+                .find_map(|interrupt_source_override| {
+                    if interrupt_source_override.isa_source == isa_interrupt {
+                        Some(interrupt_source_override.global_system_interrupt)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(u32::from(isa_interrupt))
+        };
+        let keyboard_global_system_interrupt =
+            find_global_system_interrupt(Pic8259Interrupts::Keyboard.into());
+        let mouse_global_system_interrupt =
+            find_global_system_interrupt(Pic8259Interrupts::Mouse.into());
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
         let mut virtual_memory = memory.virtual_memory.lock();
@@ -55,7 +60,21 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 };
                 unsafe { io_apic.set_table_entry(irq, entry) };
                 unsafe { io_apic.enable_irq(irq) };
-                log::info!("Found I/O APIC for keybaord");
+                log::info!("Found I/O APIC for keyboard");
+            }
+            if global_system_interrupts.contains(&mouse_global_system_interrupt) {
+                let irq = (mouse_global_system_interrupt
+                    - io_apic_info.global_system_interrupt_base)
+                    .try_into()
+                    .unwrap();
+                let entry = {
+                    let mut entry = RedirectionTableEntry::default();
+                    entry.set_vector(InterruptVector::Mouse.into());
+                    entry
+                };
+                unsafe { io_apic.set_table_entry(irq, entry) };
+                unsafe { io_apic.enable_irq(irq) };
+                log::info!("Found I/O APIC for mouse");
             }
         }
     }

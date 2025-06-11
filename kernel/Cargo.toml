@@ -15,7 +15,9 @@ console = { version = "0.15.11", git = "https://github.com/ChocolateLoverRaj/con
     "alloc",
     "ansi-parsing",
 ] }
-crossbeam-queue = { version = "0.3.12", default-features = false, features = ["alloc"] }
+crossbeam-queue = { version = "0.3.12", default-features = false, features = [
+    "alloc",
+] }
 elf = { version = "0.8.0", default-features = false }
 embedded-graphics = "0.8.1"
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
@@ -26,6 +28,8 @@ log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode", ve
 nodit = "0.9.2"
 num_enum = { version = "0.7.3", default-features = false }
 owo-colors = "4.2.1"
+ps2 = "0.2.0"
+ps2-mouse = { git = "https://github.com/ChocolateLoverRaj/ps2-mouse", branch = "minimal" }
 raw-cpuid = "11.5.0"
 spin = "0.10.0"
 talc = "4.4.2"
@@ -33,7 +37,7 @@ thiserror = { version = "2.0.12", default-features = false }
 uart = { git = "https://github.com/ChocolateLoverRaj/uart", branch = "send-sync" }
 uart_16550 = "0.3.2"
 unicode-segmentation = "1.12.0"
-x2apic = { path = "../../../x2apic-rs" }
+x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", branch = "main" }
 x86_64 = "0.15.2"
 
 [[bin]]

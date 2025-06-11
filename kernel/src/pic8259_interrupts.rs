@@ -7,4 +7,5 @@ pub enum Pic8259Interrupts {
     Timer,
     Keyboard,
     Rtc = 8,
+    Mouse = 12,
 }

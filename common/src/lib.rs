@@ -12,6 +12,7 @@ mod syscall_exit;
 mod syscall_frame_buffer;
 mod syscall_keyboard;
 mod syscall_log;
+mod syscall_mouse;
 mod syscall_wait_until_event;
 
 pub use frame_buffer_embedded_graphics::*;
@@ -24,4 +25,5 @@ pub use syscall_exit::*;
 pub use syscall_frame_buffer::*;
 pub use syscall_keyboard::*;
 pub use syscall_log::*;
+pub use syscall_mouse::*;
 pub use syscall_wait_until_event::*;

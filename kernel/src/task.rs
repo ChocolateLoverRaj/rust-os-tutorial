@@ -39,11 +39,18 @@ pub enum TaskState {
     Waiting(WaitingState),
 }
 
+pub struct TaskMouse {
+    pub queue: ArrayQueue<u8>,
+    /// Event happened, but syscall wait event was not called
+    pub pending_event: bool,
+}
+
 pub struct Task {
     pub cr3: PhysFrame,
     pub mapped_virtual_memory: NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>,
     pub keyboard: Option<TaskKeyboard>,
     pub state: TaskState,
+    pub mouse: Option<TaskMouse>,
 }
 
 pub static TASK: spin::Mutex<Option<Task>> = spin::Mutex::new(None);

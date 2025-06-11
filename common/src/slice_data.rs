@@ -1,7 +1,7 @@
 use core::slice;
 
 use bincode::{Decode, Encode};
-use zerocopy::{Immutable, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 pub use zerocopy;
 
@@ -33,6 +33,15 @@ impl SliceData {
             )
         };
         zerocopy::TryFromBytes::try_ref_from_bytes(slice).ok()
+    }
+
+    /// # Safety
+    /// See [`core::slice::from_raw_parts`]
+    pub unsafe fn try_to_slice_mut<'a, T: IntoBytes + TryFromBytes>(&self) -> Option<&'a mut [T]> {
+        let slice = unsafe {
+            slice::from_raw_parts_mut(self.pointer as *mut u8, self.len as usize * size_of::<T>())
+        };
+        zerocopy::TryFromBytes::try_mut_from_bytes(slice).ok()
     }
 
     /// Treats the slice as `&[T]`, but creates `&[u8]` to not assume valid alignment

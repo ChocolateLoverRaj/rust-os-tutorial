@@ -16,8 +16,8 @@ use common::{
 };
 use frame_buffer::FrameBuffer;
 use syscalls::{
-    syscall_exists, syscall_log, syscall_read_keyboard, syscall_subscribe_to_keyboard,
-    syscall_wait_until_event,
+    syscall_exists, syscall_log, syscall_read_keyboard, syscall_read_mouse,
+    syscall_subscribe_to_keyboard, syscall_subscribe_to_mouse, syscall_wait_until_event,
 };
 
 extern crate alloc;
@@ -46,6 +46,20 @@ unsafe extern "C" fn entry_point() -> ! {
             frame_buffer.deref_mut(),
         )
         .unwrap();
+
+    if let Ok(mouse_event) = syscall_subscribe_to_mouse() {
+        let mut buffer = [MaybeUninit::uninit(); 64];
+        loop {
+            let input = syscall_read_mouse(&mut buffer);
+            if !input.is_empty() {
+                syscall_log(
+                    log::Level::Debug,
+                    &format!("Received mouse input: {input:?}"),
+                );
+            }
+            syscall_wait_until_event(&mut [mouse_event]);
+        }
+    }
 
     let keyboard_event = syscall_subscribe_to_keyboard();
     let mut buffer = [MaybeUninit::uninit(); 64];

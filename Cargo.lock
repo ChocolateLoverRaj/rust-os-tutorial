@@ -238,6 +238,8 @@ dependencies = [
  "nodit",
  "num_enum",
  "owo-colors",
+ "ps2",
+ "ps2-mouse",
  "raw-cpuid 11.5.0",
  "spin",
  "talc",
@@ -246,7 +248,7 @@ dependencies = [
  "uart_16550",
  "unicode-segmentation",
  "x2apic",
- "x86_64",
+ "x86_64 0.15.2",
 ]
 
 [[package]]
@@ -347,6 +349,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "ps2"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfef03bb1362e6a23a211efe8c72e2eeb6888f51fb329cdfa07bb470986ea7d0"
+dependencies = [
+ "bitflags 1.3.2",
+ "x86_64 0.14.13",
+]
+
+[[package]]
+name = "ps2-mouse"
+version = "0.1.4"
+source = "git+https://github.com/ChocolateLoverRaj/ps2-mouse?branch=minimal#f6f5ca36105353e6fa820e7a6a45c23c3580b3e9"
+dependencies = [
+ "bitflags 2.9.1",
 ]
 
 [[package]]
@@ -502,7 +522,7 @@ dependencies = [
  "heapless",
  "spin",
  "talc",
- "x86_64",
+ "x86_64 0.15.2",
 ]
 
 [[package]]
@@ -593,12 +613,13 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "x2apic"
 version = "0.5.0"
+source = "git+https://github.com/ChocolateLoverRaj/x2apic-rs?branch=main#9ba55d3956514b7be3c47463e76e9a1229c03bb7"
 dependencies = [
  "bit",
  "bitflags 1.3.2",
  "paste",
  "raw-cpuid 10.7.0",
- "x86_64",
+ "x86_64 0.15.2",
 ]
 
 [[package]]
@@ -610,6 +631,18 @@ dependencies = [
  "bit_field",
  "bitflags 1.3.2",
  "raw-cpuid 10.7.0",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.14.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c101112411baafbb4bf8d33e4c4a80ab5b02d74d2612331c61e8192fc9710491"
+dependencies = [
+ "bit_field",
+ "bitflags 2.9.1",
+ "rustversion",
+ "volatile",
 ]
 
 [[package]]

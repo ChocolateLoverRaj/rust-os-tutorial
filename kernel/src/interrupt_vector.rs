@@ -7,4 +7,5 @@ pub enum InterruptVector {
     LocalApicTimer,
     LocalApicError,
     Keyboard,
+    Mouse,
 }

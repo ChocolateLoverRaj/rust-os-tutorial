@@ -229,6 +229,7 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                         mapped_virtual_memory,
                         keyboard: None,
                         state: TaskState::Running,
+                        mouse: None,
                     });
                     EnterUserModeInput {
                         rip: VirtAddr::new(entry_point.into()),
