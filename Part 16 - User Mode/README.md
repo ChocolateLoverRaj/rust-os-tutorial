@@ -166,7 +166,7 @@ We will use the `elf` crate to parse the ELF format:
 elf = { version = "0.8.0", default-features = false }
 ```
 
-TODO: actual loading part
+TODO: actual loading part, including the stack
 
 # Entering user mode
 ## Updating the GDT
