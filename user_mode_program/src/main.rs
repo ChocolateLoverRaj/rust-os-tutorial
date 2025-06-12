@@ -48,16 +48,21 @@ unsafe extern "C" fn entry_point() -> ! {
         .unwrap();
 
     if let Ok(mouse_event) = syscall_subscribe_to_mouse() {
+        let keyboard_event = syscall_subscribe_to_keyboard();
         let mut buffer = [MaybeUninit::uninit(); 64];
         loop {
-            let input = syscall_read_mouse(&mut buffer);
-            if !input.is_empty() {
+            let mouse_input = syscall_read_mouse(&mut buffer);
+            if !mouse_input.is_empty() {
+                syscall_log(log::Level::Debug, &format!("mouse input: {mouse_input:?}"));
+            }
+            let keyboard_input = syscall_read_keyboard(&mut buffer);
+            if !keyboard_input.is_empty() {
                 syscall_log(
                     log::Level::Debug,
-                    &format!("Received mouse input: {input:?}"),
+                    &format!("keyboard input: {keyboard_input:?}"),
                 );
             }
-            syscall_wait_until_event(&mut [mouse_event]);
+            syscall_wait_until_event(&mut [keyboard_event, mouse_event]);
         }
     }
 

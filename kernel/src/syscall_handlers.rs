@@ -3,8 +3,11 @@ use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit::SyscallExitHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
+pub use keyboard::KEYBOARD_EVENT_ID;
 use keyboard::{SyscallReadKeyboardHandler, SyscallSubscribeToKeyboardHandler};
 use log::SyscallLogHandler;
+pub use mouse::MOUSE_EVENT_ID;
+use mouse::{SyscallReadMouseHandler, SyscallSubscribeToMouseHandler};
 use syscall_alloc::SyscallAllocHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
 
@@ -86,6 +89,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallSubscribeToKeyboardHandler,
     &SyscallReadKeyboardHandler,
     &SyscallWaitUntilEventHandler,
+    &SyscallSubscribeToMouseHandler,
+    &SyscallReadMouseHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

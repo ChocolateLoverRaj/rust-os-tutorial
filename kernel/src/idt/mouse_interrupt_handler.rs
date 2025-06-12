@@ -6,16 +6,13 @@ use x86_64::{instructions::port::Port, structures::idt::InterruptStackFrame};
 use crate::{
     cpu_local_data::get_local,
     interrupted_context::InterruptedContext,
-    syscall_handlers::KEYBOARD_EVENT_ID,
+    syscall_handlers::MOUSE_EVENT_ID,
     syscall_saved_regs::SyscallSavedRegs,
     task::{TASK, TaskState},
 };
 
-/// <https://wiki.osdev.org/Interrupt_Service_Routines#x86-64>
-/// <https://en.wikipedia.org/wiki/X86_calling_conventions#System_V_AMD64_ABI>
-/// All we do is push the registers on the stack that we want to save and then call the Rust function
 #[unsafe(naked)]
-pub unsafe extern "sysv64" fn raw_keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+pub unsafe extern "sysv64" fn raw_mouse_interrupt_handler(_stack_frame: InterruptStackFrame) {
     naked_asm!(
         "
             push r15
@@ -36,47 +33,45 @@ pub unsafe extern "sysv64" fn raw_keyboard_interrupt_handler(_stack_frame: Inter
 
             mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
 
-            call {keyboard_interrupt_handler}
+            call {mouse_interrupt_handler}
             ",
-        keyboard_interrupt_handler = sym keyboard_interrupt_handler
+        mouse_interrupt_handler = sym mouse_interrupt_handler
     )
 }
 
-pub extern "sysv64" fn keyboard_interrupt_handler(
+pub unsafe extern "sysv64" fn mouse_interrupt_handler(
     interrupted_context: &mut InterruptedContext,
-) -> ! {
+) {
     struct RestoreSyscallData {
         saved_regs: SyscallSavedRegs,
         output: [u64; 7],
     }
     enum Action {
-        RestoreInterrupted(InterruptedContext),
+        RestoreInterrupted,
         RestoreSyscall(RestoreSyscallData),
     }
     let action = {
         let mut port = Port::<u8>::new(0x60);
         let data = unsafe { port.read() };
-        log::debug!("Keyboard interrupt received: {data}");
         let local = get_local();
-
         let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();
         unsafe { local_apic.end_of_interrupt() };
 
         let mut task = TASK.try_lock().unwrap();
         if let Some(task) = task.as_mut()
-            && let Some(keyboard) = task.keyboard.as_mut()
+            && let Some(mouse) = task.mouse.as_mut()
         {
-            keyboard.queue.force_push(data);
+            mouse.queue.force_push(data);
             match &task.state {
                 TaskState::Running => {
-                    keyboard.pending_event = true;
-                    Action::RestoreInterrupted(interrupted_context.clone())
+                    mouse.pending_event = true;
+                    Action::RestoreInterrupted
                 }
                 TaskState::Waiting(waiting_state) => {
                     let events =
                         unsafe { waiting_state.events_slice.try_to_slice_mut::<u64>() }.unwrap();
-                    if events.contains(&KEYBOARD_EVENT_ID) {
-                        events[0] = KEYBOARD_EVENT_ID;
+                    if events.contains(&MOUSE_EVENT_ID) {
+                        events[0] = MOUSE_EVENT_ID;
                         let action = Action::RestoreSyscall(RestoreSyscallData {
                             saved_regs: waiting_state.saved_regs.clone(),
                             output: SyscallWaitUntilEvent::encode_output(&1),
@@ -84,16 +79,16 @@ pub extern "sysv64" fn keyboard_interrupt_handler(
                         task.state = TaskState::Running;
                         action
                     } else {
-                        Action::RestoreInterrupted(interrupted_context.clone())
+                        Action::RestoreInterrupted
                     }
                 }
             }
         } else {
-            Action::RestoreInterrupted(interrupted_context.clone())
+            Action::RestoreInterrupted
         }
     };
     match action {
-        Action::RestoreInterrupted(full_context) => unsafe { full_context.restore() },
+        Action::RestoreInterrupted => unsafe { interrupted_context.restore() },
         Action::RestoreSyscall(RestoreSyscallData { saved_regs, output }) => unsafe {
             saved_regs.sysretq(output)
         },

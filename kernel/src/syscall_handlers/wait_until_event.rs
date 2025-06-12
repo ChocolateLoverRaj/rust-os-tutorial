@@ -1,5 +1,3 @@
-use core::ops::Deref;
-
 use alloc::boxed::Box;
 use common::SyscallWaitUntilEvent;
 use nodit::interval::ie;
@@ -38,26 +36,33 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             }
             let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
             let input_events = events.iter().copied().collect::<Box<_>>();
-            for event in events.deref() {
+            let mut events_pushed = 0;
+            for event in &input_events {
                 if ![KEYBOARD_EVENT_ID, MOUSE_EVENT_ID].contains(event) {
                     Err(())?;
                 }
-                if *event == KEYBOARD_EVENT_ID {
-                    if let Some(keyboard) = task.keyboard.as_mut() {
-                        if keyboard.pending_event {
-                            events
-                        }
-                    }
+                if *event == KEYBOARD_EVENT_ID
+                    && let Some(keyboard) = task.keyboard.as_mut()
+                    && keyboard.pending_event
+                {
+                    keyboard.pending_event = false;
+                    events[events_pushed] = *event;
+                    events_pushed += 1;
+                } else if *event == MOUSE_EVENT_ID
+                    && let Some(mouse) = task.mouse.as_mut()
+                    && mouse.pending_event
+                {
+                    mouse.pending_event = false;
+                    events[events_pushed] = *event;
+                    events_pushed += 1;
                 }
             }
 
-            Ok::<_, ()>(if keyboard.pending_event {
-                keyboard.pending_event = false;
-                // TODO: When there are more possible events, make sure to write to the slice which events happened
-                Action::Return(1)
+            Ok::<_, ()>(if events_pushed > 0 {
+                Action::Return(events_pushed as u64)
             } else {
                 task.state = TaskState::Waiting(WaitingState {
-                    events: events.iter().copied().collect(),
+                    events: input_events,
                     saved_regs: helper.saved_regs().clone(),
                     events_slice: *input,
                 });
