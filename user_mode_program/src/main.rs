@@ -2,9 +2,11 @@
 #![no_main]
 #![feature(maybe_uninit_slice)]
 
-use core::{mem::MaybeUninit, ops::DerefMut};
+use core::ops::DerefMut;
 
-use alloc::{format, string::ToString};
+use alloc::string::ToString;
+use async_keyboard::AsyncKeyboard;
+use async_mouse::AsyncMouse;
 use common::{
     Syscall, SyscallExit,
     embedded_graphics::{
@@ -14,21 +16,27 @@ use common::{
     },
     log,
 };
+use execute_future::execute_future;
+use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
-use syscalls::{
-    syscall_exists, syscall_log, syscall_read_keyboard, syscall_read_mouse,
-    syscall_subscribe_to_keyboard, syscall_subscribe_to_mouse, syscall_wait_until_event,
-};
+use futures::{StreamExt, future::join};
+use syscalls::{syscall_exists, syscall_exit, syscall_log};
 
 extern crate alloc;
 
+pub mod async_keyboard;
+pub mod async_mouse;
+pub mod execute_future;
+pub mod executor_context;
 pub mod frame_buffer;
 pub mod global_allocator;
+pub mod logger;
 pub mod panic_handler;
 pub mod syscalls;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point() -> ! {
+    logger::init();
     let should_be_true = syscall_exists(SyscallExit::ID);
     let should_be_false = syscall_exists(0);
     assert!(should_be_true);
@@ -47,32 +55,20 @@ unsafe extern "C" fn entry_point() -> ! {
         )
         .unwrap();
 
-    if let Ok(mouse_event) = syscall_subscribe_to_mouse() {
-        let keyboard_event = syscall_subscribe_to_keyboard();
-        let mut buffer = [MaybeUninit::uninit(); 64];
-        loop {
-            let mouse_input = syscall_read_mouse(&mut buffer);
-            if !mouse_input.is_empty() {
-                syscall_log(log::Level::Debug, &format!("mouse input: {mouse_input:?}"));
-            }
-            let keyboard_input = syscall_read_keyboard(&mut buffer);
-            if !keyboard_input.is_empty() {
-                syscall_log(
-                    log::Level::Debug,
-                    &format!("keyboard input: {keyboard_input:?}"),
-                );
-            }
-            syscall_wait_until_event(&mut [keyboard_event, mouse_event]);
-        }
-    }
-
-    let keyboard_event = syscall_subscribe_to_keyboard();
-    let mut buffer = [MaybeUninit::uninit(); 64];
-    loop {
-        let input = syscall_read_keyboard(&mut buffer);
-        if !input.is_empty() {
-            syscall_log(log::Level::Debug, &format!("Received input: {input:?}"));
-        }
-        syscall_wait_until_event(&mut [keyboard_event]);
-    }
+    let executor_context = ExecutorContext::default();
+    execute_future(
+        &executor_context,
+        join(
+            AsyncKeyboard::new(&executor_context)
+                .for_each(async |data| log::info!("Received key: {data}")),
+            async {
+                if let Ok(async_mouse) = AsyncMouse::new(&executor_context) {
+                    async_mouse
+                        .for_each(async |data| log::info!("Mouse input: {data}"))
+                        .await;
+                }
+            },
+        ),
+    );
+    syscall_exit();
 }
