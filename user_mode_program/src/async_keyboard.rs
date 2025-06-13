@@ -4,19 +4,19 @@ use futures::Stream;
 
 use crate::{
     executor_context::ExecutorContext,
-    syscalls::{syscall_read_keyboard, syscall_subscribe_to_keyboard},
+    syscalls::{syscall_read_event_stream, syscall_subscribe_to_keyboard},
 };
 
 pub struct AsyncKeyboard<'a> {
     executor_context: &'a ExecutorContext,
-    event_id: u64,
+    event_stream_id: u64,
 }
 
 impl<'a> AsyncKeyboard<'a> {
     pub fn new(executor_context: &'a ExecutorContext) -> Self {
         Self {
             executor_context,
-            event_id: syscall_subscribe_to_keyboard(),
+            event_stream_id: syscall_subscribe_to_keyboard(),
         }
     }
 }
@@ -29,9 +29,9 @@ impl Stream for AsyncKeyboard<'_> {
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Option<Self::Item>> {
         self.executor_context
-            .register_waker(self.event_id, cx.waker());
+            .register_waker(self.event_stream_id, cx.waker());
         let mut buffer = [MaybeUninit::uninit(); 1];
-        let item = syscall_read_keyboard(&mut buffer);
+        let item = syscall_read_event_stream(self.event_stream_id, &mut buffer);
         if let Some(item) = item.first() {
             Poll::Ready(Some(*item))
         } else {

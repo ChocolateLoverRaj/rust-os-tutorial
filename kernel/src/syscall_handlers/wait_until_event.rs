@@ -5,7 +5,6 @@ use x86_64::instructions::interrupts;
 
 use crate::{
     hlt_loop::hlt_loop,
-    syscall_handlers::{keyboard::KEYBOARD_EVENT_ID, mouse::MOUSE_EVENT_ID},
     task::{TASK, TaskState, WaitingState},
 };
 
@@ -38,21 +37,9 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let input_events = events.iter().copied().collect::<Box<_>>();
             let mut events_pushed = 0;
             for event in &input_events {
-                if ![KEYBOARD_EVENT_ID, MOUSE_EVENT_ID].contains(event) {
-                    Err(())?;
-                }
-                if *event == KEYBOARD_EVENT_ID
-                    && let Some(keyboard) = task.keyboard.as_mut()
-                    && keyboard.pending_event
-                {
-                    keyboard.pending_event = false;
-                    events[events_pushed] = *event;
-                    events_pushed += 1;
-                } else if *event == MOUSE_EVENT_ID
-                    && let Some(mouse) = task.mouse.as_mut()
-                    && mouse.pending_event
-                {
-                    mouse.pending_event = false;
+                let event_stream = task.event_streams.get_mut(event).ok_or(())?;
+                if event_stream.pending_event {
+                    event_stream.pending_event = false;
                     events[events_pushed] = *event;
                     events_pushed += 1;
                 }

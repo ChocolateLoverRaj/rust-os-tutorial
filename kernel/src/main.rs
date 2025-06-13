@@ -25,6 +25,7 @@ pub mod get_page_table;
 pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod idt;
+pub mod init_ps2_mouse;
 pub mod interrupt_vector;
 pub mod interrupted_context;
 pub mod io_apics;
@@ -36,6 +37,7 @@ pub mod mouse;
 pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod pic8259_interrupts;
+pub mod ps2_interrupt_handler;
 pub mod run_user_mode_program;
 pub mod spcr;
 pub mod syscall_handlers;
@@ -90,6 +92,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     unsafe {
         init_cpu(mp_response.bsp_lapic_id());
     }
+    init_ps2_mouse::init();
     for cpu in mp_response.cpus() {
         cpu.goto_address.write(entry_point_from_limine_mp);
     }

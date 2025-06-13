@@ -1,4 +1,6 @@
-use alloc::boxed::Box;
+use core::sync::atomic::AtomicU64;
+
+use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use common::SliceData;
 use crossbeam_queue::ArrayQueue;
 use nodit::{Interval, NoditMap};
@@ -22,12 +24,6 @@ impl From<ElfSegmentFlags> for VirtualMemoryPermissions {
     }
 }
 
-pub struct TaskKeyboard {
-    pub queue: ArrayQueue<u8>,
-    /// Event happened, but syscall wait event was not called
-    pub pending_event: bool,
-}
-
 pub struct WaitingState {
     pub events: Box<[u64]>,
     pub saved_regs: SyscallSavedRegs,
@@ -39,18 +35,26 @@ pub enum TaskState {
     Waiting(WaitingState),
 }
 
-pub struct TaskMouse {
+#[derive(Debug, PartialEq, Eq)]
+pub enum EventStreamSource {
+    Ps2Keyboard,
+    Ps2Mouse,
+}
+
+pub struct EventStream {
+    pub source: EventStreamSource,
     pub queue: ArrayQueue<u8>,
     /// Event happened, but syscall wait event was not called
     pub pending_event: bool,
 }
 
+pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
+
 pub struct Task {
     pub cr3: PhysFrame,
     pub mapped_virtual_memory: NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>,
-    pub keyboard: Option<TaskKeyboard>,
     pub state: TaskState,
-    pub mouse: Option<TaskMouse>,
+    pub event_streams: BTreeMap<u64, EventStream>,
 }
 
 pub static TASK: spin::Mutex<Option<Task>> = spin::Mutex::new(None);

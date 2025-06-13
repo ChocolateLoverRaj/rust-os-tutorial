@@ -2,9 +2,10 @@ use core::{alloc::Layout, arch::asm, mem::MaybeUninit};
 
 use common::{
     Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExit, SyscallLog,
-    SyscallLogInput, SyscallReadKeyboard, SyscallReadMouse, SyscallReleaseFrameBuffer,
-    SyscallSubscribeToKeyboard, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
-    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput, SyscallWaitUntilEvent, log,
+    SyscallLogInput, SyscallReadEventStream, SyscallReadEventStreamInput,
+    SyscallReleaseFrameBuffer, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
+    SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
+    SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -76,14 +77,6 @@ pub fn syscall_subscribe_to_keyboard() -> u64 {
     unsafe { syscall::<SyscallSubscribeToKeyboard>(&()) }
 }
 
-pub fn syscall_read_keyboard(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    let input = buffer.into();
-    // Safety: The input is valid
-    let count = unsafe { syscall::<SyscallReadKeyboard>(&input) };
-    // Safety: the kernel initialized them
-    unsafe { buffer[..count as usize].assume_init_mut() }
-}
-
 pub fn syscall_wait_until_event(events: &mut [u64]) -> &mut [u64] {
     let input = events.into();
     // Safety: The input is valid
@@ -96,10 +89,13 @@ pub fn syscall_subscribe_to_mouse() -> Result<u64, common::SyscallSubscribeToMou
     unsafe { syscall::<SyscallSubscribeToMouse>(&()) }
 }
 
-pub fn syscall_read_mouse(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    let input = buffer.into();
+pub fn syscall_read_event_stream(stream_id: u64, buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
+    let input = SyscallReadEventStreamInput {
+        stream_id,
+        buffer: buffer.into(),
+    };
     // Safety: The input is valid
-    let count = unsafe { syscall::<SyscallReadMouse>(&input) };
+    let count = unsafe { syscall::<SyscallReadEventStream>(&input) };
     // Safety: the kernel initialized them
     unsafe { buffer[..count as usize].assume_init_mut() }
 }

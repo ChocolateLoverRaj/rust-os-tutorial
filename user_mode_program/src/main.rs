@@ -4,11 +4,9 @@
 
 use core::ops::DerefMut;
 
-use alloc::string::ToString;
 use async_keyboard::AsyncKeyboard;
 use async_mouse::AsyncMouse;
 use common::{
-    Syscall, SyscallExit,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, WebColors},
@@ -20,7 +18,7 @@ use execute_future::execute_future;
 use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
 use futures::{StreamExt, future::join};
-use syscalls::{syscall_exists, syscall_exit, syscall_log};
+use syscalls::syscall_exit;
 
 extern crate alloc;
 
@@ -37,13 +35,6 @@ pub mod syscalls;
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point() -> ! {
     logger::init();
-    let should_be_true = syscall_exists(SyscallExit::ID);
-    let should_be_false = syscall_exists(0);
-    assert!(should_be_true);
-    assert!(!should_be_false);
-    syscall_log(log::Level::Info, "Hello from user mode program 🚀");
-    let dynamic_message = "Allocator works".to_string();
-    syscall_log(log::Level::Info, &dynamic_message);
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     frame_buffer
         .bounding_box()
@@ -60,11 +51,11 @@ unsafe extern "C" fn entry_point() -> ! {
         &executor_context,
         join(
             AsyncKeyboard::new(&executor_context)
-                .for_each(async |data| log::info!("Received key: {data}")),
+                .for_each(async |data| log::debug!("Received key: {data}")),
             async {
                 if let Ok(async_mouse) = AsyncMouse::new(&executor_context) {
                     async_mouse
-                        .for_each(async |data| log::info!("Mouse input: {data}"))
+                        .for_each(async |data| log::debug!("Mouse input: {data}"))
                         .await;
                 }
             },

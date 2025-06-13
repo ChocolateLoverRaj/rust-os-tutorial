@@ -5,12 +5,12 @@ use futures::Stream;
 
 use crate::{
     executor_context::ExecutorContext,
-    syscalls::{syscall_read_mouse, syscall_subscribe_to_mouse},
+    syscalls::{syscall_read_event_stream, syscall_subscribe_to_mouse},
 };
 
 pub struct AsyncMouse<'a> {
     executor_context: &'a ExecutorContext,
-    event_id: u64,
+    event_stream_id: u64,
 }
 
 impl<'a> AsyncMouse<'a> {
@@ -19,7 +19,7 @@ impl<'a> AsyncMouse<'a> {
     ) -> Result<Self, SyscallSubscribeToMouseError> {
         Ok(Self {
             executor_context,
-            event_id: syscall_subscribe_to_mouse()?,
+            event_stream_id: syscall_subscribe_to_mouse()?,
         })
     }
 }
@@ -32,9 +32,9 @@ impl Stream for AsyncMouse<'_> {
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Option<Self::Item>> {
         self.executor_context
-            .register_waker(self.event_id, cx.waker());
+            .register_waker(self.event_stream_id, cx.waker());
         let mut buffer = [MaybeUninit::uninit(); 1];
-        let item = syscall_read_mouse(&mut buffer);
+        let item = syscall_read_event_stream(self.event_stream_id, &mut buffer);
         if let Some(item) = item.first() {
             Poll::Ready(Some(*item))
         } else {

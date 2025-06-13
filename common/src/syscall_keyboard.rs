@@ -1,16 +1,9 @@
-use crate::{SliceData, Syscall};
+use crate::Syscall;
 
-/// Returns the event id
+/// Returns the event stream id, which is also an event id
 pub struct SyscallSubscribeToKeyboard;
 impl Syscall for SyscallSubscribeToKeyboard {
-    const ID: u64 = 0xC42902F7144895C9;
+    const ID: u64 = 0x2E86EF26DE7F979F;
     type Input = ();
-    type Output = u64;
-}
-
-pub struct SyscallReadKeyboard;
-impl Syscall for SyscallReadKeyboard {
-    const ID: u64 = 0x7170D08BCE495082;
-    type Input = SliceData;
     type Output = u64;
 }

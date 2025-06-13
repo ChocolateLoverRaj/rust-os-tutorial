@@ -227,9 +227,8 @@ pub fn run_user_mode_program(module_response: &ModuleResponse) -> ! {
                     *TASK.lock() = Some(Task {
                         cr3: user_l4_frame,
                         mapped_virtual_memory,
-                        keyboard: None,
                         state: TaskState::Running,
-                        mouse: None,
+                        event_streams: Default::default(),
                     });
                     EnterUserModeInput {
                         rip: VirtAddr::new(entry_point.into()),
