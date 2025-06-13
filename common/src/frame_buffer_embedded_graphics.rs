@@ -78,6 +78,7 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
     }
 
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+        let area = area.intersection(&self.bounding_box());
         let pixel = self.get_pixel(color);
         let bytes_per_pixel = (self.info.bits_per_pixel / 8) as usize;
         let pitch = self.info.pitch as usize;

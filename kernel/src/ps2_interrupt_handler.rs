@@ -37,7 +37,7 @@ pub unsafe fn ps2_interrupt_handler(
                 TaskState::Running => {
                     for event_stream in task.event_streams.values_mut() {
                         if event_stream.source == ps2_source {
-                            event_stream.queue.push(data);
+                            event_stream.queue.force_push(data);
                             event_stream.pending_event = true;
                         }
                     }
@@ -50,7 +50,7 @@ pub unsafe fn ps2_interrupt_handler(
                     let mut count = 0;
                     for (id, event_stream) in &mut task.event_streams {
                         if event_stream.source == ps2_source {
-                            event_stream.queue.push(data);
+                            event_stream.queue.force_push(data);
                             event_stream.pending_event = true;
                             if input_events.contains(id) {
                                 events[count] = *id;

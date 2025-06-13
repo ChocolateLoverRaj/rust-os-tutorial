@@ -29,7 +29,6 @@ nodit = "0.9.2"
 num_enum = { version = "0.7.3", default-features = false }
 owo-colors = "4.2.1"
 ps2 = "0.2.0"
-ps2-mouse = { git = "https://github.com/ChocolateLoverRaj/ps2-mouse", branch = "minimal" }
 raw-cpuid = "11.5.0"
 spin = "0.10.0"
 talc = "4.4.2"

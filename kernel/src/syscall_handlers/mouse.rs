@@ -10,14 +10,6 @@ use crate::{
 
 use super::GenericSyscallHandler;
 
-fn try_init() -> Result<(), ()> {
-    let mut ps2 = unsafe { ps2::Controller::new() };
-    ps2.enable_mouse().map_err(|_| ())?;
-    ps2.mouse().set_defaults().map_err(|_| ())?;
-    ps2.mouse().enable_data_reporting().map_err(|_| ())?;
-    Ok(())
-}
-
 pub struct SyscallSubscribeToMouseHandler;
 impl GenericSyscallHandler for SyscallSubscribeToMouseHandler {
     type S = SyscallSubscribeToMouse;

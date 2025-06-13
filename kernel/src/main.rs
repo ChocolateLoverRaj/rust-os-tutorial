@@ -33,7 +33,6 @@ pub mod limine_requests;
 pub mod local_apic;
 pub mod logger;
 pub mod memory;
-pub mod mouse;
 pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod pic8259_interrupts;

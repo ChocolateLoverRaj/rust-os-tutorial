@@ -1,29 +1,28 @@
 #![no_std]
 #![no_main]
 #![feature(maybe_uninit_slice)]
-
 use core::ops::DerefMut;
 
-use async_keyboard::AsyncKeyboard;
-use async_mouse::AsyncMouse;
-use common::{
-    embedded_graphics::{
-        pixelcolor::Rgb888,
-        prelude::{Dimensions, WebColors},
-        primitives::{PrimitiveStyleBuilder, StyledDrawable},
-    },
-    log,
+use async_keyboard_decoded::AsyncKeyboardDecoded;
+use async_mouse_decoded::AsyncMouseDecoded;
+use common::embedded_graphics::{
+    pixelcolor::Rgb888,
+    prelude::{Dimensions, Point, Size, WebColors},
+    primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable},
 };
 use execute_future::execute_future;
 use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
-use futures::{StreamExt, future::join};
+use futures::{StreamExt, stream::select};
+use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use syscalls::syscall_exit;
 
 extern crate alloc;
 
 pub mod async_keyboard;
+pub mod async_keyboard_decoded;
 pub mod async_mouse;
+pub mod async_mouse_decoded;
 pub mod execute_future;
 pub mod executor_context;
 pub mod frame_buffer;
@@ -36,30 +35,89 @@ pub mod syscalls;
 unsafe extern "C" fn entry_point() -> ! {
     logger::init();
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
-    frame_buffer
-        .bounding_box()
-        .draw_styled(
-            &PrimitiveStyleBuilder::new()
-                .fill_color(Rgb888::CSS_MEDIUM_SEA_GREEN)
-                .build(),
-            frame_buffer.deref_mut(),
-        )
-        .unwrap();
 
     let executor_context = ExecutorContext::default();
-    execute_future(
-        &executor_context,
-        join(
-            AsyncKeyboard::new(&executor_context)
-                .for_each(async |data| log::debug!("Received key: {data}")),
-            async {
-                if let Ok(async_mouse) = AsyncMouse::new(&executor_context) {
-                    async_mouse
-                        .for_each(async |data| log::debug!("Mouse input: {data}"))
-                        .await;
+    execute_future(&executor_context, async {
+        let keyboard = AsyncKeyboardDecoded::new(
+            &executor_context,
+            ScancodeSet1::default(),
+            Us104Key,
+            HandleControl::Ignore,
+        )
+        .map(Result::unwrap)
+        .filter_map(async |key| {
+            if let KeyState::Down | KeyState::SingleShot = key.state {
+                let movement_amount = 5;
+                match key.code {
+                    KeyCode::ArrowUp => Some(Point::new(0, -movement_amount)),
+                    KeyCode::ArrowDown => Some(Point::new(0, movement_amount)),
+                    KeyCode::ArrowLeft => Some(Point::new(-movement_amount, 0)),
+                    KeyCode::ArrowRight => Some(Point::new(movement_amount, 0)),
+                    _ => None,
                 }
-            },
-        ),
-    );
+            } else {
+                None
+            }
+        });
+        let mouse = AsyncMouseDecoded::new(&executor_context)
+            .map(|stream| {
+                stream.map(|packet| {
+                    Point::new(
+                        match packet.x_movement() {
+                            ps2_mouse::MovementAmount::Overflow(_) => 0,
+                            ps2_mouse::MovementAmount::NoOverflow(change) => change as i32,
+                        },
+                        match packet.y_movement() {
+                            ps2_mouse::MovementAmount::Overflow(_) => 0,
+                            ps2_mouse::MovementAmount::NoOverflow(change) => -change as i32,
+                        },
+                    )
+                })
+            })
+            .ok();
+        let mut movement = if let Some(mouse) = mouse {
+            select(keyboard, mouse).boxed_local()
+        } else {
+            keyboard.boxed_local()
+        };
+        let mut cursor_position = Point::zero();
+        frame_buffer
+            .bounding_box()
+            .draw_styled(
+                &PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb888::CSS_LIGHT_GRAY)
+                    .build(),
+                frame_buffer.deref_mut(),
+            )
+            .unwrap();
+        let screen_size = frame_buffer.bounding_box().size;
+        while let Some(movement) = movement.next().await {
+            let new_cursor_position = Point::new(
+                (cursor_position.x + movement.x)
+                    .max(0)
+                    .min(screen_size.width as i32),
+                (cursor_position.y + movement.y)
+                    .max(0)
+                    .min(screen_size.height as i32),
+            );
+            Rectangle::new(cursor_position, Size::new(20, 20))
+                .draw_styled(
+                    &PrimitiveStyleBuilder::new()
+                        .fill_color(Rgb888::CSS_LIGHT_GRAY)
+                        .build(),
+                    frame_buffer.deref_mut(),
+                )
+                .unwrap();
+            Rectangle::new(new_cursor_position, Size::new(20, 20))
+                .draw_styled(
+                    &PrimitiveStyleBuilder::new()
+                        .fill_color(Rgb888::CSS_DARK_GRAY)
+                        .build(),
+                    frame_buffer.deref_mut(),
+                )
+                .unwrap();
+            cursor_position = new_cursor_position;
+        }
+    });
     syscall_exit();
 }
