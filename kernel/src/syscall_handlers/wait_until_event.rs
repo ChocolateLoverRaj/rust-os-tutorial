@@ -4,8 +4,9 @@ use nodit::interval::ie;
 use x86_64::instructions::interrupts;
 
 use crate::{
+    cpu_local_data::get_local,
     hlt_loop::hlt_loop,
-    task::{TASK, TaskState, WaitingState},
+    task::{EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
 };
 
 use super::GenericSyscallHandler;
@@ -19,12 +20,15 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             Wait,
         }
         let get_action = || {
-            let mut task = TASK.try_lock().unwrap();
-            let task = task.as_mut().unwrap();
             let input = helper.input();
-
-            if !task
+            let threads = THREADS.read();
+            let local = get_local();
+            let mut running_thread = local.running_thread.lock();
+            let current_thread = threads.get(&running_thread.unwrap()).unwrap();
+            if !current_thread
+                .process
                 .mapped_virtual_memory
+                .read()
                 .overlapping(ie(
                     input.pointer(),
                     input.pointer().saturating_add(input.len()),
@@ -36,10 +40,13 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
             let input_events = events.iter().copied().collect::<Box<_>>();
             let mut events_pushed = 0;
+            let event_streams = EVENT_STREAMS.read();
             for event in &input_events {
-                let event_stream = task.event_streams.get_mut(event).ok_or(())?;
-                if event_stream.pending_event {
-                    event_stream.pending_event = false;
+                let event_stream = event_streams.get(event).ok_or(())?;
+                if event_stream.process != current_thread.process.id {
+                    Err(())?;
+                }
+                if !event_stream.queue.is_empty() {
                     events[events_pushed] = *event;
                     events_pushed += 1;
                 }
@@ -48,11 +55,15 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             Ok::<_, ()>(if events_pushed > 0 {
                 Action::Return(events_pushed as u64)
             } else {
-                task.state = TaskState::Waiting(WaitingState {
-                    events: input_events,
+                *current_thread.state.write() = ThreadState::WaitingForEvents(ThreadWaitingState {
                     saved_regs: helper.saved_regs().clone(),
                     events_slice: *input,
+                    events: input_events
+                        .into_iter()
+                        .map(|event| (event, false))
+                        .collect(),
                 });
+                *running_thread = None;
                 Action::Wait
             })
         };
@@ -60,7 +71,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             Err(()) => todo!("terminate"),
             Ok(Action::Return(value)) => helper.syscall_return(&value),
             Ok(Action::Wait) => {
-                log::debug!("Waiting for events");
+                // log::debug!("Waiting for events");
                 interrupts::enable();
                 hlt_loop()
             }

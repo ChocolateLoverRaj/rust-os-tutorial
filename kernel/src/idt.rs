@@ -1,8 +1,10 @@
 use core::sync::atomic::Ordering;
 
+use check_tasks_ipi_handler::raw_check_tasks_ipi_handler;
 use keyboard_interrupt_handler::raw_keyboard_interrupt_handler;
 use mouse_interrupt_handler::raw_mouse_interrupt_handler;
 use page_fault_handler::page_fault_handler;
+use preempt_ipi_handler::preempt_ipi_handler;
 use x86_64::{
     PrivilegeLevel, VirtAddr,
     instructions::interrupts,
@@ -17,9 +19,11 @@ use crate::{
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
 };
 
+mod check_tasks_ipi_handler;
 mod keyboard_interrupt_handler;
 mod mouse_interrupt_handler;
 mod page_fault_handler;
+mod preempt_ipi_handler;
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     log::info!("Breakpoint! Stack frame: {stack_frame:#?}");
@@ -82,6 +86,11 @@ pub fn init() {
             idt[u8::from(InterruptVector::Mouse)]
                 .set_handler_addr(VirtAddr::from_ptr(raw_mouse_interrupt_handler as *const ()))
         };
+        idt[u8::from(InterruptVector::Preempt)].set_handler_fn(preempt_ipi_handler);
+        unsafe {
+            idt[u8::from(InterruptVector::CheckTasks)]
+                .set_handler_addr(VirtAddr::from_ptr(raw_check_tasks_ipi_handler as *const ()));
+        }
         idt
     });
     idt.load();

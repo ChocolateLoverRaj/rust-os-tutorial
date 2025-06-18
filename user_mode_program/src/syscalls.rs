@@ -1,7 +1,7 @@
 use core::{alloc::Layout, arch::asm, mem::MaybeUninit};
 
 use common::{
-    Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExit, SyscallLog,
+    Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExitProcess, SyscallLog,
     SyscallLogInput, SyscallReadEventStream, SyscallReadEventStreamInput,
     SyscallReleaseFrameBuffer, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
     SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
@@ -40,7 +40,7 @@ pub fn syscall_exists(syscall_id: u64) -> bool {
 
 pub fn syscall_exit() -> ! {
     // Safety: input is valid
-    unsafe { syscall::<SyscallExit>(&()) };
+    unsafe { syscall::<SyscallExitProcess>(&()) };
     unreachable!()
 }
 

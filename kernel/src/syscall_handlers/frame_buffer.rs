@@ -11,8 +11,13 @@ use x86_64::{
 };
 
 use crate::{
-    get_page_table::get_page_table, hhdm_offset::HhdmOffset, limine_requests::FRAME_BUFFER_REQUEST,
-    logger, memory::MEMORY, task::TASK,
+    cpu_local_data::get_local,
+    get_page_table::get_page_table,
+    hhdm_offset::HhdmOffset,
+    limine_requests::FRAME_BUFFER_REQUEST,
+    logger,
+    memory::MEMORY,
+    task::{THREADS, VirtualMemoryPermissions},
 };
 
 use super::GenericSyscallHandler;
@@ -35,10 +40,14 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 Err(SyscallTakeFrameBufferError::WouldNotBeSecure)?;
             }
             logger::take_frame_buffer().ok_or(SyscallTakeFrameBufferError::InUse)?;
-            let mut task = TASK.lock();
-            let task = task.as_mut().unwrap();
-            let range = task
-                .mapped_virtual_memory
+            let threads = THREADS.read();
+            let local = get_local();
+            let current_process = &threads
+                .get(&local.running_thread.lock().unwrap())
+                .unwrap()
+                .process;
+            let mut mapped_virtual_memory = current_process.mapped_virtual_memory.write();
+            let range = mapped_virtual_memory
                 .gaps_trimmed(ue(0xffff800000000000))
                 .find_map(|range| {
                     let aligned_start = range.start().next_multiple_of(Size4KiB::SIZE);
@@ -50,6 +59,15 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     }
                 })
                 .ok_or(SyscallTakeFrameBufferError::OutOfVirtualMemory)?;
+            mapped_virtual_memory
+                .insert_merge_touching_if_values_equal(
+                    range.clone().into(),
+                    VirtualMemoryPermissions {
+                        write: true,
+                        execute: false,
+                    },
+                )
+                .unwrap();
             let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
                 frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
             ))
@@ -64,7 +82,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     .write_bytes(0, frame_buffer_len as usize)
             };
             // Safety: the page table is valid
-            let mut mapper = unsafe { get_page_table(task.cr3, false) };
+            let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
             let mut physical_memory = MEMORY.get().unwrap().physical_memory.lock();
             for i in 0..n_pages {
                 let frame = first_frame + i;

@@ -4,7 +4,7 @@ use common::{Syscall, SyscallLog, SyscallLogError};
 use console::strip_ansi_codes;
 use nodit::Interval;
 
-use crate::{logger::log_for_user_mode, task::TASK};
+use crate::{cpu_local_data::get_local, logger::log_for_user_mode, task::THREADS};
 
 use super::GenericSyscallHandler;
 
@@ -19,13 +19,18 @@ impl GenericSyscallHandler for SyscallLogHandler {
         let action = {
             let actual_input = input.input();
             if actual_input.message.len() > 0 {
-                let task = TASK.lock();
-                let task = task.as_ref().unwrap();
+                let threads = THREADS.read();
+                let local = get_local();
+                let current_process = &threads
+                    .get(&local.running_thread.lock().unwrap())
+                    .unwrap()
+                    .process;
                 let start = actual_input.message.pointer();
                 let len = actual_input.message.len();
                 let end_inclusive = start + (len - 1);
-                if task
+                if current_process
                     .mapped_virtual_memory
+                    .read()
                     .contains_interval(Interval::from(start..=end_inclusive))
                 {
                     // Safety: the message is mapped in the lower half

@@ -1,12 +1,18 @@
-use core::sync::atomic::AtomicU64;
+use core::{
+    mem::MaybeUninit,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
-use alloc::{boxed::Box, collections::btree_map::BTreeMap};
-use common::SliceData;
+use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
+use common::{SliceData, Syscall, SyscallWaitUntilEvent};
 use crossbeam_queue::ArrayQueue;
 use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
-use crate::{elf_segment_flags::ElfSegmentFlags, syscall_saved_regs::SyscallSavedRegs};
+use crate::{
+    elf_segment_flags::ElfSegmentFlags, interrupted_context::InterruptedContext,
+    local_apic_id::LocalApicId, syscall_saved_regs::SyscallSavedRegs,
+};
 
 /// Read is always given, because it doesn't make sense not to have read
 #[derive(Debug, PartialEq, Eq)]
@@ -24,15 +30,30 @@ impl From<ElfSegmentFlags> for VirtualMemoryPermissions {
     }
 }
 
-pub struct WaitingState {
-    pub events: Box<[u64]>,
+#[derive(Debug, Clone)]
+pub struct ThreadWaitingState {
     pub saved_regs: SyscallSavedRegs,
     pub events_slice: SliceData,
+    pub events: BTreeMap<u64, bool>,
 }
 
-pub enum TaskState {
-    Running,
-    Waiting(WaitingState),
+impl ThreadWaitingState {
+    /// # Safety
+    /// Enters user mode according to saved registers
+    pub unsafe fn sysretq(self) -> ! {
+        let events = unsafe { self.events_slice.to_slice_mut::<MaybeUninit<u64>>() };
+        let mut events_count = 0;
+        for event in self.events.into_iter().filter_map(
+            |(event, happened)| {
+                if happened { Some(event) } else { None }
+            },
+        ) {
+            events[events_count].write(event);
+            events_count += 1;
+        }
+        let output = SyscallWaitUntilEvent::encode_output(&(events_count as u64));
+        unsafe { self.saved_regs.sysretq(output) }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,20 +62,91 @@ pub enum EventStreamSource {
     Ps2Mouse,
 }
 
+#[derive(Debug)]
 pub struct EventStream {
+    pub process: ProcessId,
     pub source: EventStreamSource,
     pub queue: ArrayQueue<u8>,
-    /// Event happened, but syscall wait event was not called
-    pub pending_event: bool,
+    // /// Event happened, but syscall wait event was not called
+    // pub pending_event: AtomicBool,
 }
 
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
 
-pub struct Task {
+#[derive(Debug)]
+pub struct Process {
+    pub id: ProcessId,
     pub cr3: PhysFrame,
-    pub mapped_virtual_memory: NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>,
-    pub state: TaskState,
-    pub event_streams: BTreeMap<u64, EventStream>,
+    pub mapped_virtual_memory: spin::RwLock<NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>>,
 }
 
-pub static TASK: spin::Mutex<Option<Task>> = spin::Mutex::new(None);
+#[derive(Debug, Clone)]
+pub struct StartData {
+    pub rip: u64,
+    pub rsp: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum ThreadReadyState {
+    ReadyToStart(StartData),
+    Interrupted(InterruptedContext),
+}
+
+#[derive(Debug)]
+pub enum ThreadState {
+    Ready(ThreadReadyState),
+    Running(LocalApicId),
+    WaitingForEvents(ThreadWaitingState),
+}
+
+impl ThreadState {
+    pub fn is_ready(&self) -> bool {
+        match self {
+            ThreadState::Ready(_) => true,
+            ThreadState::Running(_) => false,
+            Self::WaitingForEvents(state) => state.events.values().any(|happened| *happened),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Thread {
+    pub state: spin::RwLock<ThreadState>,
+    pub process: Arc<Process>,
+}
+
+static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(0);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ThreadId(u64);
+impl ThreadId {
+    pub fn new_unique() -> Self {
+        Self(NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+static NEXT_PROCESS_ID: AtomicU64 = AtomicU64::new(0);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ProcessId(u64);
+impl ProcessId {
+    pub fn new_unique() -> Self {
+        Self(NEXT_PROCESS_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+pub static THREAD_PRIORITIES: spin::RwLock<Vec<ThreadId>> = spin::RwLock::new(Vec::new());
+pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new(BTreeMap::new());
+
+pub static EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
+    spin::RwLock::new(BTreeMap::new());
+
+// pub static CPU_TASK_STATES: Once<BTreeMap<LocalApicId, Option<ThreadId>>> = Once::new();
+
+// pub fn init(mp_response: &'static MpResponse) {
+//     CPU_TASK_STATES.call_once(|| {
+//         mp_response
+//             .cpus()
+//             .iter()
+//             .map(|cpu| ((*cpu).into(), None))
+//             .collect()
+//     });
+// }

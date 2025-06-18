@@ -7,12 +7,13 @@ extern crate alloc;
 use ::acpi::InterruptModel;
 use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
-use hlt_loop::hlt_loop;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
     RSDP_REQUEST,
 };
+use local_apic_id::LocalApicId;
 use memory::MEMORY;
+use run_tasks::run_threads;
 use x86_64::registers::control::Cr3;
 
 pub mod acpi;
@@ -31,12 +32,14 @@ pub mod interrupted_context;
 pub mod io_apics;
 pub mod limine_requests;
 pub mod local_apic;
+pub mod local_apic_id;
 pub mod logger;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
+pub mod run_tasks;
 pub mod run_user_mode_program;
 pub mod spcr;
 pub mod syscall_handlers;
@@ -89,7 +92,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     cpu_local_data::init(mp_response);
     // Safety: We are calling this function on the BSP
     unsafe {
-        init_cpu(mp_response.bsp_lapic_id());
+        init_cpu(LocalApicId::bsp(mp_response));
     }
     init_ps2_mouse::init();
     for cpu in mp_response.cpus() {
@@ -106,7 +109,8 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     // x86_64::instructions::interrupts::enable();
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
-    run_user_mode_program::run_user_mode_program(module_response);
+    run_user_mode_program::spawn_task(module_response);
+    run_threads()
 }
 
 unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
@@ -117,7 +121,7 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
     }
 
     // Safety: We're inputting the correct CPU local APIC idAdd commentMore actions
-    unsafe { init_cpu(cpu.lapic_id) };
+    unsafe { init_cpu(cpu.into()) };
 
     let cpu_id = cpu.id;
     log::info!("Hello from CPU {cpu_id}");
@@ -126,5 +130,7 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
     idt::init();
     local_apic::init();
 
-    hlt_loop()
+    syscalls::init();
+
+    run_threads()
 }

@@ -14,6 +14,8 @@ mod syscall_keyboard;
 mod syscall_log;
 mod syscall_mouse;
 mod syscall_read_event_stream;
+mod syscall_spawn_process;
+mod syscall_spawn_thread;
 mod syscall_wait_until_event;
 
 pub use frame_buffer_embedded_graphics::*;
@@ -28,4 +30,6 @@ pub use syscall_keyboard::*;
 pub use syscall_log::*;
 pub use syscall_mouse::*;
 pub use syscall_read_event_stream::*;
+pub use syscall_spawn_process::*;
+pub use syscall_spawn_thread::*;
 pub use syscall_wait_until_event::*;

@@ -5,10 +5,13 @@ use core::ops::DerefMut;
 
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use async_mouse_decoded::AsyncMouseDecoded;
-use common::embedded_graphics::{
-    pixelcolor::Rgb888,
-    prelude::{Dimensions, Point, Size, WebColors},
-    primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable},
+use common::{
+    embedded_graphics::{
+        pixelcolor::Rgb888,
+        prelude::{Dimensions, Point, Size, WebColors},
+        primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable},
+    },
+    log,
 };
 use execute_future::execute_future;
 use executor_context::ExecutorContext;
@@ -35,6 +38,7 @@ pub mod syscalls;
 unsafe extern "C" fn entry_point() -> ! {
     logger::init();
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
+    log::info!("Hi");
 
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
@@ -91,6 +95,14 @@ unsafe extern "C" fn entry_point() -> ! {
             )
             .unwrap();
         let screen_size = frame_buffer.bounding_box().size;
+        Rectangle::new(cursor_position, Size::new(20, 20))
+            .draw_styled(
+                &PrimitiveStyleBuilder::new()
+                    .fill_color(Rgb888::CSS_DARK_GRAY)
+                    .build(),
+                frame_buffer.deref_mut(),
+            )
+            .unwrap();
         while let Some(movement) = movement.next().await {
             let new_cursor_position = Point::new(
                 (cursor_position.x + movement.x)

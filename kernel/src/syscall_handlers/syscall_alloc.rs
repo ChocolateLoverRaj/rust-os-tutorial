@@ -11,9 +11,10 @@ use x86_64::{
 };
 
 use crate::{
+    cpu_local_data::get_local,
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
-    task::{TASK, VirtualMemoryPermissions},
+    task::{THREADS, VirtualMemoryPermissions},
     translate_addr::ZeroFrame,
 };
 
@@ -36,10 +37,14 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     PhysFrame<S>: ZeroFrame,
                 {
                     let n_pages = len.div_ceil(S::SIZE);
-                    let mut task = TASK.lock();
-                    let task = task.as_mut().unwrap();
-                    let range = task
-                        .mapped_virtual_memory
+                    let threads = THREADS.read();
+                    let local = get_local();
+                    let current_process = &threads
+                        .get(&local.running_thread.lock().unwrap())
+                        .unwrap()
+                        .process;
+                    let mut mapped_virtual_memory = current_process.mapped_virtual_memory.write();
+                    let range = mapped_virtual_memory
                         .gaps_trimmed(ue(0xffff800000000000))
                         .find_map(|gap| {
                             let aligned_start = gap
@@ -54,7 +59,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             }
                         })
                         .ok_or(SyscallAllocError::OutOfVirtualMemory)?;
-                    task.mapped_virtual_memory
+                    mapped_virtual_memory
                         .insert_merge_touching_if_values_equal(
                             range.clone().into(),
                             VirtualMemoryPermissions {
@@ -63,7 +68,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             },
                         )
                         .unwrap();
-                    let mut mapper = unsafe { get_page_table(task.cr3, false) };
+                    let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
                     let start_page =
                         Page::<S>::from_start_address(VirtAddr::new(*range.start())).unwrap();
                     let end_page_inclusive =

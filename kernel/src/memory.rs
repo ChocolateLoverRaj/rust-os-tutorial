@@ -53,8 +53,8 @@ where
     for<'a> OffsetPageTable<'a>: Mapper<S>,
 {
     let global_allocator_size = {
-        // 4 MiB
-        4 * 0x400 * 0x400
+        // 16 MiB
+        16 * 0x400 * 0x400
     };
     let global_allocator_physical_start = memory_map
         .entries()

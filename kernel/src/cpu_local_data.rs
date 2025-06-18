@@ -1,6 +1,6 @@
 use core::cell::SyncUnsafeCell;
 
-use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use alloc::boxed::Box;
 use force_send_sync::SendSync;
 use limine::{mp::Cpu, response::MpResponse};
 use spin::Once;
@@ -14,6 +14,8 @@ use x86_64::{
 use crate::{
     boxed_stack::BoxedStack,
     gdt::{Gdt, TssStacks},
+    local_apic_id::LocalApicId,
+    task::ThreadId,
 };
 
 pub struct CpuLocalData {
@@ -26,30 +28,27 @@ pub struct CpuLocalData {
     pub syscall_handler_stack: Once<BoxedStack>,
     pub syscall_handler_stack_pointer: SyncUnsafeCell<u64>,
     pub user_mode_stack_pointer: SyncUnsafeCell<u64>,
+    pub running_thread: spin::Mutex<Option<ThreadId>>,
 }
 
-static CPU_LOCAL_DATA: Once<BTreeMap<u32, Box<CpuLocalData>>> = Once::new();
+static CPU_LOCAL_DATA: Once<Box<[CpuLocalData]>> = Once::new();
 
 pub fn init(mp_response: &'static MpResponse) {
     CPU_LOCAL_DATA.call_once(|| {
         mp_response
             .cpus()
             .iter()
-            .map(|cpu| {
-                (
-                    cpu.lapic_id,
-                    Box::new(CpuLocalData {
-                        cpu,
-                        tss_stacks: Once::new(),
-                        tss: Once::new(),
-                        gdt: Once::new(),
-                        idt: Once::new(),
-                        local_apic: Once::new(),
-                        syscall_handler_stack: Once::new(),
-                        syscall_handler_stack_pointer: Default::default(),
-                        user_mode_stack_pointer: Default::default(),
-                    }),
-                )
+            .map(|cpu| CpuLocalData {
+                cpu,
+                tss_stacks: Once::new(),
+                tss: Once::new(),
+                gdt: Once::new(),
+                idt: Once::new(),
+                local_apic: Once::new(),
+                syscall_handler_stack: Once::new(),
+                syscall_handler_stack_pointer: Default::default(),
+                user_mode_stack_pointer: Default::default(),
+                running_thread: Default::default(),
             })
             .collect()
     });
@@ -62,8 +61,15 @@ fn write_gs_base(ptr: &'static CpuLocalData) {
 
 /// # Safety
 /// The Local APIC id must match the actual CPU that this function is called on
-pub unsafe fn init_cpu(local_apic_id: u32) {
-    write_gs_base(CPU_LOCAL_DATA.get().unwrap().get(&local_apic_id).unwrap());
+pub unsafe fn init_cpu(local_apic_id: LocalApicId) {
+    write_gs_base(
+        CPU_LOCAL_DATA
+            .get()
+            .unwrap()
+            .iter()
+            .find(|cpu_local_data| LocalApicId::from(cpu_local_data.cpu) == local_apic_id)
+            .unwrap(),
+    );
 }
 
 pub fn get_local() -> &'static CpuLocalData {

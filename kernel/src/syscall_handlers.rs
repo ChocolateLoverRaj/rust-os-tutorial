@@ -1,7 +1,7 @@
 use alloc::collections::btree_map::{self, BTreeMap};
 use common::Syscall;
 use exists::SyscallExistsHandler;
-use exit::SyscallExitHandler;
+use exit_process::SyscallExitProcessHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
 use keyboard::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
@@ -13,7 +13,7 @@ use wait_until_event::SyscallWaitUntilEventHandler;
 use crate::syscall_saved_regs::SyscallSavedRegs;
 
 mod exists;
-mod exit;
+mod exit_process;
 mod frame_buffer;
 mod keyboard;
 mod log;
@@ -81,7 +81,7 @@ impl<T: GenericSyscallHandler> SyscallHandler for T {
 
 static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallExistsHandler,
-    &SyscallExitHandler,
+    &SyscallExitProcessHandler,
     &SyscallLogHandler,
     &SyscallAllocHandler,
     &SyscallTakeFrameBufferHandler,
