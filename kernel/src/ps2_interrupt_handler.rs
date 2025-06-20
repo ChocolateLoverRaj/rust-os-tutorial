@@ -51,14 +51,10 @@ pub unsafe fn ps2_interrupt_handler(
         };
 
         if let Some(running_thread_id) = local.running_thread.try_lock().unwrap().take() {
-            *threads
-                .get(&running_thread_id)
-                .unwrap()
-                .state
-                .try_write()
-                .unwrap() =
+            *threads.get(&running_thread_id).unwrap().state.write() =
                 ThreadState::Ready(ThreadReadyState::Interrupted(interrupted_context.clone()));
         }
+        // log::info!("Running threads: {:#?}", threads.len());
     };
     run_threads()
 }

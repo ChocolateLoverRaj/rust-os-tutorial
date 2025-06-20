@@ -1,11 +1,10 @@
 use alloc::boxed::Box;
 use common::SyscallWaitUntilEvent;
 use nodit::interval::ie;
-use x86_64::instructions::interrupts;
 
 use crate::{
     cpu_local_data::get_local,
-    hlt_loop::hlt_loop,
+    run_tasks::run_threads,
     task::{EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
 };
 
@@ -17,7 +16,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
             Return(u64),
-            Wait,
+            RunTasks,
         }
         let get_action = || {
             let input = helper.input();
@@ -64,17 +63,13 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
                         .collect(),
                 });
                 *running_thread = None;
-                Action::Wait
+                Action::RunTasks
             })
         };
         match get_action() {
             Err(()) => todo!("terminate"),
             Ok(Action::Return(value)) => helper.syscall_return(&value),
-            Ok(Action::Wait) => {
-                // log::debug!("Waiting for events");
-                interrupts::enable();
-                hlt_loop()
-            }
+            Ok(Action::RunTasks) => run_threads(),
         }
     }
 }

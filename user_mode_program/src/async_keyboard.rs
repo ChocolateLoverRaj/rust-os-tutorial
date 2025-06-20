@@ -28,6 +28,7 @@ impl Stream for AsyncKeyboard<'_> {
         self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Option<Self::Item>> {
+        self.executor_context.take(self.event_stream_id);
         self.executor_context
             .register_waker(self.event_stream_id, cx.waker());
         let mut buffer = [MaybeUninit::uninit(); 1];

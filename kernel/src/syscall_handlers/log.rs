@@ -21,10 +21,8 @@ impl GenericSyscallHandler for SyscallLogHandler {
             if actual_input.message.len() > 0 {
                 let threads = THREADS.read();
                 let local = get_local();
-                let current_process = &threads
-                    .get(&local.running_thread.lock().unwrap())
-                    .unwrap()
-                    .process;
+                let thread_id = local.running_thread.lock().unwrap();
+                let current_process = &threads.get(&thread_id).unwrap().process;
                 let start = actual_input.message.pointer();
                 let len = actual_input.message.len();
                 let end_inclusive = start + (len - 1);
@@ -37,10 +35,14 @@ impl GenericSyscallHandler for SyscallLogHandler {
                     let message =
                         unsafe { slice::from_raw_parts(start as *const u8, len as usize) };
                     Action::Return(if let Ok(message) = str::from_utf8(message) {
-                        log_for_user_mode(actual_input.level, {
-                            // Don't let user mode code print colors and possibly mess up terminal cursor position
-                            strip_ansi_codes(message)
-                        });
+                        log_for_user_mode(
+                            actual_input.level,
+                            {
+                                // Don't let user mode code print colors and possibly mess up terminal cursor position
+                                strip_ansi_codes(message)
+                            },
+                            thread_id,
+                        );
                         Ok(())
                     } else {
                         Err(SyscallLogError::InvalidString)

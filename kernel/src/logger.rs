@@ -19,7 +19,7 @@ use owo_colors::OwoColorize;
 use uart_16550::SerialPort;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{cpu_local_data::try_get_local, writer_with_cr::WriterWithCr};
+use crate::{cpu_local_data::try_get_local, task::ThreadId, writer_with_cr::WriterWithCr};
 
 struct DisplayData {
     display: FrameBufferEmbeddedGraphics<'static>,
@@ -196,9 +196,9 @@ impl Log for KernelLogger {
         let mut inner = self.inner.lock();
         if let Some(cpu_local_data) = try_get_local() {
             let cpu_id = cpu_local_data.cpu.id;
-            inner.write_with_color(Color::Gray, format_args!("[CPU {cpu_id}] "));
+            inner.write_with_color(Color::Gray, format_args!("[{cpu_id}] "));
         } else {
-            inner.write_with_color(Color::Gray, "[BSP] ");
+            inner.write_with_color(Color::Gray, "[B] ");
         };
         let level = record.level();
         inner.write_with_color(Color::for_log_level(level), format_args!("{level:5} "));
@@ -237,9 +237,16 @@ pub fn replace_serial_logger(new_serial_logger: Option<AnyWriter>) {
 
 /// Log a message which will be prefixed with a "U" indicating it's from user mode.
 /// Remember to clean / strip anything you don't want from the message, such as ANSI escape codes or new lines.
-pub fn log_for_user_mode(level: log::Level, message: impl Display) {
+pub fn log_for_user_mode(level: log::Level, message: impl Display, thread_id: ThreadId) {
     let mut inner = LOGGER.inner.lock();
-    inner.write_with_color(Color::BrightGreen, "U ");
+    let thread_id = u64::from(thread_id);
+    if let Some(cpu_local_data) = try_get_local() {
+        let cpu_id = cpu_local_data.cpu.id;
+        inner.write_with_color(Color::Gray, format_args!("[{cpu_id}]"));
+    } else {
+        inner.write_with_color(Color::Gray, "[B]");
+    };
+    inner.write_with_color(Color::BrightGreen, format_args!("[{thread_id}] "));
     inner.write_with_color(Color::for_log_level(level), format_args!("{level:5} "));
     inner.write_with_color(Color::Default, format_args!("{message}\n"));
 }

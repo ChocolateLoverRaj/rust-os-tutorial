@@ -1,9 +1,10 @@
 use core::{alloc::Layout, arch::asm, mem::MaybeUninit};
 
 use common::{
-    Syscall, SyscallAlloc, SyscallAllocError, SyscallExists, SyscallExitProcess, SyscallLog,
-    SyscallLogInput, SyscallReadEventStream, SyscallReadEventStreamInput,
-    SyscallReleaseFrameBuffer, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
+    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallExists,
+    SyscallExitProcess, SyscallLog, SyscallLogInput, SyscallReadEventStream,
+    SyscallReadEventStreamInput, SyscallReleaseFrameBuffer, SyscallSpawnThread,
+    SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
     SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
     SyscallWaitUntilEvent, log,
 };
@@ -27,7 +28,7 @@ unsafe fn raw_syscall(input_and_ouput: &mut [u64; 7]) {
 
 /// # Safety
 /// Input must be valid, and the kernel should support the syscall
-unsafe fn syscall<T: Syscall>(input: &T::Input) -> T::Output {
+pub unsafe fn syscall<T: Syscall>(input: &T::Input) -> T::Output {
     let mut inputs_and_ouputs = T::encode_input(input);
     unsafe { raw_syscall(&mut inputs_and_ouputs) };
     T::decode_output(&inputs_and_ouputs)
@@ -98,4 +99,19 @@ pub fn syscall_read_event_stream(stream_id: u64, buffer: &mut [MaybeUninit<u8>])
     let count = unsafe { syscall::<SyscallReadEventStream>(&input) };
     // Safety: the kernel initialized them
     unsafe { buffer[..count as usize].assume_init_mut() }
+}
+
+/// # Safety
+/// The stack pointer must be valid. Passing a bad stack pointer could corrupt memory you aren't expecting to be modified.
+pub unsafe fn syscall_spawn_thread(
+    f: extern "sysv64" fn() -> !,
+    stack_pointer: *const (),
+    priority: SpawnThreadRelativePriority,
+) {
+    let input = SyscallSpawnThreadInput {
+        priority,
+        rsp: stack_pointer as u64,
+        rip: f as *const () as u64,
+    };
+    unsafe { syscall::<SyscallSpawnThread>(&input) };
 }

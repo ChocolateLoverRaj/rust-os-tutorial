@@ -4,8 +4,14 @@ use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use futures::task::AtomicWaker;
 
 #[derive(Debug, Default)]
+struct Event {
+    waker: AtomicWaker,
+    happened: bool,
+}
+
+#[derive(Debug, Default)]
 pub struct ExecutorContext {
-    events: RefCell<BTreeMap<u64, AtomicWaker>>,
+    events: RefCell<BTreeMap<u64, Event>>,
 }
 
 impl ExecutorContext {
@@ -14,6 +20,7 @@ impl ExecutorContext {
             .borrow_mut()
             .entry(event_id)
             .or_default()
+            .waker
             .register(waker);
     }
 
@@ -23,6 +30,17 @@ impl ExecutorContext {
     }
 
     pub fn wake(&self, event_id: u64) {
-        self.events.borrow().get(&event_id).unwrap().wake();
+        let mut events = self.events.borrow_mut();
+        let event = events.get_mut(&event_id).unwrap();
+        event.waker.wake();
+        event.happened = true;
+    }
+
+    /// Returns true if the event happened, removing the event from the map
+    pub fn take(&self, event_id: u64) -> bool {
+        self.events
+            .borrow_mut()
+            .remove(&event_id)
+            .is_some_and(|event| event.happened)
     }
 }

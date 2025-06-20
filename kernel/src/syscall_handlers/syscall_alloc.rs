@@ -97,6 +97,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             })?
                             .flush();
                     }
+                    log::debug!("Allocated for user mode: {range:X?}");
                     Ok(SliceData::new(*range.start(), n_pages * S::SIZE))
                 }
                 if len < Size2MiB::SIZE {

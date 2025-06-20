@@ -1,5 +1,6 @@
 use core::ops::Deref;
 
+use common::{Syscall, SyscallSpawnThread};
 use x86_64::{
     instructions::interrupts,
     registers::{control::Cr3, rflags::RFlags},
@@ -14,13 +15,15 @@ use crate::{
 };
 
 pub fn run_threads() -> ! {
+    #[derive(Debug)]
     enum Action {
         Start(ThreadReadyState),
-        Return(ThreadWaitingState),
+        ReturnFromWait(ThreadWaitingState),
         DoNothing,
     }
     let action = {
         let thread_priorities = THREAD_PRIORITIES.read();
+        log::debug!("Thread priorities: {thread_priorities:?}");
         let threads = THREADS.read();
         let mut thread_priorities = thread_priorities.iter();
         loop {
@@ -43,7 +46,7 @@ pub fn run_threads() -> ! {
                     }
                     ThreadState::WaitingForEvents(state) => {
                         if state.events.values().any(|happened| *happened) {
-                            let action = Action::Return(state.clone());
+                            let action = Action::ReturnFromWait(state.clone());
                             let local = get_local();
                             *local.running_thread.try_lock().unwrap() = Some(*thread_id);
                             *thread_state = ThreadState::Running(local.cpu.into());
@@ -56,13 +59,19 @@ pub fn run_threads() -> ! {
                             break action;
                         }
                     }
-                    ThreadState::Running(_) => {}
+                    ThreadState::Running(_) => {
+                        // log::debug!("Thread: {thread_id:?} is already running");
+                    }
+                    ThreadState::WaitingForMutex(_data) => {
+                        // TODO: Run the thread that's holding the mutex lock (priority inheritance / priority boosting)
+                    }
                 }
             } else {
                 break Action::DoNothing;
             }
         }
     };
+    log::debug!("Action: {:?}", action);
     match action {
         Action::Start(ThreadReadyState::ReadyToStart(start_data)) => {
             let input = EnterUserModeInput {
@@ -72,11 +81,14 @@ pub fn run_threads() -> ! {
             };
             unsafe { enter_user_mode(input) }
         }
-        Action::Start(ThreadReadyState::Interrupted(interrupted_context)) => {
-            // log::debug!("Restoring interrupted context");
-            unsafe { interrupted_context.restore() }
+        Action::Start(ThreadReadyState::Interrupted(interrupted_context)) => unsafe {
+            interrupted_context.restore()
+        },
+        Action::Start(ThreadReadyState::InSyscall(syscall_saved_regs)) => {
+            let output = SyscallSpawnThread::encode_output(&());
+            unsafe { syscall_saved_regs.sysretq(output) }
         }
-        Action::Return(state) => unsafe { state.sysretq() },
+        Action::ReturnFromWait(state) => unsafe { state.sysretq() },
         Action::DoNothing => {
             // log::debug!("No threads to run. Doing nothing.");
             interrupts::enable();

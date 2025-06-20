@@ -6,7 +6,9 @@ use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandl
 use keyboard::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
 use mouse::SyscallSubscribeToMouseHandler;
+use mutex::{SyscallAquireLockHandler, SyscallReleaseLockHandler, SyscallTryAquireLockhandler};
 use read_event_stream::SyscallReadEventStreamHandler;
+use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc::SyscallAllocHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
 
@@ -18,7 +20,9 @@ mod frame_buffer;
 mod keyboard;
 mod log;
 mod mouse;
+mod mutex;
 mod read_event_stream;
+mod spawn_thread;
 mod syscall_alloc;
 mod wait_until_event;
 
@@ -90,6 +94,10 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallWaitUntilEventHandler,
     &SyscallSubscribeToMouseHandler,
     &SyscallReadEventStreamHandler,
+    &SyscallSpawnThreadHandler,
+    &SyscallTryAquireLockhandler,
+    &SyscallAquireLockHandler,
+    &SyscallReleaseLockHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

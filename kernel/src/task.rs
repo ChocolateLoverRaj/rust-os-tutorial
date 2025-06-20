@@ -1,6 +1,6 @@
 use core::{
     mem::MaybeUninit,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
@@ -90,6 +90,18 @@ pub struct StartData {
 pub enum ThreadReadyState {
     ReadyToStart(StartData),
     Interrupted(InterruptedContext),
+    InSyscall(SyscallSavedRegs),
+}
+
+#[derive(Debug)]
+pub struct UserMutex {
+    pub locked_by: ThreadId,
+}
+
+#[derive(Debug)]
+pub struct WaitingForMutexState {
+    pub saved_regs: SyscallSavedRegs,
+    pub mutex_id: u64,
 }
 
 #[derive(Debug)]
@@ -97,6 +109,7 @@ pub enum ThreadState {
     Ready(ThreadReadyState),
     Running(LocalApicId),
     WaitingForEvents(ThreadWaitingState),
+    WaitingForMutex(WaitingForMutexState),
 }
 
 impl ThreadState {
@@ -105,6 +118,7 @@ impl ThreadState {
             ThreadState::Ready(_) => true,
             ThreadState::Running(_) => false,
             Self::WaitingForEvents(state) => state.events.values().any(|happened| *happened),
+            Self::WaitingForMutex(_) => false,
         }
     }
 }
@@ -123,6 +137,11 @@ impl ThreadId {
         Self(NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed))
     }
 }
+impl From<ThreadId> for u64 {
+    fn from(value: ThreadId) -> Self {
+        value.0
+    }
+}
 
 static NEXT_PROCESS_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -139,14 +158,4 @@ pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new
 pub static EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
     spin::RwLock::new(BTreeMap::new());
 
-// pub static CPU_TASK_STATES: Once<BTreeMap<LocalApicId, Option<ThreadId>>> = Once::new();
-
-// pub fn init(mp_response: &'static MpResponse) {
-//     CPU_TASK_STATES.call_once(|| {
-//         mp_response
-//             .cpus()
-//             .iter()
-//             .map(|cpu| ((*cpu).into(), None))
-//             .collect()
-//     });
-// }
+pub static MUTEXES: spin::RwLock<BTreeMap<u64, UserMutex>> = spin::RwLock::new(BTreeMap::new());

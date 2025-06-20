@@ -5,7 +5,7 @@ use spin::Once;
 use talc::{OomHandler, Talc, Talck};
 use x86_64::structures::paging::{PageSize, Size4KiB};
 
-use crate::syscalls::syscall_alloc;
+use crate::{mutex::RawBlockingLock, syscalls::syscall_alloc};
 
 #[derive(Debug)]
 pub struct AllocError {
@@ -50,4 +50,4 @@ impl OomHandler for MyOomHandler {
 }
 
 #[global_allocator]
-static GLOBAL_ALLOCATOR: Talck<spin::Mutex<()>, MyOomHandler> = Talck::new(Talc::new(MyOomHandler));
+static GLOBAL_ALLOCATOR: Talck<RawBlockingLock, MyOomHandler> = Talck::new(Talc::new(MyOomHandler));

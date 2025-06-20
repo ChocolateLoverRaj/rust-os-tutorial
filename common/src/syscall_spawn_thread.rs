@@ -3,14 +3,14 @@ use bincode::{Decode, Encode};
 use crate::Syscall;
 
 #[derive(Debug, Encode, Decode)]
-pub enum ThreadRelativePriority {
+pub enum SpawnThreadRelativePriority {
     Higher,
     Lower,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct SyscallSpawnThreadInput {
-    pub priority: ThreadRelativePriority,
+    pub priority: SpawnThreadRelativePriority,
     pub rip: u64,
     pub rsp: u64,
 }

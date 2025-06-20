@@ -6,6 +6,7 @@ use core::ops::DerefMut;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use async_mouse_decoded::AsyncMouseDecoded;
 use common::{
+    BoxedStack, SpawnThreadRelativePriority,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, Point, Size, WebColors},
@@ -18,7 +19,7 @@ use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
 use futures::{StreamExt, stream::select};
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use syscalls::syscall_exit;
+use syscalls::{syscall_exit, syscall_spawn_thread};
 
 extern crate alloc;
 
@@ -31,6 +32,7 @@ pub mod executor_context;
 pub mod frame_buffer;
 pub mod global_allocator;
 pub mod logger;
+pub mod mutex;
 pub mod panic_handler;
 pub mod syscalls;
 
@@ -39,7 +41,10 @@ unsafe extern "C" fn entry_point() -> ! {
     logger::init();
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     log::info!("Hi");
-
+    let stack = BoxedStack::new_uninit(64 * 0x400);
+    unsafe { syscall_spawn_thread(worker, stack.top(), SpawnThreadRelativePriority::Lower) };
+    let stack = BoxedStack::new_uninit(64 * 0x400);
+    unsafe { syscall_spawn_thread(worker, stack.top(), SpawnThreadRelativePriority::Lower) };
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
         let keyboard = AsyncKeyboardDecoded::new(
@@ -132,4 +137,12 @@ unsafe extern "C" fn entry_point() -> ! {
         }
     });
     syscall_exit();
+}
+
+extern "sysv64" fn worker() -> ! {
+    let mut count = 0;
+    loop {
+        log::debug!("{count}");
+        count += 1;
+    }
 }
