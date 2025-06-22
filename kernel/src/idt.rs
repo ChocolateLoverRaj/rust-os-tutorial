@@ -92,7 +92,8 @@ pub fn init() {
         idt[u8::from(InterruptVector::Preempt)].set_handler_fn(preempt_ipi_handler);
         unsafe {
             idt[u8::from(InterruptVector::CheckTasks)]
-                .set_handler_addr(VirtAddr::from_ptr(raw_check_tasks_ipi_handler as *const ()));
+                .set_handler_addr(VirtAddr::from_ptr(raw_check_tasks_ipi_handler as *const ()))
+                .set_stack_index(NORMAL_STACK_INDEX);
         }
         idt
     });

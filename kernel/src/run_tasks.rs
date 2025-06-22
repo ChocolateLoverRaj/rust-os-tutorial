@@ -31,9 +31,9 @@ pub fn run_threads() -> ! {
 
         assert!(r.is_none());
         loop {
-            if local.cpu.lapic_id == 0 {
-                break Action::DoNothing;
-            }
+            // if local.cpu.lapic_id == 0 {
+            //     break Action::DoNothing;
+            // }
             if let Some(thread_id) = thread_priorities.next() {
                 let thread = threads.get(thread_id).unwrap();
                 let mut thread_state = thread.state.write();
@@ -64,15 +64,15 @@ pub fn run_threads() -> ! {
                             };
                             break action;
                         } else {
-                            log::debug!("{thread_id:?} is waiting for events");
+                            // log::debug!("{thread_id:?} is waiting for events");
                         }
                     }
                     ThreadState::Running(_) => {
-                        log::debug!("{thread_id:?} is already running");
+                        // log::debug!("{thread_id:?} is already running");
                     }
                     ThreadState::WaitingForMutex(_data) => {
                         // TODO: Run the thread that's holding the mutex lock (priority inheritance / priority boosting)
-                        log::debug!("{thread_id:?} is waiting for mutex");
+                        // log::debug!("{thread_id:?} is waiting for mutex");
                     }
                 }
             } else {
@@ -82,7 +82,7 @@ pub fn run_threads() -> ! {
     };
     // log::debug!("Action: {:?}", action);
     if let Action::Start(s) = &action {
-        log::debug!("Starting: {s:?}");
+        // log::debug!("Starting: {s:?}");
     }
     match action {
         Action::Start(ThreadReadyState::ReadyToStart(start_data)) => {
