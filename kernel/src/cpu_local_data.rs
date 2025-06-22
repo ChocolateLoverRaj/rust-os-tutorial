@@ -11,7 +11,7 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::{boxed_stack::BoxedStack, gdt::Gdt, local_apic_id::LocalApicId, task::ThreadId};
+use crate::{gdt::Gdt, local_apic_id::LocalApicId, task::ThreadId};
 
 pub struct CpuLocalData {
     pub cpu: &'static Cpu,
@@ -20,7 +20,6 @@ pub struct CpuLocalData {
     pub gdt: Once<Gdt>,
     pub idt: Once<InterruptDescriptorTable>,
     pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
-    pub syscall_handler_stack: Once<BoxedStack>,
     pub syscall_handler_stack_pointer: SyncUnsafeCell<u64>,
     pub user_mode_stack_pointer: SyncUnsafeCell<u64>,
     pub running_thread: spin::Mutex<Option<ThreadId>>,
@@ -40,7 +39,6 @@ pub fn init(mp_response: &'static MpResponse) {
                 gdt: Once::new(),
                 idt: Once::new(),
                 local_apic: Once::new(),
-                syscall_handler_stack: Once::new(),
                 syscall_handler_stack_pointer: Default::default(),
                 user_mode_stack_pointer: Default::default(),
                 running_thread: Default::default(),

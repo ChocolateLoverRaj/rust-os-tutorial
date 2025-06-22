@@ -11,7 +11,6 @@ use x86_64::{
 };
 
 use crate::{
-    boxed_stack::BoxedStack,
     cpu_local_data::{CpuLocalData, get_local},
     syscall_handlers::SyscallHandlers,
     syscall_saved_regs::SyscallSavedRegs,
@@ -80,11 +79,8 @@ unsafe extern "sysv64" fn raw_syscall_handler() -> ! {
 
 pub fn init() {
     let local = get_local();
-    let syscall_handler_stack = local
-        .syscall_handler_stack
-        .call_once(|| BoxedStack::new_uninit(128 * 0x400));
     let syscall_handler_stack_pointer_ptr = local.syscall_handler_stack_pointer.get();
-    let syscall_handler_stack_pointer = syscall_handler_stack.top().as_u64();
+    let syscall_handler_stack_pointer = local.normal_stack.get().unwrap().as_u64();
     unsafe { syscall_handler_stack_pointer_ptr.write(syscall_handler_stack_pointer) };
 
     // Enable syscall in IA32_EFER

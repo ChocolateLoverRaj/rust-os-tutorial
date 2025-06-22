@@ -11,16 +11,9 @@ use x86_64::{
 };
 
 use crate::{
-    boxed_stack::BoxedStack,
     cpu_local_data::get_local,
     guarded_stack::{GuardedStack, StackType},
 };
-
-pub struct TssStacks {
-    first_exception: BoxedStack,
-    double_fault: BoxedStack,
-    privilege_switch: BoxedStack,
-}
 
 pub struct Gdt {
     gdt: GlobalDescriptorTable,
@@ -33,6 +26,7 @@ pub struct Gdt {
 
 pub const FIRST_EXCEPTION_STACK_INDEX: u16 = 0;
 pub const DOUBLE_FAULT_STACK_INDEX: u16 = 1;
+pub const NORMAL_STACK_INDEX: u16 = 2;
 
 /// # Safety
 /// This function must be called exactly once
@@ -45,6 +39,8 @@ pub unsafe fn init() {
             GuardedStack::new(64 * 0x400, StackType::FirstException(local_apic_id)).top();
         tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
             GuardedStack::new(64 * 0x400, StackType::DoubleFault(local_apic_id)).top();
+        tss.interrupt_stack_table[NORMAL_STACK_INDEX as usize] =
+            local.normal_stack.get().unwrap().clone();
         tss.privilege_stack_table[0] = local.normal_stack.get().unwrap().clone();
         tss
     });

@@ -13,7 +13,7 @@ use x86_64::{
 
 use crate::{
     cpu_local_data::get_local,
-    gdt::{DOUBLE_FAULT_STACK_INDEX, FIRST_EXCEPTION_STACK_INDEX},
+    gdt::{DOUBLE_FAULT_STACK_INDEX, FIRST_EXCEPTION_STACK_INDEX, NORMAL_STACK_INDEX},
     hlt_loop::hlt_loop,
     interrupt_vector::InterruptVector,
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
@@ -78,13 +78,16 @@ pub fn init() {
         idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
         idt[u8::from(InterruptVector::LocalApicTimer)].set_handler_fn(apic_timer_interrupt_handler);
         unsafe {
-            idt[u8::from(InterruptVector::Keyboard)].set_handler_addr(VirtAddr::from_ptr(
-                raw_keyboard_interrupt_handler as *const (),
-            ))
+            idt[u8::from(InterruptVector::Keyboard)]
+                .set_handler_addr(VirtAddr::from_ptr(
+                    raw_keyboard_interrupt_handler as *const (),
+                ))
+                .set_stack_index(NORMAL_STACK_INDEX)
         };
         unsafe {
             idt[u8::from(InterruptVector::Mouse)]
                 .set_handler_addr(VirtAddr::from_ptr(raw_mouse_interrupt_handler as *const ()))
+                .set_stack_index(NORMAL_STACK_INDEX)
         };
         idt[u8::from(InterruptVector::Preempt)].set_handler_fn(preempt_ipi_handler);
         unsafe {

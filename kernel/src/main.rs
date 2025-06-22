@@ -18,7 +18,6 @@ use run_tasks::run_threads;
 use x86_64::registers::control::Cr3;
 
 pub mod acpi;
-pub mod boxed_stack;
 pub mod call_with_rsp;
 pub mod cpu_local_data;
 pub mod create_normal_stack;
