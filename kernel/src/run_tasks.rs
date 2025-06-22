@@ -23,17 +23,23 @@ pub fn run_threads() -> ! {
     }
     let action = {
         let thread_priorities = THREAD_PRIORITIES.read();
-        log::debug!("Thread priorities: {thread_priorities:?}");
+        // log::debug!("Thread priorities: {thread_priorities:?}");
         let threads = THREADS.read();
         let mut thread_priorities = thread_priorities.iter();
+        let local = get_local();
+        let r = { local.running_thread.lock() }.clone();
+
+        assert!(r.is_none());
         loop {
+            if local.cpu.lapic_id == 0 {
+                break Action::DoNothing;
+            }
             if let Some(thread_id) = thread_priorities.next() {
                 let thread = threads.get(thread_id).unwrap();
                 let mut thread_state = thread.state.write();
                 match thread_state.deref() {
                     ThreadState::Ready(ready_state) => {
                         let action = Action::Start(ready_state.clone());
-                        let local = get_local();
                         *local.running_thread.try_lock().unwrap() = Some(*thread_id);
                         *thread_state = ThreadState::Running(local.cpu.into());
                         unsafe {
@@ -57,13 +63,16 @@ pub fn run_threads() -> ! {
                                 )
                             };
                             break action;
+                        } else {
+                            log::debug!("{thread_id:?} is waiting for events");
                         }
                     }
                     ThreadState::Running(_) => {
-                        // log::debug!("Thread: {thread_id:?} is already running");
+                        log::debug!("{thread_id:?} is already running");
                     }
                     ThreadState::WaitingForMutex(_data) => {
                         // TODO: Run the thread that's holding the mutex lock (priority inheritance / priority boosting)
+                        log::debug!("{thread_id:?} is waiting for mutex");
                     }
                 }
             } else {
@@ -71,7 +80,10 @@ pub fn run_threads() -> ! {
             }
         }
     };
-    log::debug!("Action: {:?}", action);
+    // log::debug!("Action: {:?}", action);
+    if let Action::Start(s) = &action {
+        log::debug!("Starting: {s:?}");
+    }
     match action {
         Action::Start(ThreadReadyState::ReadyToStart(start_data)) => {
             let input = EnterUserModeInput {

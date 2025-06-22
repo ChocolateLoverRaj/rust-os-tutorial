@@ -7,6 +7,7 @@ extern crate alloc;
 use ::acpi::InterruptModel;
 use alloc::boxed::Box;
 use cpu_local_data::init_cpu;
+use create_normal_stack::create_normal_stack;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
     RSDP_REQUEST,
@@ -18,11 +19,14 @@ use x86_64::registers::control::Cr3;
 
 pub mod acpi;
 pub mod boxed_stack;
+pub mod call_with_rsp;
 pub mod cpu_local_data;
+pub mod create_normal_stack;
 pub mod elf_segment_flags;
 pub mod enter_user_mode;
 pub mod gdt;
 pub mod get_page_table;
+pub mod guarded_stack;
 pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod idt;
@@ -65,6 +69,16 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     // Safety: we are initializing this for the first time
     unsafe { memory::init(memory_map) };
 
+    let mp_response = MP_REQUEST.get_response().unwrap();
+    cpu_local_data::init(mp_response);
+    // Safety: We are calling this function on the BSP
+    unsafe {
+        init_cpu(LocalApicId::bsp(mp_response));
+    }
+    create_normal_stack(init_bsp)
+}
+
+extern "sysv64" fn init_bsp() -> ! {
     let rsdp = RSDP_REQUEST.get_response().unwrap();
     // Safety: We're not sending this across CPUs
     let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
@@ -89,11 +103,6 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let cpu_count = mp_response.cpus().len();
     log::info!("CPU Count: {cpu_count}");
     nmi_handler_states::init(mp_response);
-    cpu_local_data::init(mp_response);
-    // Safety: We are calling this function on the BSP
-    unsafe {
-        init_cpu(LocalApicId::bsp(mp_response));
-    }
     init_ps2_mouse::init();
     for cpu in mp_response.cpus() {
         cpu.goto_address.write(entry_point_from_limine_mp);
@@ -103,6 +112,11 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     idt::init();
     local_apic::init();
 
+    // fn stack_overflow() {
+    //     stack_overflow();
+    // }
+    // stack_overflow();
+
     syscalls::init();
 
     // mouse::init();
@@ -110,6 +124,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
     run_user_mode_program::spawn_task(module_response);
+
     run_threads()
 }
 
@@ -123,8 +138,11 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
     // Safety: We're inputting the correct CPU local APIC idAdd commentMore actions
     unsafe { init_cpu(cpu.into()) };
 
-    let cpu_id = cpu.id;
-    log::info!("Hello from CPU {cpu_id}");
+    create_normal_stack(init_ap)
+}
+
+extern "sysv64" fn init_ap() -> ! {
+    log::debug!("AP running");
 
     unsafe { gdt::init() };
     idt::init();

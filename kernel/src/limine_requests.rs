@@ -3,7 +3,7 @@ use limine::{
     modules::InternalModule,
     request::{
         FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest,
-        RequestsEndMarker, RequestsStartMarker, RsdpRequest,
+        RequestsEndMarker, RequestsStartMarker, RsdpRequest, StackSizeRequest,
     },
 };
 
@@ -41,6 +41,10 @@ pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 #[unsafe(link_section = ".requests")]
 pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new()
     .with_internal_modules(&[&InternalModule::new().with_path(USER_MODE_PROGRAM_PATH)]);
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(128 * 0x400);
 
 /// Define the stand and end markers for Limine requests.
 #[used]

@@ -1,5 +1,6 @@
 use core::{
     fmt::{Display, Write},
+    num::NonZeroU32,
     ops::{Deref, DerefMut},
 };
 
@@ -239,7 +240,7 @@ pub fn replace_serial_logger(new_serial_logger: Option<AnyWriter>) {
 /// Remember to clean / strip anything you don't want from the message, such as ANSI escape codes or new lines.
 pub fn log_for_user_mode(level: log::Level, message: impl Display, thread_id: ThreadId) {
     let mut inner = LOGGER.inner.lock();
-    let thread_id = u64::from(thread_id);
+    let thread_id = NonZeroU32::from(thread_id);
     if let Some(cpu_local_data) = try_get_local() {
         let cpu_id = cpu_local_data.cpu.id;
         inner.write_with_color(Color::Gray, format_args!("[{cpu_id}]"));

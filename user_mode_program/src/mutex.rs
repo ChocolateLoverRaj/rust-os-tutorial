@@ -1,53 +1,48 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use common::{SyscallAquireLock, SyscallReleaseLock, SyscallTryAquireLock};
+use common::{SyscallFutexLock, SyscallFutexUnlock};
 use lock_api::{GuardNoSend, RawMutex};
 
-use crate::syscalls::syscall;
+use crate::syscalls::{syscall, syscall_get_thread_id};
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-
-pub struct RawBlockingLock {
-    /// `0` - no id set
-    ///
-    /// `1..` - the id that was set
-    id: AtomicU64,
-}
-
-impl RawBlockingLock {
-    fn get_or_init_id(&self) -> u64 {
-        let new_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(new_id, 0);
-        match self
-            .id
-            .compare_exchange(0, new_id, Ordering::Release, Ordering::Acquire)
-        {
-            Ok(_) => new_id,
-            Err(existing_id) => existing_id,
-        }
-    }
-}
+pub struct RawBlockingLock(AtomicU64);
 
 unsafe impl RawMutex for RawBlockingLock {
-    const INIT: Self = Self {
-        id: AtomicU64::new(0),
-    };
+    const INIT: Self = Self(AtomicU64::new(0));
 
     type GuardMarker = GuardNoSend;
 
     fn lock(&self) {
-        let input = self.get_or_init_id();
-        unsafe { syscall::<SyscallAquireLock>(&input) }
+        while !self.try_lock() {
+            // unsafe { syscall::<SyscallFutexLock>(&(&self.0 as *const _ as u64)) };
+        }
     }
 
     fn try_lock(&self) -> bool {
-        let input = self.get_or_init_id();
-        unsafe { syscall::<SyscallTryAquireLock>(&input) }
+        self.0
+            .compare_exchange(
+                0,
+                u64::from(u32::from(syscall_get_thread_id())),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
     }
 
     unsafe fn unlock(&self) {
-        let input = self.get_or_init_id();
-        unsafe { syscall::<SyscallReleaseLock>(&input) }
+        self.0.store(0, Ordering::Release);
+        // if self
+        //     .0
+        //     .compare_exchange(
+        //         u64::from(u32::from(syscall_get_thread_id())),
+        //         0,
+        //         Ordering::AcqRel,
+        //         Ordering::Relaxed,
+        //     )
+        //     .is_err()
+        // {
+        //     // unsafe { syscall::<SyscallFutexUnlock>(&(&self.0 as *const _ as u64)) };
+        // }
     }
 }
 

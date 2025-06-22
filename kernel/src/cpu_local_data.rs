@@ -11,16 +11,11 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::{
-    boxed_stack::BoxedStack,
-    gdt::{Gdt, TssStacks},
-    local_apic_id::LocalApicId,
-    task::ThreadId,
-};
+use crate::{boxed_stack::BoxedStack, gdt::Gdt, local_apic_id::LocalApicId, task::ThreadId};
 
 pub struct CpuLocalData {
     pub cpu: &'static Cpu,
-    pub tss_stacks: Once<TssStacks>,
+    pub normal_stack: Once<VirtAddr>,
     pub tss: Once<TaskStateSegment>,
     pub gdt: Once<Gdt>,
     pub idt: Once<InterruptDescriptorTable>,
@@ -40,7 +35,7 @@ pub fn init(mp_response: &'static MpResponse) {
             .iter()
             .map(|cpu| CpuLocalData {
                 cpu,
-                tss_stacks: Once::new(),
+                normal_stack: Once::new(),
                 tss: Once::new(),
                 gdt: Once::new(),
                 idt: Once::new(),

@@ -1,9 +1,14 @@
 use core::{
     mem::MaybeUninit,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    num::NonZeroU32,
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
-use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{
+    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
+    sync::Arc,
+    vec::Vec,
+};
 use common::{SliceData, Syscall, SyscallWaitUntilEvent};
 use crossbeam_queue::ArrayQueue;
 use nodit::{Interval, NoditMap};
@@ -93,15 +98,15 @@ pub enum ThreadReadyState {
     InSyscall(SyscallSavedRegs),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UserMutex {
-    pub locked_by: ThreadId,
+    pub waiters: spin::Mutex<BTreeSet<ThreadId>>,
 }
 
 #[derive(Debug)]
 pub struct WaitingForMutexState {
     pub saved_regs: SyscallSavedRegs,
-    pub mutex_id: u64,
+    // pub mutex_id: u64,
 }
 
 #[derive(Debug)]
@@ -129,26 +134,40 @@ pub struct Thread {
     pub process: Arc<Process>,
 }
 
-static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_THREAD_ID: AtomicU32 = AtomicU32::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ThreadId(u64);
+pub struct ThreadId(NonZeroU32);
 impl ThreadId {
     pub fn new_unique() -> Self {
-        Self(NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed))
+        Self(
+            NEXT_THREAD_ID
+                .fetch_add(1, Ordering::Relaxed)
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    pub fn from_raw(thread_id: NonZeroU32) -> Self {
+        Self(thread_id)
     }
 }
-impl From<ThreadId> for u64 {
+impl From<ThreadId> for NonZeroU32 {
     fn from(value: ThreadId) -> Self {
         value.0
     }
 }
 
-static NEXT_PROCESS_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_PROCESS_ID: AtomicU32 = AtomicU32::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ProcessId(u64);
+pub struct ProcessId(NonZeroU32);
 impl ProcessId {
     pub fn new_unique() -> Self {
-        Self(NEXT_PROCESS_ID.fetch_add(1, Ordering::Relaxed))
+        Self(
+            NEXT_PROCESS_ID
+                .fetch_add(1, Ordering::Relaxed)
+                .try_into()
+                .unwrap(),
+        )
     }
 }
 
@@ -158,4 +177,10 @@ pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new
 pub static EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
     spin::RwLock::new(BTreeMap::new());
 
-pub static MUTEXES: spin::RwLock<BTreeMap<u64, UserMutex>> = spin::RwLock::new(BTreeMap::new());
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MutexKey {
+    pub process: ProcessId,
+    pub virtual_address: u64,
+}
+pub static MUTEXES: spin::RwLock<BTreeMap<MutexKey, UserMutex>> =
+    spin::RwLock::new(BTreeMap::new());

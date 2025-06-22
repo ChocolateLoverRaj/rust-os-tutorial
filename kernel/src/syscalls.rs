@@ -82,7 +82,7 @@ pub fn init() {
     let local = get_local();
     let syscall_handler_stack = local
         .syscall_handler_stack
-        .call_once(|| BoxedStack::new_uninit(64 * 0x400));
+        .call_once(|| BoxedStack::new_uninit(128 * 0x400));
     let syscall_handler_stack_pointer_ptr = local.syscall_handler_stack_pointer.get();
     let syscall_handler_stack_pointer = syscall_handler_stack.top().as_u64();
     unsafe { syscall_handler_stack_pointer_ptr.write(syscall_handler_stack_pointer) };

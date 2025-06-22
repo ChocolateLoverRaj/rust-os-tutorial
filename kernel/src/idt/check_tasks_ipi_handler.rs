@@ -38,17 +38,12 @@ pub unsafe extern "sysv64" fn raw_check_tasks_ipi_handler(_stack_frame: Interrup
 }
 
 extern "sysv64" fn check_tasks_ipi_handler(interrupted_context: &mut InterruptedContext) {
-    log::info!("Checking tasks");
+    // log::info!("Checking tasks");
     {
         let threads = THREADS.read();
         let local = get_local();
         if let Some(running_thread_id) = local.running_thread.try_lock().unwrap().take() {
-            *threads
-                .get(&running_thread_id)
-                .unwrap()
-                .state
-                .try_write()
-                .unwrap() =
+            *threads.get(&running_thread_id).unwrap().state.write() =
                 ThreadState::Ready(ThreadReadyState::Interrupted(interrupted_context.clone()));
         }
         let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();

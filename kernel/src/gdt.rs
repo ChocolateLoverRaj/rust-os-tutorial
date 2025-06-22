@@ -10,7 +10,11 @@ use x86_64::{
     },
 };
 
-use crate::{boxed_stack::BoxedStack, cpu_local_data::get_local};
+use crate::{
+    boxed_stack::BoxedStack,
+    cpu_local_data::get_local,
+    guarded_stack::{GuardedStack, StackType},
+};
 
 pub struct TssStacks {
     first_exception: BoxedStack,
@@ -34,18 +38,14 @@ pub const DOUBLE_FAULT_STACK_INDEX: u16 = 1;
 /// This function must be called exactly once
 pub unsafe fn init() {
     let local = get_local();
-    let tss_stacks = local.tss_stacks.call_once(|| TssStacks {
-        first_exception: BoxedStack::new_uninit(64 * 0x400),
-        double_fault: BoxedStack::new_uninit(64 * 0x400),
-        privilege_switch: BoxedStack::new_uninit(64 * 0x400),
-    });
     let tss = local.tss.call_once(|| {
         let mut tss = TaskStateSegment::new();
+        let local_apic_id = local.cpu.into();
         tss.interrupt_stack_table[FIRST_EXCEPTION_STACK_INDEX as usize] =
-            tss_stacks.first_exception.top();
+            GuardedStack::new(64 * 0x400, StackType::FirstException(local_apic_id)).top();
         tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
-            tss_stacks.double_fault.top();
-        tss.privilege_stack_table[0] = tss_stacks.privilege_switch.top();
+            GuardedStack::new(64 * 0x400, StackType::DoubleFault(local_apic_id)).top();
+        tss.privilege_stack_table[0] = local.normal_stack.get().unwrap().clone();
         tss
     });
     let gdt = local.gdt.call_once(|| {

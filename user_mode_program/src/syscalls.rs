@@ -1,8 +1,8 @@
-use core::{alloc::Layout, arch::asm, mem::MaybeUninit};
+use core::{alloc::Layout, arch::asm, mem::MaybeUninit, num::NonZeroU32};
 
 use common::{
     SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallExists,
-    SyscallExitProcess, SyscallLog, SyscallLogInput, SyscallReadEventStream,
+    SyscallExitProcess, SyscallGetThreadId, SyscallLog, SyscallLogInput, SyscallReadEventStream,
     SyscallReadEventStreamInput, SyscallReleaseFrameBuffer, SyscallSpawnThread,
     SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
     SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
@@ -22,6 +22,8 @@ unsafe fn raw_syscall(input_and_ouput: &mut [u64; 7]) {
             inlateout("r8") input_and_ouput[4],
             inlateout("r9") input_and_ouput[5],
             inlateout("rax") input_and_ouput[6],
+            lateout("rcx") _,
+            lateout("r11") _,
         );
     }
 }
@@ -114,4 +116,9 @@ pub unsafe fn syscall_spawn_thread(
         rip: f as *const () as u64,
     };
     unsafe { syscall::<SyscallSpawnThread>(&input) };
+}
+
+/// Get this thread's id
+pub fn syscall_get_thread_id() -> NonZeroU32 {
+    unsafe { syscall::<SyscallGetThreadId>(&()) }
 }

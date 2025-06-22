@@ -3,10 +3,11 @@ use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit_process::SyscallExitProcessHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
+use get_thread_id::SyscallGetThreadIdHandler;
 use keyboard::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
 use mouse::SyscallSubscribeToMouseHandler;
-use mutex::{SyscallAquireLockHandler, SyscallReleaseLockHandler, SyscallTryAquireLockhandler};
+use mutex::{SyscallAquireLockHandler, SyscallReleaseLockHandler};
 use read_event_stream::SyscallReadEventStreamHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc::SyscallAllocHandler;
@@ -17,6 +18,7 @@ use crate::syscall_saved_regs::SyscallSavedRegs;
 mod exists;
 mod exit_process;
 mod frame_buffer;
+mod get_thread_id;
 mod keyboard;
 mod log;
 mod mouse;
@@ -95,9 +97,9 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallSubscribeToMouseHandler,
     &SyscallReadEventStreamHandler,
     &SyscallSpawnThreadHandler,
-    &SyscallTryAquireLockhandler,
     &SyscallAquireLockHandler,
     &SyscallReleaseLockHandler,
+    &SyscallGetThreadIdHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

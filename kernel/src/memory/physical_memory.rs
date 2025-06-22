@@ -9,6 +9,7 @@ use x86_64::{
 pub enum KernelMemoryUsageType {
     PageTables,
     GlobalAllocatorHeap,
+    Stack,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

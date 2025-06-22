@@ -1,93 +1,101 @@
-use core::ops::Deref;
+use core::{
+    num::NonZeroU32,
+    ops::Deref,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
-use alloc::collections::btree_map::Entry;
-use common::{SyscallAquireLock, SyscallReleaseLock, SyscallTryAquireLock};
+use common::{SyscallFutexLock, SyscallFutexUnlock};
+use nodit::Interval;
+use x2apic::lapic::IpiAllShorthand;
 
 use crate::{
     cpu_local_data::get_local,
+    interrupt_vector::InterruptVector,
     run_tasks::run_threads,
     task::{
-        MUTEXES, THREAD_PRIORITIES, THREADS, ThreadReadyState, ThreadState, UserMutex,
+        MUTEXES, MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState, ThreadState,
         WaitingForMutexState,
     },
 };
 
 use super::GenericSyscallHandler;
 
-pub struct SyscallTryAquireLockhandler;
-impl GenericSyscallHandler for SyscallTryAquireLockhandler {
-    type S = SyscallTryAquireLock;
-    fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
-        let r = {
-            let id = helper.input().clone();
-            let mut mutexes = MUTEXES.write();
-            let local = get_local();
-            let thread_id = local.running_thread.lock().unwrap();
-            match mutexes.entry(id) {
-                Entry::Occupied(_) => false,
-                Entry::Vacant(entry) => {
-                    entry.insert(UserMutex {
-                        locked_by: thread_id,
-                    });
-                    true
-                }
-            }
-        };
-        helper.syscall_return(&r)
-    }
-}
+const FUTEX_WAITERS: u64 = 1 << 63;
 
 pub struct SyscallAquireLockHandler;
 impl GenericSyscallHandler for SyscallAquireLockHandler {
-    type S = SyscallAquireLock;
+    type S = SyscallFutexLock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
             RunThreads,
             Return,
+            Terminate,
         }
         let action = {
-            let id = helper.input().clone();
-            let mut mutexes = MUTEXES.write();
+            let ptr_u64 = helper.input().clone();
             let local = get_local();
-            let mut running_thread = local.running_thread.lock();
-            let thread_id = running_thread.unwrap();
-            match mutexes.entry(id) {
-                Entry::Occupied(mut entry) => {
-                    let locked_by = entry.get_mut().locked_by;
-                    if locked_by == thread_id {
-                        todo!()
+            let mut running_thread = local.running_thread.try_lock().unwrap();
+            let running_thread_id = running_thread.unwrap();
+            let threads = THREADS.read();
+            let current_thread = threads.get(&running_thread_id).unwrap();
+            if let Some(end) = ptr_u64.checked_add(size_of::<AtomicU64>() as u64) {
+                let interval = Interval::from(ptr_u64..=end);
+                let virtual_memory = current_thread.process.mapped_virtual_memory.read();
+                if virtual_memory.contains_interval(interval)
+                    && virtual_memory
+                        .overlapping(interval)
+                        .all(|(_, permissions)| permissions.write)
+                {
+                    let ptr = ptr_u64 as *mut AtomicU64;
+                    if ptr.is_aligned() {
+                        let a = unsafe { ptr.as_ref() }.unwrap();
+                        let mut mutexes = MUTEXES.write();
+                        let lock_owner = a.fetch_or(FUTEX_WAITERS, Ordering::AcqRel);
+                        if let Some(thread_id) = NonZeroU32::new(lock_owner as u32) {
+                            let thread_id = ThreadId::from_raw(thread_id);
+                            if let Some(lock_owner) = threads.get(&thread_id) {
+                                mutexes
+                                    .entry(MutexKey {
+                                        process: lock_owner.process.id,
+                                        virtual_address: ptr_u64,
+                                    })
+                                    .or_insert_with(Default::default)
+                                    .waiters
+                                    .lock()
+                                    .insert(running_thread_id);
+                                *current_thread.state.write() =
+                                    ThreadState::WaitingForMutex(WaitingForMutexState {
+                                        saved_regs: helper.saved_regs().clone(),
+                                    });
+                                *running_thread = None;
+                                Action::RunThreads
+                            } else {
+                                Action::Return
+                            }
+                        } else {
+                            Action::Return
+                        }
+                    } else {
+                        Action::Terminate
                     }
-                    let threads = THREADS.read();
-                    let thread = threads.get(&thread_id).unwrap();
-                    *thread.state.write() = ThreadState::WaitingForMutex(WaitingForMutexState {
-                        saved_regs: helper.saved_regs().clone(),
-                        mutex_id: id,
-                    });
-                    *running_thread = None;
-                    log::debug!(
-                        "thread: {thread_id:?}. lock held by a different thread. not giving lock"
-                    );
-                    Action::RunThreads
+                } else {
+                    Action::Terminate
                 }
-                Entry::Vacant(entry) => {
-                    log::debug!("vacant. giving lock");
-                    entry.insert(UserMutex {
-                        locked_by: thread_id,
-                    });
-                    Action::Return
-                }
+            } else {
+                Action::Terminate
             }
         };
         match action {
             Action::RunThreads => run_threads(),
             Action::Return => helper.syscall_return(&()),
+            Action::Terminate => todo!(),
         }
     }
 }
 
 pub struct SyscallReleaseLockHandler;
 impl GenericSyscallHandler for SyscallReleaseLockHandler {
-    type S = SyscallReleaseLock;
+    type S = SyscallFutexUnlock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
             Terminate,
@@ -96,55 +104,63 @@ impl GenericSyscallHandler for SyscallReleaseLockHandler {
         }
         let action = {
             // log::debug!("releasing lock");
-            let id = helper.input().clone();
+            let address = helper.input().clone();
+            // TODO: Validate address
             let mut mutexes = MUTEXES.write();
-            match mutexes.get_mut(&id) {
+            let local = get_local();
+            let mut running_thread = local.running_thread.try_lock().unwrap();
+            let current_thread_id = running_thread.unwrap();
+            let threads = THREADS.read();
+            let current_thread = threads.get(&current_thread_id).unwrap();
+
+            match mutexes.get_mut(&MutexKey {
+                process: current_thread.process.id,
+                virtual_address: address,
+            }) {
                 Some(mutex) => {
-                    let local = get_local();
-                    let mut running_thread = local.running_thread.lock();
-                    let thread_id = running_thread.unwrap();
-                    if mutex.locked_by == thread_id {
-                        let thread_priorities = THREAD_PRIORITIES.read();
-                        let threads = THREADS.read();
-                        let thread = threads.get(&thread_id).unwrap();
-                        *thread.state.write() = ThreadState::Ready(ThreadReadyState::InSyscall(
-                            helper.saved_regs().clone(),
+                    let mut waiters = mutex.waiters.lock();
+                    let thread_priorities = THREAD_PRIORITIES.read();
+                    let highest_priority_waiter = thread_priorities
+                        .iter()
+                        .find(|thread_id| waiters.contains(thread_id))
+                        .unwrap();
+                    *current_thread.state.write() = ThreadState::Ready(
+                        ThreadReadyState::InSyscall(helper.saved_regs().clone()),
+                    );
+                    *running_thread = None;
+                    let mut new_lock_owner_state =
+                        threads.get(highest_priority_waiter).unwrap().state.write();
+                    if let ThreadState::WaitingForMutex(data) = new_lock_owner_state.deref() {
+                        let new_state = ThreadState::Ready(ThreadReadyState::InSyscall(
+                            data.saved_regs.clone(),
                         ));
-                        let mut thread_priorities = thread_priorities.iter();
-                        if let Some(action) = loop {
-                            match thread_priorities.next() {
-                                Some(thread_id) => {
-                                    let thread = threads.get(thread_id).unwrap();
-                                    let state = thread.state.upgradeable_read();
-                                    if let ThreadState::WaitingForMutex(data) = state.deref()
-                                        && data.mutex_id == id
-                                    {
-                                        let saved_regs = data.saved_regs.clone();
-                                        let mut state = state.upgrade();
-                                        *state = ThreadState::Ready(ThreadReadyState::InSyscall(
-                                            saved_regs,
-                                        ));
-                                        *running_thread = None;
-                                        mutex.locked_by = *thread_id;
-                                        log::debug!("giving lock to {thread_id:?}");
-                                        break Some(Action::RunThreads);
-                                    }
-                                }
-                                None => {
-                                    break None;
-                                }
-                            }
-                        } {
-                            action
-                        } else {
-                            mutexes.remove(&id);
-                            Action::Return
+                        *new_lock_owner_state = new_state;
+                        let mut local_apic = local.local_apic.get().unwrap().lock();
+                        waiters.remove(highest_priority_waiter);
+                        let thread_only =
+                            u64::from(u32::from(NonZeroU32::from(*highest_priority_waiter)));
+                        let a = address as *const AtomicU64;
+                        let a = unsafe { a.as_ref() }.unwrap();
+                        a.store(
+                            if waiters.is_empty() {
+                                thread_only
+                            } else {
+                                thread_only | FUTEX_WAITERS
+                            },
+                            Ordering::Release,
+                        );
+                        unsafe {
+                            local_apic.send_ipi_all(
+                                u8::from(InterruptVector::CheckTasks),
+                                IpiAllShorthand::AllExcludingSelf,
+                            );
                         }
+                        Action::RunThreads
                     } else {
-                        Action::Terminate
+                        unreachable!()
                     }
                 }
-                None => Action::Terminate,
+                None => Action::Return,
             }
         };
         match action {

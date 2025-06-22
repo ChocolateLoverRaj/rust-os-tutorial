@@ -223,6 +223,7 @@ pub fn spawn_task(module_response: &ModuleResponse) {
                     level_4_table_mut[i].clone_from(&current_level_4_table[i]);
                 }
                 unsafe { Cr3::write(user_l4_frame, memory.new_kernel_cr3_flags) };
+                log::info!("New process's Cr3: {user_l4_frame:?}");
                 let thread_id = ThreadId::new_unique();
                 THREADS.write().insert(
                     thread_id,
