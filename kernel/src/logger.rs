@@ -115,7 +115,7 @@ impl Inner {
                         let height_not_seen = self.position.y + font.character_size.height as i32
                             - self.display.bounding_box().size.height as i32;
                         if height_not_seen > 0 {
-                            self.display.shift_up(height_not_seen as u32);
+                            self.display.shift_up(height_not_seen as usize);
                             self.position.y -= height_not_seen;
                         }
                         match c {

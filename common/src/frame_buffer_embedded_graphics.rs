@@ -2,37 +2,51 @@ use core::convert::Infallible;
 
 pub use embedded_graphics;
 use embedded_graphics::{
+    Pixel,
     pixelcolor::Rgb888,
     prelude::{Dimensions, DrawTarget, Point, RgbColor, Size},
     primitives::Rectangle,
 };
+use zerocopy::TryFromBytes;
 
 use crate::FrameBufferInfo;
 
+/// Kind of uses double buffering
 pub struct FrameBufferEmbeddedGraphics<'a> {
-    buffer: &'a mut [u8],
+    buffer: &'a mut [u32],
     info: FrameBufferInfo,
+    pixel_pitch: usize,
+    bounding_box: Rectangle,
 }
 
 impl<'a> FrameBufferEmbeddedGraphics<'a> {
     /// # Safety
     /// The frame buffer must be mapped at `addr`
     pub unsafe fn new(addr: *mut u8, info: FrameBufferInfo) -> Self {
-        if info.bits_per_pixel == 8 * 4 {
+        if info.bits_per_pixel as usize == 8 * size_of::<u32>() {
+            let len = (info.pitch * info.height) as usize;
             Self {
                 buffer: {
-                    let len = (info.pitch * info.height) as usize;
                     // Safety: This memory is mapped
-                    unsafe { core::slice::from_raw_parts_mut(addr, len) }
+                    let bytes = unsafe { core::slice::from_raw_parts_mut(addr, len) };
+                    <[u32] as TryFromBytes>::try_mut_from_bytes(bytes).unwrap()
                 },
                 info,
+                pixel_pitch: info.pitch as usize / size_of::<u32>(),
+                bounding_box: Rectangle {
+                    top_left: Point::zero(),
+                    size: Size {
+                        width: info.width.try_into().unwrap(),
+                        height: info.height.try_into().unwrap(),
+                    },
+                },
             }
         } else {
             panic!("DrawTarget implemented for RGB888, but bpp doesn't match RGB888");
         }
     }
 
-    fn get_pixel(&self, color: Rgb888) -> [u8; 4] {
+    fn get_pixel(&self, color: Rgb888) -> u32 {
         let mut n = 0;
         n |=
             ((color.r() as u32) & ((1 << self.info.red_mask_size) - 1)) << self.info.red_mask_shift;
@@ -40,14 +54,12 @@ impl<'a> FrameBufferEmbeddedGraphics<'a> {
             << self.info.green_mask_shift;
         n |= ((color.b() as u32) & ((1 << self.info.blue_mask_size) - 1))
             << self.info.blue_mask_shift;
-        n.to_ne_bytes()
+        n
     }
 
     /// Moves everything on the screen up, leaving the bottom the same as it was before
-    pub fn shift_up(&mut self, amount: u32) {
-        let pitch = self.info.pitch;
-        self.buffer
-            .copy_within(amount as usize * pitch as usize..self.buffer.len(), 0);
+    pub fn shift_up(&mut self, amount: usize) {
+        self.buffer.copy_within(amount * self.pixel_pitch.., 0);
     }
 }
 
@@ -60,40 +72,26 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
     where
         I: IntoIterator<Item = embedded_graphics::Pixel<Self::Color>>,
     {
-        let bytes_per_pixel = (self.info.bits_per_pixel / 8) as usize;
-        pixels.into_iter().for_each(|pixel| {
-            let point = pixel.0;
-            if (0..self.info.width).contains(&(point.x as u64))
-                && (0..self.info.height).contains(&(point.y as u64))
-            {
-                let color = pixel.1;
-                let buffer_position = point.y as usize * self.info.pitch as usize
-                    + point.x as usize * bytes_per_pixel;
-                let pixel = self.get_pixel(color);
-                self.buffer[buffer_position..buffer_position + bytes_per_pixel]
-                    .copy_from_slice(&pixel);
-            }
-        });
+        let bounding_box = self.bounding_box();
+        pixels
+            .into_iter()
+            .filter(|Pixel(point, _)| bounding_box.contains(*point))
+            .for_each(|Pixel(point, color)| {
+                let pixel_index = point.y as usize * self.pixel_pitch + point.x as usize;
+                self.buffer[pixel_index] = self.get_pixel(color);
+            });
         Ok(())
     }
 
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
-        let area = area.intersection(&self.bounding_box());
+        let area = area.intersection(&self.bounding_box);
         let pixel = self.get_pixel(color);
-        let bytes_per_pixel = (self.info.bits_per_pixel / 8) as usize;
-        let pitch = self.info.pitch as usize;
-        // Draw to the top row
-        for x in area.top_left.x..area.top_left.x + area.size.width as i32 {
-            let buffer_position = area.top_left.y as usize * pitch + x as usize * bytes_per_pixel;
-            self.buffer[buffer_position..buffer_position + bytes_per_pixel].copy_from_slice(&pixel);
-        }
-        // Copy the top row to all other rows
-        let top_row_start =
-            area.top_left.y as usize * pitch + area.top_left.x as usize * bytes_per_pixel;
-        let top_row = top_row_start..top_row_start + area.size.width as usize * bytes_per_pixel;
-        for y in area.top_left.y + 1..area.top_left.y + area.size.height as i32 {
-            let row_start = y as usize * pitch + area.top_left.x as usize * bytes_per_pixel;
-            self.buffer.copy_within(top_row.clone(), row_start);
+        let width = area.size.width as usize;
+        let top_left_x = area.top_left.x as usize;
+        for y in area.top_left.y as usize..area.top_left.y as usize + area.size.height as usize {
+            let pixel_index = y * self.pixel_pitch + top_left_x;
+            let pixels = &mut self.buffer[pixel_index..pixel_index + width];
+            pixels.fill(pixel);
         }
         Ok(())
     }
@@ -101,12 +99,6 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
 
 impl Dimensions for FrameBufferEmbeddedGraphics<'_> {
     fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
-        Rectangle {
-            top_left: Point { x: 0, y: 0 },
-            size: Size {
-                width: self.info.width.try_into().unwrap(),
-                height: self.info.height.try_into().unwrap(),
-            },
-        }
+        self.bounding_box
     }
 }

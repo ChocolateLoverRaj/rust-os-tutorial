@@ -81,9 +81,6 @@ pub fn run_threads() -> ! {
         }
     };
     // log::debug!("Action: {:?}", action);
-    if let Action::Start(s) = &action {
-        // log::debug!("Starting: {s:?}");
-    }
     match action {
         Action::Start(ThreadReadyState::ReadyToStart(start_data)) => {
             let input = EnterUserModeInput {
