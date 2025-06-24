@@ -92,10 +92,22 @@ pub struct StartData {
 }
 
 #[derive(Debug, Clone)]
+pub struct ThreadReadyStateInSyscall {
+    pub saved_regs: SyscallSavedRegs,
+    pub output: [u64; 7],
+}
+
+impl ThreadReadyStateInSyscall {
+    pub unsafe fn sysretq(self) -> ! {
+        unsafe { self.saved_regs.sysretq(self.output) }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ThreadReadyState {
     ReadyToStart(StartData),
     Interrupted(InterruptedContext),
-    InSyscall(SyscallSavedRegs),
+    InSyscall(ThreadReadyStateInSyscall),
 }
 
 #[derive(Debug, Default)]

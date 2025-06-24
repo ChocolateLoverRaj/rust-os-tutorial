@@ -1,6 +1,9 @@
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::{
+    num::NonZeroU32,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
-use common::{SyscallFutexLock, SyscallFutexUnlock};
+use common::{FUTEX_WAITERS, FutexLockError, SyscallFutexLock, SyscallFutexUnlock};
 use lock_api::{GuardNoSend, RawMutex};
 
 use crate::syscalls::{syscall, syscall_get_thread_id};
@@ -13,36 +16,111 @@ unsafe impl RawMutex for RawBlockingLock {
     type GuardMarker = GuardNoSend;
 
     fn lock(&self) {
-        while !self.try_lock() {
-            // unsafe { syscall::<SyscallFutexLock>(&(&self.0 as *const _ as u64)) };
+        let thread_id = syscall_get_thread_id();
+        let new = u64::from(u32::from(thread_id));
+        let success = Ordering::Release;
+        let failure = Ordering::Acquire;
+
+        enum DoAction {
+            TryExchangeZero,
+            TryExchangeWaiters,
+            Syscall,
+        }
+        let mut action = DoAction::TryExchangeZero;
+        loop {
+            match action {
+                DoAction::TryExchangeZero => {
+                    match self.0.compare_exchange(0, new, success, failure) {
+                        Ok(_) => break,
+                        Err(value) => {
+                            if let Some(lock_owner) = NonZeroU32::new(value as u32)
+                                && lock_owner == thread_id
+                            {
+                                break;
+                            } else if value == FUTEX_WAITERS {
+                                action = DoAction::TryExchangeWaiters;
+                            } else {
+                                action = DoAction::Syscall;
+                            }
+                        }
+                    }
+                }
+                DoAction::TryExchangeWaiters => {
+                    match self
+                        .0
+                        .compare_exchange(FUTEX_WAITERS, new, success, failure)
+                    {
+                        Ok(_) => break,
+                        Err(value) => {
+                            if value == 0 {
+                                action = DoAction::TryExchangeZero;
+                            } else {
+                                action = DoAction::Syscall;
+                            }
+                        }
+                    }
+                }
+                DoAction::Syscall => {
+                    match unsafe { syscall::<SyscallFutexLock>(&(&self.0 as *const _ as u64)) } {
+                        Ok(_) => break,
+                        Err(FutexLockError::CheckWithWaiters) => {
+                            action = DoAction::TryExchangeWaiters
+                        }
+                        Err(FutexLockError::UnknownLockOwner) => unreachable!(),
+                    }
+                }
+            }
         }
     }
 
     fn try_lock(&self) -> bool {
-        self.0
-            .compare_exchange(
-                0,
-                u64::from(u32::from(syscall_get_thread_id())),
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            )
-            .is_ok()
+        let thread_id = syscall_get_thread_id();
+        let new = u64::from(u32::from(thread_id));
+        let success = Ordering::Release;
+        let failure = Ordering::Acquire;
+        loop {
+            match self.0.compare_exchange(0, new, success, failure) {
+                Ok(_) => break true,
+                Err(value) => {
+                    if let Some(lock_owner) = NonZeroU32::new(value as u32)
+                        && lock_owner == thread_id
+                    {
+                        break true;
+                    }
+                    if value == FUTEX_WAITERS {
+                        match self
+                            .0
+                            .compare_exchange(FUTEX_WAITERS, new, success, failure)
+                        {
+                            Ok(_) => break true,
+                            Err(value) => {
+                                if value != 0 {
+                                    break false;
+                                }
+                            }
+                        }
+                    } else {
+                        break false;
+                    }
+                }
+            }
+        }
     }
 
     unsafe fn unlock(&self) {
-        self.0.store(0, Ordering::Release);
-        // if self
-        //     .0
-        //     .compare_exchange(
-        //         u64::from(u32::from(syscall_get_thread_id())),
-        //         0,
-        //         Ordering::AcqRel,
-        //         Ordering::Relaxed,
-        //     )
-        //     .is_err()
-        // {
-        //     // unsafe { syscall::<SyscallFutexUnlock>(&(&self.0 as *const _ as u64)) };
-        // }
+        // self.0.store(0, Ordering::Release);
+        if self
+            .0
+            .compare_exchange(
+                u64::from(u32::from(syscall_get_thread_id())),
+                0,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            unsafe { syscall::<SyscallFutexUnlock>(&(&self.0 as *const _ as u64)) };
+        }
     }
 }
 

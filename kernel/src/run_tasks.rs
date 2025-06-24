@@ -1,6 +1,5 @@
 use core::ops::Deref;
 
-use common::{Syscall, SyscallSpawnThread};
 use x86_64::{
     instructions::interrupts,
     registers::{control::Cr3, rflags::RFlags},
@@ -37,6 +36,7 @@ pub fn run_threads() -> ! {
             if let Some(thread_id) = thread_priorities.next() {
                 let thread = threads.get(thread_id).unwrap();
                 let mut thread_state = thread.state.write();
+                // log::debug!("Tjread: {thread_id:?} {thread_state:?}");
                 match thread_state.deref() {
                     ThreadState::Ready(ready_state) => {
                         let action = Action::Start(ready_state.clone());
@@ -93,10 +93,7 @@ pub fn run_threads() -> ! {
         Action::Start(ThreadReadyState::Interrupted(interrupted_context)) => unsafe {
             interrupted_context.restore()
         },
-        Action::Start(ThreadReadyState::InSyscall(syscall_saved_regs)) => {
-            let output = SyscallSpawnThread::encode_output(&());
-            unsafe { syscall_saved_regs.sysretq(output) }
-        }
+        Action::Start(ThreadReadyState::InSyscall(data)) => unsafe { data.sysretq() },
         Action::ReturnFromWait(state) => unsafe { state.sysretq() },
         Action::DoNothing => {
             // log::debug!("No threads to run. Doing nothing.");

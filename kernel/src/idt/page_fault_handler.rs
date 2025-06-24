@@ -24,6 +24,7 @@ pub extern "x86-interrupt" fn page_fault_handler(
             && let Some(stack) = STACK_GUARD_PAGES.lock().get(&accessed_page)
         {
             #[derive(Debug)]
+            #[allow(unused)]
             struct StackOverflow {
                 stack: StackType,
                 guard_page: Page,

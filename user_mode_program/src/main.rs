@@ -43,8 +43,8 @@ unsafe extern "C" fn entry_point() -> ! {
     log::info!("Hi");
     let stack = BoxedStack::new_uninit(64 * 0x400);
     let stack2 = BoxedStack::new_uninit(64 * 0x400);
-    // unsafe { syscall_spawn_thread(worker, stack.top(), SpawnThreadRelativePriority::Lower) };
-    // unsafe { syscall_spawn_thread(worker, stack2.top(), SpawnThreadRelativePriority::Lower) };
+    unsafe { syscall_spawn_thread(worker, stack.top(), SpawnThreadRelativePriority::Lower) };
+    unsafe { syscall_spawn_thread(worker, stack2.top(), SpawnThreadRelativePriority::Lower) };
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
         let keyboard = AsyncKeyboardDecoded::new(
@@ -144,8 +144,5 @@ extern "sysv64" fn worker() -> ! {
     loop {
         log::debug!("{count}");
         count += 1;
-        for _ in 0..1_000_000 {
-            core::hint::spin_loop();
-        }
     }
 }

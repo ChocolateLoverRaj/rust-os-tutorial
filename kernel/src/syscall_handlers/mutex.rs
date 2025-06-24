@@ -4,7 +4,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use common::{SyscallFutexLock, SyscallFutexUnlock};
+use common::{FUTEX_WAITERS, FutexLockError, Syscall, SyscallFutexLock, SyscallFutexUnlock};
 use nodit::Interval;
 use x2apic::lapic::IpiAllShorthand;
 
@@ -13,14 +13,12 @@ use crate::{
     interrupt_vector::InterruptVector,
     run_tasks::run_threads,
     task::{
-        MUTEXES, MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState, ThreadState,
-        WaitingForMutexState,
+        MUTEXES, MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState,
+        ThreadReadyStateInSyscall, ThreadState, WaitingForMutexState,
     },
 };
 
 use super::GenericSyscallHandler;
-
-const FUTEX_WAITERS: u64 = 1 << 63;
 
 pub struct SyscallAquireLockHandler;
 impl GenericSyscallHandler for SyscallAquireLockHandler {
@@ -28,7 +26,7 @@ impl GenericSyscallHandler for SyscallAquireLockHandler {
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
             RunThreads,
-            Return,
+            Return(<SyscallFutexLock as Syscall>::Output),
             Terminate,
         }
         let action = {
@@ -70,10 +68,10 @@ impl GenericSyscallHandler for SyscallAquireLockHandler {
                                 *running_thread = None;
                                 Action::RunThreads
                             } else {
-                                Action::Return
+                                Action::Return(Err(FutexLockError::UnknownLockOwner))
                             }
                         } else {
-                            Action::Return
+                            Action::Return(Err(FutexLockError::CheckWithWaiters))
                         }
                     } else {
                         Action::Terminate
@@ -87,7 +85,7 @@ impl GenericSyscallHandler for SyscallAquireLockHandler {
         };
         match action {
             Action::RunThreads => run_threads(),
-            Action::Return => helper.syscall_return(&()),
+            Action::Return(output) => helper.syscall_return(&output),
             Action::Terminate => todo!(),
         }
     }
@@ -98,12 +96,11 @@ impl GenericSyscallHandler for SyscallReleaseLockHandler {
     type S = SyscallFutexUnlock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
-            Terminate,
+            // Terminate,
             RunThreads,
             Return,
         }
         let action = {
-            // log::debug!("releasing lock");
             let address = helper.input().clone();
             // TODO: Validate address
             let mut mutexes = MUTEXES.write();
@@ -125,14 +122,20 @@ impl GenericSyscallHandler for SyscallReleaseLockHandler {
                         .find(|thread_id| waiters.contains(thread_id))
                         .unwrap();
                     *current_thread.state.write() = ThreadState::Ready(
-                        ThreadReadyState::InSyscall(helper.saved_regs().clone()),
+                        ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
+                            saved_regs: helper.saved_regs().clone(),
+                            output: Self::S::encode_output(&()),
+                        }),
                     );
                     *running_thread = None;
                     let mut new_lock_owner_state =
                         threads.get(highest_priority_waiter).unwrap().state.write();
                     if let ThreadState::WaitingForMutex(data) = new_lock_owner_state.deref() {
                         let new_state = ThreadState::Ready(ThreadReadyState::InSyscall(
-                            data.saved_regs.clone(),
+                            ThreadReadyStateInSyscall {
+                                saved_regs: data.saved_regs.clone(),
+                                output: SyscallFutexLock::encode_output(&Ok(())),
+                            },
                         ));
                         *new_lock_owner_state = new_state;
                         let mut local_apic = local.local_apic.get().unwrap().lock();
@@ -165,9 +168,6 @@ impl GenericSyscallHandler for SyscallReleaseLockHandler {
         };
         match action {
             Action::RunThreads => run_threads(),
-            Action::Terminate => {
-                todo!()
-            }
             Action::Return => helper.syscall_return(&()),
         }
     }

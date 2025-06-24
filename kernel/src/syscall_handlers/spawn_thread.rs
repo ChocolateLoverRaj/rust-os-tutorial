@@ -1,4 +1,4 @@
-use common::{SpawnThreadRelativePriority, SyscallSpawnThread};
+use common::{SpawnThreadRelativePriority, Syscall, SyscallSpawnThread};
 use x2apic::lapic::IpiAllShorthand;
 
 use crate::{
@@ -6,7 +6,8 @@ use crate::{
     interrupt_vector::InterruptVector,
     run_tasks::run_threads,
     task::{
-        StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState, ThreadState,
+        StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState,
+        ThreadReadyStateInSyscall, ThreadState,
     },
 };
 
@@ -33,7 +34,10 @@ impl GenericSyscallHandler for SyscallSpawnThreadHandler {
             let new_thread_id = ThreadId::new_unique();
             let current_thread = threads.get(&running_thread_id).unwrap();
             *current_thread.state.write() =
-                ThreadState::Ready(ThreadReadyState::InSyscall(helper.saved_regs().clone()));
+                ThreadState::Ready(ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
+                    saved_regs: helper.saved_regs().clone(),
+                    output: Self::S::encode_output(&()),
+                }));
             let process = current_thread.process.clone();
             threads.insert(
                 new_thread_id,
