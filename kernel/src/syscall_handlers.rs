@@ -3,11 +3,11 @@ use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit_process::SyscallExitProcessHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
+use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
 use keyboard::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
 use mouse::SyscallSubscribeToMouseHandler;
-use mutex::{SyscallAquireLockHandler, SyscallReleaseLockHandler};
 use read_event_stream::SyscallReadEventStreamHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc::SyscallAllocHandler;
@@ -18,11 +18,11 @@ use crate::syscall_saved_regs::SyscallSavedRegs;
 mod exists;
 mod exit_process;
 mod frame_buffer;
+mod futex;
 mod get_thread_id;
 mod keyboard;
 mod log;
 mod mouse;
-mod mutex;
 mod read_event_stream;
 mod spawn_thread;
 mod syscall_alloc;
@@ -97,8 +97,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallSubscribeToMouseHandler,
     &SyscallReadEventStreamHandler,
     &SyscallSpawnThreadHandler,
-    &SyscallAquireLockHandler,
-    &SyscallReleaseLockHandler,
+    &SyscallFutexLockHandler,
+    &SyscallFutexUnlockHandler,
     &SyscallGetThreadIdHandler,
 ];
 pub struct SyscallHandlers {

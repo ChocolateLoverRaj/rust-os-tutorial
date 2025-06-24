@@ -20,8 +20,8 @@ use crate::{
 
 use super::GenericSyscallHandler;
 
-pub struct SyscallAquireLockHandler;
-impl GenericSyscallHandler for SyscallAquireLockHandler {
+pub struct SyscallFutexLockHandler;
+impl GenericSyscallHandler for SyscallFutexLockHandler {
     type S = SyscallFutexLock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
@@ -91,8 +91,8 @@ impl GenericSyscallHandler for SyscallAquireLockHandler {
     }
 }
 
-pub struct SyscallReleaseLockHandler;
-impl GenericSyscallHandler for SyscallReleaseLockHandler {
+pub struct SyscallFutexUnlockHandler;
+impl GenericSyscallHandler for SyscallFutexUnlockHandler {
     type S = SyscallFutexUnlock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
