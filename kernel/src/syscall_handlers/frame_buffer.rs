@@ -3,6 +3,7 @@ use common::{
     SyscallTakeFrameBufferOutput,
 };
 use nodit::interval::ue;
+use raw_cpuid::CpuId;
 use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{
@@ -87,10 +88,29 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
             for i in 0..n_pages {
                 let frame = first_frame + i;
                 let page = first_page + i;
-                let flags = PageTableFlags::PRESENT
-                    | PageTableFlags::USER_ACCESSIBLE
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::NO_EXECUTE;
+                let flags = {
+                    let mut base_flags = PageTableFlags::PRESENT
+                        | PageTableFlags::USER_ACCESSIBLE
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::NO_EXECUTE;
+                    if CpuId::new().get_feature_info().unwrap().has_pat() {
+                        // https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#x86-64
+                        // This is the PAT index for WC (Write Combining)
+                        let pat_index = 5;
+                        if pat_index & (1 << 0) != 0 {
+                            base_flags |= PageTableFlags::WRITE_THROUGH;
+                        }
+                        if pat_index & (1 << 1) != 0 {
+                            base_flags |= PageTableFlags::NO_CACHE;
+                        }
+                        if pat_index & (1 << 2) != 0 {
+                            base_flags |= PageTableFlags::PAT_4KIB_PAGE;
+                        }
+                    } else {
+                        base_flags |= PageTableFlags::WRITE_THROUGH;
+                    }
+                    base_flags
+                };
                 let frame_allocator = &mut physical_memory.get_user_mode_program_frame_allocator();
                 // Safety: virtual memory is unused, physical memory is okay to access
                 unsafe { mapper.map_to(page, frame, flags, frame_allocator) }

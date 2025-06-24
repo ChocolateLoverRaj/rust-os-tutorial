@@ -49,7 +49,8 @@ pub fn init(mp_response: &'static MpResponse) {
 
 /// This function makes sure that we are writing a valid pointer to CPU local data to GsBase
 fn write_gs_base(ptr: &'static CpuLocalData) {
-    GsBase::write(VirtAddr::from_ptr(ptr));
+    // Safety: We are using GsBase to point to `CpuLocalData`
+    unsafe { GsBase::write(VirtAddr::from_ptr(ptr)) };
 }
 
 /// # Safety

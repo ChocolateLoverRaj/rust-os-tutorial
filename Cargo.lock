@@ -308,7 +308,7 @@ dependencies = [
  "uart_16550",
  "unicode-segmentation",
  "x2apic",
- "x86_64 0.15.2",
+ "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
 ]
 
 [[package]]
@@ -604,7 +604,7 @@ dependencies = [
  "ps2-mouse",
  "spin",
  "talc",
- "x86_64 0.15.2",
+ "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -701,7 +701,7 @@ dependencies = [
  "bitflags 1.3.2",
  "paste",
  "raw-cpuid 10.7.0",
- "x86_64 0.15.2",
+ "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -732,6 +732,17 @@ name = "x86_64"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f042214de98141e9c8706e8192b73f56494087cc55ebec28ce10f26c5c364ae"
+dependencies = [
+ "bit_field",
+ "bitflags 2.9.1",
+ "rustversion",
+ "volatile",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.15.2"
+source = "git+https://github.com/rust-osdev/x86_64?branch=next#c845be94a294c2ef95e4280e5c4c04758b9963c0"
 dependencies = [
  "bit_field",
  "bitflags 2.9.1",

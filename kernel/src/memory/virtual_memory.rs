@@ -108,7 +108,7 @@ impl<S: PageSize> AllocatedPages<'_, S> {
         // Safety: Nothing else is accessing the page tables right now
         let mut offset_page_table = unsafe { get_page_table(self.virtual_memory.cr3, false) };
         for page in pages.clone() {
-            offset_page_table.unmap(page).unwrap().1.flush();
+            offset_page_table.unmap(page).unwrap().2.flush();
         }
         let _ = self.virtual_memory.set.cut({
             let start = pages.start().start_address().as_u64();

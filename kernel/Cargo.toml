@@ -37,7 +37,7 @@ uart = { git = "https://github.com/ChocolateLoverRaj/uart", branch = "send-sync"
 uart_16550 = "0.3.2"
 unicode-segmentation = "1.12.0"
 x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", branch = "main" }
-x86_64 = "0.15.2"
+x86_64 = { git = "https://github.com/rust-osdev/x86_64", branch = "next" }
 
 [[bin]]
 name = "kernel"
