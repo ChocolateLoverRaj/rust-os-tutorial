@@ -63,6 +63,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                         .insert_merge_touching_if_values_equal(
                             range.clone().into(),
                             VirtualMemoryPermissions {
+                                read: true,
                                 write: true,
                                 execute: false,
                             },

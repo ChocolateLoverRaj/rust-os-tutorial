@@ -2,12 +2,12 @@
 #![feature(maybe_uninit_slice, sync_unsafe_cell)]
 extern crate alloc;
 
-mod boxed_stack;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod slice_data;
 mod syscall;
 mod syscall_alloc;
+mod syscall_alloc_stack;
 mod syscall_exists;
 mod syscall_exit;
 mod syscall_frame_buffer;
@@ -21,12 +21,12 @@ mod syscall_spawn_process;
 mod syscall_spawn_thread;
 mod syscall_wait_until_event;
 
-pub use boxed_stack::*;
 pub use frame_buffer_embedded_graphics::*;
 pub use frame_buffer_info::*;
 pub use slice_data::SliceData;
 pub use syscall::*;
 pub use syscall_alloc::*;
+pub use syscall_alloc_stack::*;
 pub use syscall_exists::*;
 pub use syscall_exit::*;
 pub use syscall_frame_buffer::*;

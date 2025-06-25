@@ -22,6 +22,9 @@ use crate::{
 /// Read is always given, because it doesn't make sense not to have read
 #[derive(Debug, PartialEq, Eq)]
 pub struct VirtualMemoryPermissions {
+    /// If this is fault, this means that the page is intentionally left unmapped.
+    /// This is useful for stack guard pages
+    pub read: bool,
     pub write: bool,
     pub execute: bool,
 }
@@ -29,6 +32,7 @@ pub struct VirtualMemoryPermissions {
 impl From<ElfSegmentFlags> for VirtualMemoryPermissions {
     fn from(value: ElfSegmentFlags) -> Self {
         Self {
+            read: value.contains(ElfSegmentFlags::READABLE),
             write: value.contains(ElfSegmentFlags::WRITABLE),
             execute: value.contains(ElfSegmentFlags::EXECUTABLE),
         }

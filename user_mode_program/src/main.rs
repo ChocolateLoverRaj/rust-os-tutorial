@@ -6,7 +6,7 @@ use core::ops::DerefMut;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use async_mouse_decoded::AsyncMouseDecoded;
 use common::{
-    BoxedStack, SpawnThreadRelativePriority,
+    SpawnThreadRelativePriority,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, Point, Size, WebColors},
@@ -18,8 +18,9 @@ use execute_future::execute_future;
 use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
 use futures::{StreamExt, stream::select};
+use guarded_stack::GuardedStack;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use syscalls::{syscall_exit, syscall_spawn_thread};
+use syscalls::syscall_exit;
 
 extern crate alloc;
 
@@ -31,6 +32,7 @@ pub mod execute_future;
 pub mod executor_context;
 pub mod frame_buffer;
 pub mod global_allocator;
+pub mod guarded_stack;
 pub mod logger;
 pub mod mutex;
 pub mod panic_handler;
@@ -41,10 +43,12 @@ unsafe extern "C" fn entry_point() -> ! {
     logger::init();
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     log::info!("Hi");
-    let stack = BoxedStack::new_uninit(64 * 0x400);
-    let stack2 = BoxedStack::new_uninit(64 * 0x400);
-    unsafe { syscall_spawn_thread(worker, stack.top(), SpawnThreadRelativePriority::Lower) };
-    unsafe { syscall_spawn_thread(worker, stack2.top(), SpawnThreadRelativePriority::Lower) };
+    GuardedStack::new(64 * 0x400)
+        .unwrap()
+        .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
+    GuardedStack::new(64 * 0x400)
+        .unwrap()
+        .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
         let keyboard = AsyncKeyboardDecoded::new(

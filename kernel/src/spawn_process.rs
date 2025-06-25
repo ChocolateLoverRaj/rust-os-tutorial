@@ -31,7 +31,8 @@ use crate::{
 /// However, since this is a stack pointer it is still technically pointing to the lower half so this actually works.
 pub const INITIAL_RSP: u64 = 0x800000000000;
 
-pub fn spawn_task(module_response: &ModuleResponse) {
+/// Creates a process with a single thread, based on an ELF
+pub fn spawn_process(module_response: &ModuleResponse) {
     if let Some(file) = module_response
         .modules()
         .iter()
@@ -181,6 +182,7 @@ pub fn spawn_task(module_response: &ModuleResponse) {
                     .insert_merge_touching(
                         (stack_start..=stack_end_inclusive).into(),
                         VirtualMemoryPermissions {
+                            read: true,
                             write: true,
                             execute: false,
                         },

@@ -43,7 +43,7 @@ pub mod panic_handler;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
-pub mod run_user_mode_program;
+pub mod spawn_process;
 pub mod spcr;
 pub mod syscall_handlers;
 pub mod syscall_saved_regs;
@@ -122,7 +122,7 @@ extern "sysv64" fn init_bsp() -> ! {
     // x86_64::instructions::interrupts::enable();
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
-    run_user_mode_program::spawn_task(module_response);
+    spawn_process::spawn_process(module_response);
 
     run_threads()
 }

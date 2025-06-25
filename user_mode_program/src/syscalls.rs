@@ -1,7 +1,8 @@
 use core::{alloc::Layout, arch::asm, mem::MaybeUninit, num::NonZeroU32};
 
 use common::{
-    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallExists,
+    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocStack,
+    SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput, SyscallExists,
     SyscallExitProcess, SyscallGetThreadId, SyscallLog, SyscallLogInput, SyscallReadEventStream,
     SyscallReadEventStreamInput, SyscallReleaseFrameBuffer, SyscallSpawnThread,
     SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
@@ -121,4 +122,9 @@ pub unsafe fn syscall_spawn_thread(
 /// Get this thread's id
 pub fn syscall_get_thread_id() -> NonZeroU32 {
     unsafe { syscall::<SyscallGetThreadId>(&()) }
+}
+
+pub fn syscall_alloc_stack(len: usize) -> Result<SyscallAllocStackOutput, SyscallAllocStackError> {
+    let input = SyscallAllocStackInput { len: len as u64 };
+    unsafe { syscall::<SyscallAllocStack>(&input) }
 }

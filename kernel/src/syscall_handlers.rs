@@ -1,4 +1,5 @@
 use alloc::collections::btree_map::{self, BTreeMap};
+use alloc_stack::SyscallAllocStackHandler;
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit_process::SyscallExitProcessHandler;
@@ -15,6 +16,7 @@ use wait_until_event::SyscallWaitUntilEventHandler;
 
 use crate::syscall_saved_regs::SyscallSavedRegs;
 
+mod alloc_stack;
 mod exists;
 mod exit_process;
 mod frame_buffer;
@@ -100,6 +102,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallFutexLockHandler,
     &SyscallFutexUnlockHandler,
     &SyscallGetThreadIdHandler,
+    &SyscallAllocStackHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,
