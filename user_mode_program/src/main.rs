@@ -20,7 +20,7 @@ use frame_buffer::FrameBuffer;
 use futures::{StreamExt, stream::select};
 use guarded_stack::GuardedStack;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use syscalls::{syscall_exit, syscall_exit_thread};
+use syscalls::{syscall_exit_process, syscall_exit_thread};
 
 extern crate alloc;
 
@@ -140,7 +140,7 @@ unsafe extern "C" fn entry_point() -> ! {
             cursor_position = new_cursor_position;
         }
     });
-    syscall_exit();
+    syscall_exit_process()
 }
 
 extern "sysv64" fn worker() -> ! {
@@ -148,9 +148,10 @@ extern "sysv64" fn worker() -> ! {
     loop {
         log::debug!("{count}");
         count += 1;
-        if count == 2000 {
+        if count == 1000 {
             break;
         }
     }
-    syscall_exit_thread()
+    // syscall_exit_thread()
+    syscall_exit_process()
 }

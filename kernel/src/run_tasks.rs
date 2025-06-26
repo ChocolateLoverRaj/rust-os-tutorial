@@ -30,9 +30,6 @@ pub fn run_threads() -> ! {
 
         assert!(r.is_none());
         loop {
-            // if local.cpu.lapic_id == 0 {
-            //     break Action::DoNothing;
-            // }
             if let Some(thread_id) = thread_priorities.next() {
                 let thread = threads.get(thread_id).unwrap();
                 let mut thread_state = thread.state.write();

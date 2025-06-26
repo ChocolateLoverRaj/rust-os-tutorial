@@ -42,7 +42,7 @@ pub fn syscall_exists(syscall_id: u64) -> bool {
     unsafe { syscall::<SyscallExists>(&syscall_id) }
 }
 
-pub fn syscall_exit() -> ! {
+pub fn syscall_exit_process() -> ! {
     // Safety: input is valid
     unsafe { syscall::<SyscallExitProcess>(&()) };
     unreachable!()

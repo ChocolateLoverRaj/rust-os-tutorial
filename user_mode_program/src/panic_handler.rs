@@ -5,7 +5,7 @@ use common::log;
 
 use crate::{
     global_allocator::ALLOC_ERROR,
-    syscalls::{syscall_exit, syscall_log},
+    syscalls::{syscall_exit_process, syscall_log},
 };
 
 #[panic_handler]
@@ -17,5 +17,5 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     } else {
         syscall_log(log::Level::Error, &info.to_string());
     }
-    syscall_exit()
+    syscall_exit_process()
 }
