@@ -38,9 +38,12 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
             let current_thread = threads.get(&running_thread_id).unwrap();
             if let Some(end) = ptr_u64.checked_add(size_of::<AtomicU64>() as u64) {
                 let interval = Interval::from(ptr_u64..=end);
-                let virtual_memory = current_thread.process.mapped_virtual_memory.read();
-                if virtual_memory.contains_interval(interval)
-                    && virtual_memory
+                let process_memory = current_thread.process.memory.read();
+                if process_memory
+                    .mapped_virtual_memory
+                    .contains_interval(interval)
+                    && process_memory
+                        .mapped_virtual_memory
                         .overlapping(interval)
                         .all(|(_, permissions)| permissions.write)
                 {
@@ -109,9 +112,12 @@ impl GenericSyscallHandler for SyscallFutexUnlockHandler {
                 let current_thread_id = running_thread.unwrap();
                 let threads = THREADS.read();
                 let current_thread = threads.get(&current_thread_id).unwrap();
-                let virtual_memory = current_thread.process.mapped_virtual_memory.read();
-                if virtual_memory.contains_interval(interval)
-                    && virtual_memory
+                let process_memory = current_thread.process.memory.read();
+                if process_memory
+                    .mapped_virtual_memory
+                    .contains_interval(interval)
+                    && process_memory
+                        .mapped_virtual_memory
                         .overlapping(interval)
                         .all(|(_, permissions)| permissions.write)
                 {

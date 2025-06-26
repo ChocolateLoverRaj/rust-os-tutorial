@@ -20,7 +20,7 @@ use crate::{
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
     task::{
-        Process, ProcessId, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
+        Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
         ThreadReadyState, ThreadState, VirtualMemoryPermissions,
     },
     translate_addr::{GetFrameSlice, ZeroFrame},
@@ -239,7 +239,10 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                         process: Arc::new(Process {
                             id: ProcessId::new_unique(),
                             cr3: user_l4_frame,
-                            mapped_virtual_memory: RwLock::new(mapped_virtual_memory),
+                            memory: RwLock::new(ProcessMemory {
+                                mapped_virtual_memory,
+                                frame_buffer_virtual_start: None,
+                            }),
                             mutexes: Default::default(),
                         }),
                     },

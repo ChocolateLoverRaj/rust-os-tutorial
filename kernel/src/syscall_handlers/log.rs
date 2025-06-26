@@ -27,10 +27,12 @@ impl GenericSyscallHandler for SyscallLogHandler {
                 let len = actual_input.message.len();
                 let end_inclusive = start + (len - 1);
                 if current_process
-                    .mapped_virtual_memory
+                    .memory
                     .read()
+                    .mapped_virtual_memory
                     .contains_interval(Interval::from(start..=end_inclusive))
                 {
+                    // FIXME: Now that we have multiple threads, this is unsound because another thread could modify the string to be invalid UTF-8 *after* the kernel checks it.
                     // Safety: the message is mapped in the lower half
                     let message =
                         unsafe { slice::from_raw_parts(start as *const u8, len as usize) };

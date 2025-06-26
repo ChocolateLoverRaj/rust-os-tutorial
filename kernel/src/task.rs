@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// Read is always given, because it doesn't make sense not to have read
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VirtualMemoryPermissions {
     /// If this is fault, this means that the page is intentionally left unmapped.
     /// This is useful for stack guard pages
@@ -83,10 +83,16 @@ pub struct EventStream {
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
+pub struct ProcessMemory {
+    pub mapped_virtual_memory: NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>,
+    pub frame_buffer_virtual_start: Option<u64>,
+}
+
+#[derive(Debug)]
 pub struct Process {
     pub id: ProcessId,
     pub cr3: PhysFrame,
-    pub mapped_virtual_memory: spin::RwLock<NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>>,
+    pub memory: spin::RwLock<ProcessMemory>,
     pub mutexes: spin::RwLock<BTreeMap<MutexKey, UserMutex>>,
 }
 

@@ -38,8 +38,7 @@ pub mod mutex;
 pub mod panic_handler;
 pub mod syscalls;
 
-#[unsafe(no_mangle)]
-unsafe extern "C" fn entry_point() -> ! {
+fn main() {
     logger::init();
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     log::info!("Hi");
@@ -51,6 +50,10 @@ unsafe extern "C" fn entry_point() -> ! {
         .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
+        enum Input {
+            MoveCursor(Point),
+            Exit,
+        }
         let keyboard = AsyncKeyboardDecoded::new(
             &executor_context,
             ScancodeSet1::default(),
@@ -62,10 +65,11 @@ unsafe extern "C" fn entry_point() -> ! {
             if let KeyState::Down | KeyState::SingleShot = key.state {
                 let movement_amount = 5;
                 match key.code {
-                    KeyCode::ArrowUp => Some(Point::new(0, -movement_amount)),
-                    KeyCode::ArrowDown => Some(Point::new(0, movement_amount)),
-                    KeyCode::ArrowLeft => Some(Point::new(-movement_amount, 0)),
-                    KeyCode::ArrowRight => Some(Point::new(movement_amount, 0)),
+                    KeyCode::ArrowUp => Some(Input::MoveCursor(Point::new(0, -movement_amount))),
+                    KeyCode::ArrowDown => Some(Input::MoveCursor(Point::new(0, movement_amount))),
+                    KeyCode::ArrowLeft => Some(Input::MoveCursor(Point::new(-movement_amount, 0))),
+                    KeyCode::ArrowRight => Some(Input::MoveCursor(Point::new(movement_amount, 0))),
+                    KeyCode::Escape | KeyCode::Q => Some(Input::Exit),
                     _ => None,
                 }
             } else {
@@ -75,7 +79,7 @@ unsafe extern "C" fn entry_point() -> ! {
         let mouse = AsyncMouseDecoded::new(&executor_context)
             .map(|stream| {
                 stream.map(|packet| {
-                    Point::new(
+                    Input::MoveCursor(Point::new(
                         match packet.x_movement() {
                             ps2_mouse::MovementAmount::Overflow(_) => 0,
                             ps2_mouse::MovementAmount::NoOverflow(change) => change as i32,
@@ -84,7 +88,7 @@ unsafe extern "C" fn entry_point() -> ! {
                             ps2_mouse::MovementAmount::Overflow(_) => 0,
                             ps2_mouse::MovementAmount::NoOverflow(change) => -change as i32,
                         },
-                    )
+                    ))
                 })
             })
             .ok();
@@ -112,7 +116,7 @@ unsafe extern "C" fn entry_point() -> ! {
                 frame_buffer.deref_mut(),
             )
             .unwrap();
-        while let Some(movement) = movement.next().await {
+        while let Some(Input::MoveCursor(movement)) = movement.next().await {
             let new_cursor_position = Point::new(
                 (cursor_position.x + movement.x)
                     .max(0)
@@ -140,6 +144,11 @@ unsafe extern "C" fn entry_point() -> ! {
             cursor_position = new_cursor_position;
         }
     });
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn entry_point() -> ! {
+    main();
     syscall_exit_process()
 }
 
@@ -152,6 +161,6 @@ extern "sysv64" fn worker() -> ! {
             break;
         }
     }
-    // syscall_exit_thread()
-    syscall_exit_process()
+    syscall_exit_thread()
+    // syscall_exit_process()
 }

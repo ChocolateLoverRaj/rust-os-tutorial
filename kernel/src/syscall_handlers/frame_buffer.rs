@@ -2,7 +2,7 @@ use common::{
     SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer, SyscallTakeFrameBufferError,
     SyscallTakeFrameBufferOutput,
 };
-use nodit::interval::ue;
+use nodit::{Interval, interval::ue};
 use raw_cpuid::CpuId;
 use x86_64::{
     PhysAddr, VirtAddr,
@@ -47,8 +47,9 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 .get(&local.running_thread.lock().unwrap())
                 .unwrap()
                 .process;
-            let mut mapped_virtual_memory = current_process.mapped_virtual_memory.write();
-            let range = mapped_virtual_memory
+            let mut process_memory = current_process.memory.write();
+            let range = process_memory
+                .mapped_virtual_memory
                 .gaps_trimmed(ue(0xffff800000000000))
                 .find_map(|range| {
                     let aligned_start = range.start().next_multiple_of(Size4KiB::SIZE);
@@ -60,7 +61,8 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     }
                 })
                 .ok_or(SyscallTakeFrameBufferError::OutOfVirtualMemory)?;
-            mapped_virtual_memory
+            process_memory
+                .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
                     range.clone().into(),
                     VirtualMemoryPermissions {
@@ -70,6 +72,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     },
                 )
                 .unwrap();
+            process_memory.frame_buffer_virtual_start = Some(range.start().clone());
             let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
                 frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
             ))
@@ -135,7 +138,49 @@ pub struct SyscallReleaseFrameBufferHandler;
 impl GenericSyscallHandler for SyscallReleaseFrameBufferHandler {
     type S = SyscallReleaseFrameBuffer;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
-        // TODO: Actually release the frame buffer
-        helper.syscall_return(&())
+        enum Action {
+            Terminate,
+            Return,
+        }
+        let action = {
+            // TODO: Actually release the frame buffer
+            let local = get_local();
+            let threads = THREADS.read();
+            let running_thread_id = local.running_thread.try_lock().unwrap().unwrap();
+            let runnning_thread = threads.get(&running_thread_id).unwrap();
+            let mut process_memory = runnning_thread.process.memory.write();
+            if let Some(frame_buffer_virtual_start) =
+                process_memory.frame_buffer_virtual_start.take()
+            {
+                let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
+                let frame_buffer = frame_buffer_response.framebuffers().next().unwrap();
+                // Safety: the page table is valid
+                let mut mapper = unsafe { get_page_table(runnning_thread.process.cr3, false) };
+                let frame_buffer_len = frame_buffer.pitch() * frame_buffer.height();
+                let n_pages = frame_buffer_len / Size4KiB::SIZE;
+                let start_page =
+                    Page::<Size4KiB>::from_start_address(VirtAddr::new(frame_buffer_virtual_start))
+                        .unwrap();
+                for i in 0..n_pages {
+                    let page = start_page + i;
+                    mapper.unmap(page).unwrap().2.flush();
+                }
+                process_memory.mapped_virtual_memory.cut(Interval::from(
+                    frame_buffer_virtual_start
+                        ..=frame_buffer_virtual_start + (frame_buffer_len - 1),
+                ));
+                logger::init_frame_buffer(frame_buffer_response, true);
+                log::debug!(
+                    "User mode program released frame buffer. Frame buffer will again be used by the kernel for logging."
+                );
+                Action::Return
+            } else {
+                Action::Terminate
+            }
+        };
+        match action {
+            Action::Return => helper.syscall_return(&()),
+            Action::Terminate => todo!(),
+        }
     }
 }

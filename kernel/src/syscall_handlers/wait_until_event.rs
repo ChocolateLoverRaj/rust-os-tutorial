@@ -26,8 +26,9 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let current_thread = threads.get(&running_thread.unwrap()).unwrap();
             if !current_thread
                 .process
-                .mapped_virtual_memory
+                .memory
                 .read()
+                .mapped_virtual_memory
                 .overlapping(ie(
                     input.pointer(),
                     input.pointer().saturating_add(input.len()),

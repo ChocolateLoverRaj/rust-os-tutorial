@@ -43,8 +43,9 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                         .get(&local.running_thread.lock().unwrap())
                         .unwrap()
                         .process;
-                    let mut mapped_virtual_memory = current_process.mapped_virtual_memory.write();
-                    let range = mapped_virtual_memory
+                    let mut process_memory = current_process.memory.write();
+                    let range = process_memory
+                        .mapped_virtual_memory
                         .gaps_trimmed(ue(0xffff800000000000))
                         .find_map(|gap| {
                             let aligned_start = gap
@@ -59,7 +60,8 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             }
                         })
                         .ok_or(SyscallAllocError::OutOfVirtualMemory)?;
-                    mapped_virtual_memory
+                    process_memory
+                        .mapped_virtual_memory
                         .insert_merge_touching_if_values_equal(
                             range.clone().into(),
                             VirtualMemoryPermissions {

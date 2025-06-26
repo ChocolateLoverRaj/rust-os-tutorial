@@ -81,6 +81,8 @@ impl Color {
     }
 }
 
+const FRAME_BUFFER_BACKGROUND_COLOR: Rgb888 = Rgb888::BLACK;
+
 impl Inner {
     fn write_with_color(&mut self, color: Color, string: impl Display) {
         // Write to serial
@@ -110,7 +112,6 @@ impl Inner {
             impl Write for Writer<'_> {
                 fn write_str(&mut self, s: &str) -> core::fmt::Result {
                     let font = FONT_10X20;
-                    let background_color = Rgb888::BLACK;
                     for c in s.graphemes(true) {
                         let height_not_seen = self.position.y + font.character_size.height as i32
                             - self.display.bounding_box().size.height as i32;
@@ -134,7 +135,7 @@ impl Inner {
                                 )
                                 .into_styled(
                                     PrimitiveStyleBuilder::new()
-                                        .fill_color(background_color)
+                                        .fill_color(FRAME_BUFFER_BACKGROUND_COLOR)
                                         .build(),
                                 )
                                 .draw(self.display)
@@ -146,7 +147,7 @@ impl Inner {
                                 let style = MonoTextStyleBuilder::new()
                                     .font(&font)
                                     .text_color(self.text_color)
-                                    .background_color(background_color)
+                                    .background_color(FRAME_BUFFER_BACKGROUND_COLOR)
                                     .build();
                                 *self.position =
                                     Text::with_baseline(c, *self.position, style, Baseline::Top)
@@ -253,16 +254,20 @@ pub fn log_for_user_mode(level: log::Level, message: impl Display, thread_id: Th
 }
 
 /// Start logging to the frame buffer from now on
-pub fn init_frame_buffer(frame_buffer_response: &'static FramebufferResponse) {
+pub fn init_frame_buffer(frame_buffer_response: &'static FramebufferResponse, clear: bool) {
     LOGGER.inner.lock().display = frame_buffer_response
         .framebuffers()
         .next()
         .map(|frame_buffer| DisplayData {
             display: {
                 // Safety: The frame buffer is mapped by Limine
-                unsafe {
+                let mut frame_buffer = unsafe {
                     FrameBufferEmbeddedGraphics::new(frame_buffer.addr(), (&frame_buffer).into())
+                };
+                if clear {
+                    frame_buffer.clear(FRAME_BUFFER_BACKGROUND_COLOR).unwrap();
                 }
+                frame_buffer
             },
             position: Point::zero(),
         });

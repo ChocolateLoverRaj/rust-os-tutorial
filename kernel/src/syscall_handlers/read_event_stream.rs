@@ -31,8 +31,9 @@ impl GenericSyscallHandler for SyscallReadEventStreamHandler {
             if let Some(event_stream) = event_streams.get(stream_id) {
                 if event_stream.process == current_process.id {
                     let is_valid = current_process
-                        .mapped_virtual_memory
+                        .memory
                         .read()
+                        .mapped_virtual_memory
                         .overlapping(Interval::from(range))
                         .all(|(_interval, permissions)| permissions.write);
                     if is_valid {
