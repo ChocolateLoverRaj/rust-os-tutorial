@@ -8,11 +8,10 @@
 				"--",
 				"-s",
 				"-S",
-				"--serial",
-				"stdio",
 				"--smp",
-				"2",
+				"1",
 				"--no-reboot",
+				"--nographic",
 			],
 			"problemMatcher": [
 				"$rustc",

@@ -3,6 +3,7 @@ use alloc_stack::SyscallAllocStackHandler;
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit_process::SyscallExitProcessHandler;
+use exit_thread::SyscallExitThreadHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
 use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
@@ -19,6 +20,7 @@ use crate::syscall_saved_regs::SyscallSavedRegs;
 mod alloc_stack;
 mod exists;
 mod exit_process;
+mod exit_thread;
 mod frame_buffer;
 mod futex;
 mod get_thread_id;
@@ -103,6 +105,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallFutexUnlockHandler,
     &SyscallGetThreadIdHandler,
     &SyscallAllocStackHandler,
+    &SyscallExitThreadHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

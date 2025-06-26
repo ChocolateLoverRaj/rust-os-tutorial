@@ -40,6 +40,7 @@ pub mod logger;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
+pub mod pci;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
@@ -110,11 +111,6 @@ extern "sysv64" fn init_bsp() -> ! {
     unsafe { gdt::init() };
     idt::init();
     local_apic::init();
-
-    // fn stack_overflow() {
-    //     stack_overflow();
-    // }
-    // stack_overflow();
 
     syscalls::init();
 

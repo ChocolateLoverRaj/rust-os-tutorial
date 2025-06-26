@@ -16,6 +16,12 @@ pub struct SyscallExitProcessHandler;
 impl GenericSyscallHandler for SyscallExitProcessHandler {
     type S = SyscallExitProcess;
     fn handle_decoded_syscall(_input: super::SyscallHelper<Self::S>) -> ! {
+        // We need to do the following (in order):
+        // - Stop all threads
+        // - Clean up resources used by the process (which rn is just memory)
+        // We can immediately stop this thread. We can't immediately stop other threads.
+        // We send an IPI to the other CPUs so that they will stop running the other threads in this process.
+        // We need to at some point clean up memory once the last thread is stopped
         {
             let mut thread_priorities = THREAD_PRIORITIES.write();
             let mut threads = THREADS.write();
