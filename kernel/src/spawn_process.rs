@@ -240,6 +240,7 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                             id: ProcessId::new_unique(),
                             cr3: user_l4_frame,
                             mapped_virtual_memory: RwLock::new(mapped_virtual_memory),
+                            mutexes: Default::default(),
                         }),
                     },
                 );

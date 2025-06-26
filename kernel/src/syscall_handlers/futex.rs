@@ -13,7 +13,7 @@ use crate::{
     interrupt_vector::InterruptVector,
     run_tasks::run_threads,
     task::{
-        MUTEXES, MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState,
+        MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState,
         ThreadReadyStateInSyscall, ThreadState, WaitingForMutexState,
     },
 };
@@ -47,7 +47,7 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
                     let ptr = ptr_u64 as *mut AtomicU64;
                     if ptr.is_aligned() {
                         let a = unsafe { ptr.as_ref() }.unwrap();
-                        let mut mutexes = MUTEXES.write();
+                        let mut mutexes = current_thread.process.mutexes.write();
                         let lock_owner = a.fetch_or(FUTEX_WAITERS, Ordering::AcqRel);
                         if let Some(thread_id) = NonZeroU32::new(lock_owner as u32) {
                             let thread_id = ThreadId::from_raw(thread_id);
@@ -117,7 +117,7 @@ impl GenericSyscallHandler for SyscallFutexUnlockHandler {
                 {
                     let ptr = ptr_u64 as *mut AtomicU64;
                     if ptr.is_aligned() {
-                        let mut mutexes = MUTEXES.write();
+                        let mut mutexes = current_thread.process.mutexes.write();
 
                         match mutexes.get_mut(&MutexKey {
                             process: current_thread.process.id,

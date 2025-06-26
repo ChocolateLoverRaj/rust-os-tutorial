@@ -87,7 +87,7 @@ pub struct Process {
     pub id: ProcessId,
     pub cr3: PhysFrame,
     pub mapped_virtual_memory: spin::RwLock<NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>>,
-    // pub mutexes: spin::RwLock<BTreeMap<MutexKey, UserMutex>>,
+    pub mutexes: spin::RwLock<BTreeMap<MutexKey, UserMutex>>,
 }
 
 #[derive(Debug, Clone)]
@@ -199,5 +199,3 @@ pub struct MutexKey {
     pub process: ProcessId,
     pub virtual_address: u64,
 }
-pub static MUTEXES: spin::RwLock<BTreeMap<MutexKey, UserMutex>> =
-    spin::RwLock::new(BTreeMap::new());
