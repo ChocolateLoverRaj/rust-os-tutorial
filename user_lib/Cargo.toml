@@ -1,0 +1,13 @@
+[package]
+name = "user_lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { version = "0.1.0", path = "../common" }
+futures = { version = "0.3.31", default-features = false }
+heapless = "0.8.0"
+lock_api = "0.4.13"
+spin = "0.10.0"
+talc = { version = "4.4.3", features = ["counters"] }
+x86_64 = "0.15.2"

@@ -5,7 +5,7 @@ use core::{
 
 use futures::pin_mut;
 
-use crate::{executor_context::ExecutorContext, syscalls::syscall_wait_until_event};
+use crate::{executor_context::ExecutorContext, syscall_wait_until_event};
 
 /// Execute a single future
 pub fn execute_future<T>(executor_context: &ExecutorContext, future: impl Future<Output = T>) -> T {

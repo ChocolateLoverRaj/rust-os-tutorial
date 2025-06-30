@@ -14,34 +14,34 @@ use common::{
     },
     log,
 };
-use execute_future::execute_future;
-use executor_context::ExecutorContext;
 use frame_buffer::FrameBuffer;
 use futures::{StreamExt, stream::select};
-use guarded_stack::GuardedStack;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use syscalls::{syscall_exit_process, syscall_exit_thread};
+use spawn_process::spawn_process;
+use user_lib::{
+    ExecutorContext, GuardedStack, execute_future, logger, syscall_exit_process,
+    syscall_exit_thread,
+};
 
 extern crate alloc;
 
-pub mod async_keyboard;
 pub mod async_keyboard_decoded;
-pub mod async_mouse;
 pub mod async_mouse_decoded;
-pub mod execute_future;
-pub mod executor_context;
 pub mod frame_buffer;
-pub mod global_allocator;
-pub mod guarded_stack;
-pub mod logger;
-pub mod mutex;
-pub mod panic_handler;
-pub mod syscalls;
+pub mod spawn_process;
+
+#[panic_handler]
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    user_lib::panic_handler(info)
+}
 
 fn main() {
     logger::init();
-    let mut frame_buffer = FrameBuffer::try_new().unwrap();
     log::info!("Hi");
+
+    spawn_process();
+
+    let mut frame_buffer = FrameBuffer::try_new().unwrap();
     GuardedStack::new(64 * 0x400)
         .unwrap()
         .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
@@ -162,5 +162,4 @@ extern "sysv64" fn worker() -> ! {
         }
     }
     syscall_exit_thread()
-    // syscall_exit_process()
 }

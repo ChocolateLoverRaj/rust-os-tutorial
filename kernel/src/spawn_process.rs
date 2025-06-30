@@ -18,7 +18,7 @@ use x86_64::{
 use crate::{
     elf_segment_flags::ElfSegmentFlags,
     get_page_table::get_page_table,
-    memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
+    memory::{MEMORY, MemoryType},
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
         ThreadReadyState, ThreadState, VirtualMemoryPermissions,
@@ -73,8 +73,9 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                 if u64::from(entry_point) >= 0x800000000000 {
                     Err(LoadUserModeProgramError::OutOfBoundsMemory)?;
                 }
+                let process_id = ProcessId::new_unique();
                 let user_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(
-                    &mut physical_memory.get_user_mode_program_frame_allocator(),
+                    &mut physical_memory.get_user_mode_program_frame_allocator(process_id),
                 )
                 .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                 // Safety: frame is offset mapped and it's a new table
@@ -125,9 +126,7 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                         .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                     for page in start_page..=end_page {
                         let frame = physical_memory
-                            .allocate_frame_with_type(MemoryType::UsedByUserMode(
-                                UserModeMemoryUsageType::Elf,
-                            ))
+                            .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
                             .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                         let flags = PageTableFlags::PRESENT
                             | PageTableFlags::USER_ACCESSIBLE
@@ -138,7 +137,8 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                                 page,
                                 frame,
                                 flags,
-                                &mut physical_memory.get_user_mode_program_frame_allocator(),
+                                &mut physical_memory
+                                    .get_user_mode_program_frame_allocator(process_id),
                             )
                         }
                         .map_err(LoadUserModeProgramError::MapToError)?
@@ -194,9 +194,7 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                     Page::<Size4KiB>::containing_address(VirtAddr::new(stack_end_inclusive));
                 for page in stack_start_page..=stack_end_page_inclusive {
                     let frame = physical_memory
-                        .allocate_frame_with_type(MemoryType::UsedByUserMode(
-                            UserModeMemoryUsageType::Stack,
-                        ))
+                        .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
                         .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                     // Safety: We just claimed this frame
                     unsafe { frame.zero() };
@@ -209,7 +207,7 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                             page,
                             frame,
                             flags,
-                            &mut physical_memory.get_user_mode_program_frame_allocator(),
+                            &mut physical_memory.get_user_mode_program_frame_allocator(process_id),
                         )
                     }
                     .unwrap()
@@ -237,7 +235,7 @@ pub fn spawn_process(module_response: &ModuleResponse) {
                             },
                         ))),
                         process: Arc::new(Process {
-                            id: ProcessId::new_unique(),
+                            id: process_id,
                             cr3: user_l4_frame,
                             memory: RwLock::new(ProcessMemory {
                                 mapped_virtual_memory,

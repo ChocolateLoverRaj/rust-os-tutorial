@@ -13,7 +13,7 @@ use x86_64::{
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
-    memory::{MEMORY, MemoryType, UserModeMemoryUsageType},
+    memory::{MEMORY, MemoryType},
     task::{THREADS, VirtualMemoryPermissions},
     translate_addr::ZeroFrame,
 };
@@ -36,6 +36,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     for<'a> OffsetPageTable<'a>: Mapper<S>,
                     PhysFrame<S>: ZeroFrame,
                 {
+                    log::debug!("Allocating pages of size: {}", S::DEBUG_STR);
                     let n_pages = len.div_ceil(S::SIZE);
                     let threads = THREADS.read();
                     let local = get_local();
@@ -81,7 +82,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     for page in start_page..=end_page_inclusive {
                         let frame = physical_memory
                             .allocate_frame_with_type(MemoryType::UsedByUserMode(
-                                UserModeMemoryUsageType::Heap,
+                                current_process.id,
                             ))
                             .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
                         unsafe { frame.zero() }
@@ -89,8 +90,8 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             | PageTableFlags::USER_ACCESSIBLE
                             | PageTableFlags::WRITABLE
                             | PageTableFlags::NO_EXECUTE;
-                        let frame_allocator =
-                            &mut physical_memory.get_user_mode_program_frame_allocator();
+                        let frame_allocator = &mut physical_memory
+                            .get_user_mode_program_frame_allocator(current_process.id);
                         unsafe { mapper.map_to(page, frame, flags, frame_allocator) }
                             .map_err(|e| match e {
                                 MapToError::FrameAllocationFailed => {
@@ -100,7 +101,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             })?
                             .flush();
                     }
-                    log::debug!("Allocated for user mode: {range:X?}");
+                    // log::debug!("Allocated for user mode: {range:X?}");
                     Ok(SliceData::new(*range.start(), n_pages * S::SIZE))
                 }
                 if len < Size2MiB::SIZE {

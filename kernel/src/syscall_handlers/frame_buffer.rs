@@ -115,7 +115,8 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     }
                     base_flags
                 };
-                let frame_allocator = &mut physical_memory.get_user_mode_program_frame_allocator();
+                let frame_allocator =
+                    &mut physical_memory.get_user_mode_program_frame_allocator(current_process.id);
                 // Safety: virtual memory is unused, physical memory is okay to access
                 unsafe { mapper.map_to(page, frame, flags, frame_allocator) }
                     .map_err(|e| match e {
@@ -165,7 +166,7 @@ impl GenericSyscallHandler for SyscallReleaseFrameBufferHandler {
                     let page = start_page + i;
                     mapper.unmap(page).unwrap().2.flush();
                 }
-                process_memory.mapped_virtual_memory.cut(Interval::from(
+                let _ = process_memory.mapped_virtual_memory.cut(Interval::from(
                     frame_buffer_virtual_start
                         ..=frame_buffer_virtual_start + (frame_buffer_len - 1),
                 ));

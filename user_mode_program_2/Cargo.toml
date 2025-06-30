@@ -1,0 +1,13 @@
+[package]
+name = "user_mode_program_2"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "user_mode_program_2"
+test = false
+bench = false
+
+[dependencies]
+common = { version = "0.1.0", path = "../common" }
+user_lib = { version = "0.1.0", path = "../user_lib" }

@@ -2,7 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 use common::{FrameBufferEmbeddedGraphics, SyscallTakeFrameBufferError};
 
-use crate::syscalls::{syscall_release_frame_buffer, syscall_take_frame_buffer};
+use user_lib::{syscall_release_frame_buffer, syscall_take_frame_buffer};
 
 /// A Rust safe wrapper that releases the frame buffer when dropped
 pub struct FrameBuffer {

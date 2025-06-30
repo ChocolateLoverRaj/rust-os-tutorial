@@ -17,6 +17,8 @@ fn main() {
     // Cargo passes us the path the to kernel executable because it is an artifact dep
     let kernel_executable_file = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
     let user_mode_program_executable_file = env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM").unwrap();
+    let user_mode_program_2_executable_file =
+        env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM_2").unwrap();
 
     // Symlink the out dir so we get a constant path to it
     ensure_symlink(&out_dir, runner_dir.join("out_dir")).unwrap();
@@ -38,6 +40,11 @@ fn main() {
     ensure_symlink(
         user_mode_program_executable_file,
         iso_dir.join("user_mode_program"),
+    )
+    .unwrap();
+    ensure_symlink(
+        user_mode_program_2_executable_file,
+        iso_dir.join("extra_module_0"),
     )
     .unwrap();
 

@@ -3,8 +3,7 @@ use core::task::Poll;
 use common::SyscallSubscribeToMouseError;
 use futures::{Stream, StreamExt};
 use ps2_mouse::{MousePacket, MousePacketParser};
-
-use crate::{async_mouse::AsyncMouse, executor_context::ExecutorContext};
+use user_lib::{AsyncMouse, ExecutorContext};
 
 pub struct AsyncMouseDecoded<'a> {
     async_mouse: AsyncMouse<'a>,

@@ -24,7 +24,7 @@ impl SliceData {
     }
 
     /// # Safety
-    /// See [`core::slice::from_raw_parts`]
+    /// See [`core::slice::from_raw_parts`], but will return `None` if not aligned instead of undefined behavior.
     pub unsafe fn try_to_slice<'a, T: TryFromBytes + Immutable>(&self) -> Option<&'a [T]> {
         let slice = unsafe {
             slice::from_raw_parts(

@@ -39,8 +39,10 @@ pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new()
-    .with_internal_modules(&[&InternalModule::new().with_path(USER_MODE_PROGRAM_PATH)]);
+pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new().with_internal_modules(&[
+    &InternalModule::new().with_path(USER_MODE_PROGRAM_PATH),
+    &InternalModule::new().with_path(c"/extra_module_0"),
+]);
 
 #[used]
 #[unsafe(link_section = ".requests")]

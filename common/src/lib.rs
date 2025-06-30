@@ -2,6 +2,7 @@
 #![feature(maybe_uninit_slice, sync_unsafe_cell)]
 extern crate alloc;
 
+mod elf_segment_flags;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod slice_data;
@@ -16,12 +17,14 @@ mod syscall_futex;
 mod syscall_get_thread_id;
 mod syscall_keyboard;
 mod syscall_log;
+mod syscall_map_module;
 mod syscall_mouse;
 mod syscall_read_event_stream;
 mod syscall_spawn_process;
 mod syscall_spawn_thread;
 mod syscall_wait_until_event;
 
+pub use elf_segment_flags::*;
 pub use frame_buffer_embedded_graphics::*;
 pub use frame_buffer_info::*;
 pub use slice_data::SliceData;
@@ -36,6 +39,7 @@ pub use syscall_futex::*;
 pub use syscall_get_thread_id::*;
 pub use syscall_keyboard::*;
 pub use syscall_log::*;
+pub use syscall_map_module::*;
 pub use syscall_mouse::*;
 pub use syscall_read_event_stream::*;
 pub use syscall_spawn_process::*;

@@ -8,8 +8,7 @@ use crate::{
     syscalls::{syscall_exit_process, syscall_log},
 };
 
-#[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     if let Some(alloc_error) = ALLOC_ERROR.get() {
         let mut s = heapless::String::<0x400>::default();
         let _ = write!(s, "panicked while allocating: {alloc_error:#?}");

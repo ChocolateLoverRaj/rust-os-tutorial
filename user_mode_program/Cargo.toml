@@ -13,6 +13,7 @@ bench = false
 common = { version = "0.1.0", path = "../common", default-features = false, features = [
     "user_mode",
 ] }
+elf = { version = "0.8.0", default-features = false }
 futures = { version = "0.3.31", default-features = false, features = ["alloc"] }
 heapless = "0.8.0"
 lock_api = "0.4.13"
@@ -20,4 +21,5 @@ pc-keyboard = "0.8.0"
 ps2-mouse = { git = "https://github.com/ChocolateLoverRaj/ps2-mouse", branch = "minimal" }
 spin = "0.10.0"
 talc = { version = "4.4.2", features = ["counters"] }
+user_lib = { version = "0.1.0", path = "../user_lib" }
 x86_64 = "0.15.2"

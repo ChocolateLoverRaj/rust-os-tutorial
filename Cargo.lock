@@ -106,10 +106,12 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bitflags 2.9.1",
  "embedded-graphics",
  "limine",
  "log 0.4.27 (git+https://github.com/ChocolateLoverRaj/log?branch=bincode)",
  "thiserror",
+ "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
  "zerocopy",
 ]
 
@@ -488,6 +490,7 @@ version = "0.1.0"
 dependencies = [
  "kernel",
  "user_mode_program",
+ "user_mode_program_2",
 ]
 
 [[package]]
@@ -536,9 +539,9 @@ dependencies = [
 
 [[package]]
 name = "talc"
-version = "4.4.2"
+version = "4.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fcad3be1cfe36eb7d716a04791eba36a197da9d9b6ea1e28e64ac569da3701d"
+checksum = "a3ae828aa394de34c7de08f522d1b86bd1c182c668d27da69caadda00590f26d"
 dependencies = [
  "lock_api",
 ]
@@ -601,10 +604,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
+name = "user_lib"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "futures",
+ "heapless",
+ "lock_api",
+ "spin",
+ "talc",
+ "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "user_mode_program"
 version = "0.1.0"
 dependencies = [
  "common",
+ "elf",
  "futures",
  "heapless",
  "lock_api",
@@ -612,7 +629,16 @@ dependencies = [
  "ps2-mouse",
  "spin",
  "talc",
+ "user_lib",
  "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "user_mode_program_2"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "user_lib",
 ]
 
 [[package]]

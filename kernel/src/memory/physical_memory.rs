@@ -5,20 +5,13 @@ use x86_64::{
     structures::paging::{FrameAllocator, PageSize, PhysFrame},
 };
 
+use crate::task::ProcessId;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum KernelMemoryUsageType {
     PageTables,
     GlobalAllocatorHeap,
     Stack,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum UserModeMemoryUsageType {
-    PageTables,
-    Elf,
-    Stack,
-    /// Memory that the user mode program requested in run time
-    Heap,
 }
 
 /// Note that there are other memory types (such as ACPI memory) that are not included here
@@ -27,7 +20,7 @@ pub enum MemoryType {
     Usable,
     UsedByLimine,
     UsedByKernel(KernelMemoryUsageType),
-    UsedByUserMode(UserModeMemoryUsageType),
+    UsedByUserMode(ProcessId),
 }
 
 pub struct PhysicalMemory {
@@ -67,10 +60,13 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn get_user_mode_program_frame_allocator(&mut self) -> PhysicalMemoryFrameAllocator<'_> {
+    pub fn get_user_mode_program_frame_allocator(
+        &mut self,
+        process_id: ProcessId,
+    ) -> PhysicalMemoryFrameAllocator<'_> {
         PhysicalMemoryFrameAllocator {
             physical_memory: self,
-            memory_type: MemoryType::UsedByUserMode(UserModeMemoryUsageType::PageTables),
+            memory_type: MemoryType::UsedByUserMode(process_id),
         }
     }
 
@@ -103,7 +99,10 @@ pub struct PhysicalMemoryFrameAllocator<'a> {
 
 unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryFrameAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        self.physical_memory
-            .allocate_frame_with_type(self.memory_type)
+        let frame = self
+            .physical_memory
+            .allocate_frame_with_type(self.memory_type)?;
+        log::debug!("Allocated frame: {frame:?}");
+        Some(frame)
     }
 }

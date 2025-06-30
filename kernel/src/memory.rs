@@ -2,9 +2,7 @@ use core::{fmt::Debug, mem::MaybeUninit, slice};
 
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use nodit::{Interval, NoditMap, NoditSet, interval::iu};
-pub use physical_memory::{
-    KernelMemoryUsageType, MemoryType, PhysicalMemory, UserModeMemoryUsageType,
-};
+pub use physical_memory::{KernelMemoryUsageType, MemoryType, PhysicalMemory};
 use raw_cpuid::CpuId;
 use spin::{Mutex, Once};
 use talc::{ErrOnOom, Talc, Talck};

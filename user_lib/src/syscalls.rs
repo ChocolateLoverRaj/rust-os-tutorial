@@ -1,13 +1,15 @@
 use core::{alloc::Layout, arch::asm, mem::MaybeUninit, num::NonZeroU32};
 
 use common::{
-    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocStack,
-    SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput, SyscallExists,
-    SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallLog, SyscallLogInput,
-    SyscallReadEventStream, SyscallReadEventStreamInput, SyscallReleaseFrameBuffer,
-    SyscallSpawnThread, SyscallSpawnThreadInput, SyscallSubscribeToKeyboard,
-    SyscallSubscribeToMouse, SyscallTakeFrameBuffer, SyscallTakeFrameBufferError,
-    SyscallTakeFrameBufferOutput, SyscallWaitUntilEvent, log,
+    ProcessRelativePriority, SpawnProcessMemoryMapping, SpawnThreadRelativePriority, Syscall,
+    SyscallAlloc, SyscallAllocError, SyscallAllocStack, SyscallAllocStackError,
+    SyscallAllocStackInput, SyscallAllocStackOutput, SyscallExists, SyscallExitProcess,
+    SyscallExitThread, SyscallGetThreadId, SyscallLog, SyscallLogInput, SyscallMapModule,
+    SyscallMapModuleError, SyscallReadEventStream, SyscallReadEventStreamInput,
+    SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
+    SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
+    SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
+    SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -133,4 +135,35 @@ pub fn syscall_exit_thread() -> ! {
     // Safety: input ok
     unsafe { syscall::<SyscallExitThread>(&()) }
     unreachable!()
+}
+
+pub fn syscall_map_module(module_id: usize) -> Result<&'static [u8], SyscallMapModuleError> {
+    let input = module_id as u64;
+    // Safety: input ok
+    let output = unsafe { syscall::<SyscallMapModule>(&input) };
+    log::info!("Output: {output:?}");
+    let output = output?;
+    // Safety: slice is a to a [u8]
+    let slice = unsafe { output.to_slice() };
+    Ok(slice)
+}
+
+#[derive(Debug)]
+pub struct RustSyscallSpawnProcessInput<'a> {
+    pub priority: ProcessRelativePriority,
+    pub rip: u64,
+    pub rsp: u64,
+    pub memory_mapping: &'a [SpawnProcessMemoryMapping],
+}
+
+pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
+    log::info!("{input:#X?}");
+    let input = SyscallSpawnProcessInput {
+        priority: input.priority,
+        rip: input.rip,
+        rsp: input.rsp,
+        memory_mappings: input.memory_mapping.into(),
+    };
+    // Safety: input ok
+    unsafe { syscall::<SyscallSpawnProcess>(&input) };
 }

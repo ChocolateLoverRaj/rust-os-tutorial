@@ -9,8 +9,10 @@ use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
 use keyboard::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
+use map_module::SyscallMapModuleHandler;
 use mouse::SyscallSubscribeToMouseHandler;
 use read_event_stream::SyscallReadEventStreamHandler;
+use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc::SyscallAllocHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
@@ -26,8 +28,10 @@ mod futex;
 mod get_thread_id;
 mod keyboard;
 mod log;
+mod map_module;
 mod mouse;
 mod read_event_stream;
+mod spawn_process;
 mod spawn_thread;
 mod syscall_alloc;
 mod wait_until_event;
@@ -106,6 +110,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallGetThreadIdHandler,
     &SyscallAllocStackHandler,
     &SyscallExitThreadHandler,
+    &SyscallMapModuleHandler,
+    &SyscallSpawnProcessHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,
