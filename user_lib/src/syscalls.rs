@@ -140,9 +140,7 @@ pub fn syscall_exit_thread() -> ! {
 pub fn syscall_map_module(module_id: usize) -> Result<&'static [u8], SyscallMapModuleError> {
     let input = module_id as u64;
     // Safety: input ok
-    let output = unsafe { syscall::<SyscallMapModule>(&input) };
-    log::info!("Output: {output:?}");
-    let output = output?;
+    let output = unsafe { syscall::<SyscallMapModule>(&input) }?;
     // Safety: slice is a to a [u8]
     let slice = unsafe { output.to_slice() };
     Ok(slice)
@@ -157,7 +155,6 @@ pub struct RustSyscallSpawnProcessInput<'a> {
 }
 
 pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
-    log::info!("{input:#X?}");
     let input = SyscallSpawnProcessInput {
         priority: input.priority,
         rip: input.rip,

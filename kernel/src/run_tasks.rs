@@ -29,6 +29,7 @@ pub fn run_threads() -> ! {
         let r = { local.running_thread.lock() }.clone();
 
         assert!(r.is_none());
+        // log::debug!("Threads: {threads:#?}. Priorities: {thread_priorities:?}");
         loop {
             if let Some(thread_id) = thread_priorities.next() {
                 let thread = threads.get(thread_id).unwrap();
