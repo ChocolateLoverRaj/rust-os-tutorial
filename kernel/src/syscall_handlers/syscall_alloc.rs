@@ -3,18 +3,18 @@ use core::fmt::Debug;
 use common::{SliceData, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ue;
 use x86_64::{
-    VirtAddr,
     structures::paging::{
-        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
-        mapper::MapToError,
+        mapper::MapToError, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame,
+        Size2MiB, Size4KiB,
     },
+    VirtAddr,
 };
 
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
-    memory::{MEMORY, MemoryType},
-    task::{THREADS, VirtualMemoryPermissions},
+    memory::{MemoryType, MEMORY},
+    task::{VirtualMemoryPermissions, THREADS},
     translate_addr::ZeroFrame,
 };
 
@@ -36,7 +36,6 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     for<'a> OffsetPageTable<'a>: Mapper<S>,
                     PhysFrame<S>: ZeroFrame,
                 {
-                    log::debug!("Allocating pages of size: {}", S::DEBUG_STR);
                     let n_pages = len.div_ceil(S::SIZE);
                     let threads = THREADS.read();
                     let local = get_local();

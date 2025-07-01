@@ -20,7 +20,10 @@ use owo_colors::OwoColorize;
 use uart_16550::SerialPort;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{cpu_local_data::try_get_local, task::ThreadId, writer_with_cr::WriterWithCr};
+use crate::{
+    cpu_local_data::try_get_local, kernel_config::get_or_default, task::ThreadId,
+    writer_with_cr::WriterWithCr,
+};
 
 struct DisplayData {
     display: FrameBufferEmbeddedGraphics<'static>,
@@ -84,9 +87,11 @@ impl Color {
 const FRAME_BUFFER_BACKGROUND_COLOR: Rgb888 = Rgb888::BLACK;
 
 impl Inner {
-    fn write_with_color(&mut self, color: Color, string: impl Display) {
+    fn write_with_color(&mut self, level: log::Level, color: Color, string: impl Display) {
         // Write to serial
-        if let Some(serial_port) = &mut self.serial_port {
+        if level <= get_or_default().log_serial
+            && let Some(serial_port) = &mut self.serial_port
+        {
             let string: &dyn Display = match color {
                 Color::Default => &string,
                 Color::Gray => &string.dimmed(),
@@ -103,7 +108,9 @@ impl Inner {
         }
 
         // Write to screen
-        if let Some(display_data) = &mut self.display {
+        if level <= get_or_default().log_screen
+            && let Some(display_data) = &mut self.display
+        {
             struct Writer<'a> {
                 display: &'a mut FrameBufferEmbeddedGraphics<'static>,
                 position: &'a mut Point,
@@ -196,16 +203,20 @@ impl Log for KernelLogger {
 
     fn log(&self, record: &log::Record) {
         let mut inner = self.inner.lock();
+        let level = record.level();
         if let Some(cpu_local_data) = try_get_local() {
             let cpu_id = cpu_local_data.cpu.id;
-            inner.write_with_color(Color::Gray, format_args!("[{cpu_id}] "));
+            inner.write_with_color(level, Color::Gray, format_args!("[{cpu_id}] "));
         } else {
-            inner.write_with_color(Color::Gray, "[B] ");
+            inner.write_with_color(level, Color::Gray, "[B] ");
         };
-        let level = record.level();
-        inner.write_with_color(Color::for_log_level(level), format_args!("{level:5} "));
-        inner.write_with_color(Color::Default, record.args());
-        inner.write_with_color(Color::Default, "\n");
+        inner.write_with_color(
+            level,
+            Color::for_log_level(level),
+            format_args!("{level:5} "),
+        );
+        inner.write_with_color(level, Color::Default, record.args());
+        inner.write_with_color(level, Color::Default, "\n");
     }
 
     fn flush(&self) {
@@ -221,15 +232,18 @@ static LOGGER: KernelLogger = KernelLogger {
 };
 
 pub fn init() -> Result<(), log::SetLoggerError> {
-    let mut inner = LOGGER.inner.try_lock().unwrap();
-    inner.serial_port = Some(AnyWriter::Com1({
-        // Safety: this is the only code that is accessing COM1
-        let mut serial_port = unsafe { SerialPort::new(0x3F8) };
-        serial_port.init();
-        serial_port
-    }));
+    {
+        let mut inner = LOGGER.inner.try_lock().unwrap();
+        inner.serial_port = Some(AnyWriter::Com1({
+            // Safety: this is the only code that is accessing COM1
+            let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+            serial_port.init();
+            serial_port
+        }));
+    }
     log::set_max_level(LevelFilter::max());
-    log::set_logger(&LOGGER)
+    log::set_logger(&LOGGER)?;
+    Ok(())
 }
 
 /// Replaces the serial logger, setting it to `None` if specified
@@ -244,13 +258,17 @@ pub fn log_for_user_mode(level: log::Level, message: impl Display, thread_id: Th
     let thread_id = NonZeroU32::from(thread_id);
     if let Some(cpu_local_data) = try_get_local() {
         let cpu_id = cpu_local_data.cpu.id;
-        inner.write_with_color(Color::Gray, format_args!("[{cpu_id}]"));
+        inner.write_with_color(level, Color::Gray, format_args!("[{cpu_id}]"));
     } else {
-        inner.write_with_color(Color::Gray, "[B]");
+        inner.write_with_color(level, Color::Gray, "[B]");
     };
-    inner.write_with_color(Color::BrightGreen, format_args!("[{thread_id}] "));
-    inner.write_with_color(Color::for_log_level(level), format_args!("{level:5} "));
-    inner.write_with_color(Color::Default, format_args!("{message}\n"));
+    inner.write_with_color(level, Color::BrightGreen, format_args!("[{thread_id}] "));
+    inner.write_with_color(
+        level,
+        Color::for_log_level(level),
+        format_args!("{level:5} "),
+    );
+    inner.write_with_color(level, Color::Default, format_args!("{message}\n"));
 }
 
 /// Start logging to the frame buffer from now on

@@ -7,7 +7,7 @@ use limine::{
     },
 };
 
-use crate::user_mode_program_path::USER_MODE_PROGRAM_PATH;
+use crate::user_mode_program_path::{KERNEL_CONFIG_PATH, USER_MODE_PROGRAM_PATH};
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -40,6 +40,7 @@ pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new().with_internal_modules(&[
+    &InternalModule::new().with_path(KERNEL_CONFIG_PATH),
     &InternalModule::new().with_path(USER_MODE_PROGRAM_PATH),
     &InternalModule::new().with_path(c"/extra_module_0"),
 ]);

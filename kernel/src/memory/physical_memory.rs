@@ -1,8 +1,8 @@
 use alloc::boxed::Box;
 use nodit::{Interval, NoditMap};
 use x86_64::{
-    PhysAddr,
     structures::paging::{FrameAllocator, PageSize, PhysFrame},
+    PhysAddr,
 };
 
 use crate::task::ProcessId;
@@ -102,7 +102,6 @@ unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryFrameAllocator<'_> 
         let frame = self
             .physical_memory
             .allocate_frame_with_type(self.memory_type)?;
-        log::debug!("Allocated frame: {frame:?}");
         Some(frame)
     }
 }

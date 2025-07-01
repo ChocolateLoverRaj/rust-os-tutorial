@@ -32,7 +32,7 @@ use crate::{
 pub const INITIAL_RSP: u64 = 0x800000000000;
 
 /// Creates a process with a single thread, based on an ELF
-pub fn spawn_process(module_response: &ModuleResponse) {
+pub fn spawn_initial_process(module_response: &ModuleResponse) {
     if let Some(file) = module_response
         .modules()
         .iter()

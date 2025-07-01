@@ -1,0 +1,5 @@
+(
+    log_serial: Debug,
+    log_screen: Warn,
+    log_sample_messages: true,
+)

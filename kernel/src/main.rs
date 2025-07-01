@@ -33,10 +33,12 @@ pub mod init_ps2_mouse;
 pub mod interrupt_vector;
 pub mod interrupted_context;
 pub mod io_apics;
+pub mod kernel_config;
 pub mod limine_requests;
 pub mod local_apic;
 pub mod local_apic_id;
 pub mod logger;
+pub mod map_page;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
@@ -44,7 +46,7 @@ pub mod pci;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
-pub mod spawn_process;
+pub mod spawn_initial_process;
 pub mod spcr;
 pub mod syscall_handlers;
 pub mod syscall_saved_regs;
@@ -63,11 +65,12 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     logger::init().unwrap();
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
     logger::init_frame_buffer(frame_buffer_response, false);
-    log::info!("Hello World!");
 
     let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
     // Safety: we are initializing this for the first time
     unsafe { memory::init(memory_map) };
+
+    kernel_config::init();
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     cpu_local_data::init(mp_response);
@@ -118,7 +121,7 @@ extern "sysv64" fn init_bsp() -> ! {
     // x86_64::instructions::interrupts::enable();
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
-    spawn_process::spawn_process(module_response);
+    spawn_initial_process::spawn_initial_process(module_response);
 
     run_threads()
 }

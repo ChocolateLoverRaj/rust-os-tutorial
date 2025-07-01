@@ -6,8 +6,8 @@ use crate::{
     interrupt_vector::InterruptVector,
     run_tasks::run_threads,
     task::{
-        StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState,
-        ThreadReadyStateInSyscall, ThreadState,
+        StartData, Thread, ThreadId, ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
+        THREADS, THREAD_PRIORITIES,
     },
 };
 
@@ -53,7 +53,6 @@ impl GenericSyscallHandler for SyscallSpawnThreadHandler {
             );
             thread_priorities.insert(new_thread_position, new_thread_id);
             let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();
-            log::debug!("Spawned thread. sending ipi");
             unsafe {
                 local_apic.send_ipi_all(
                     u8::from(InterruptVector::CheckTasks),

@@ -1,20 +1,24 @@
 use alloc::sync::Arc;
 use common::{
-    PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping, SyscallSpawnProcess,
+    PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping, Syscall,
+    SyscallSpawnProcess,
 };
 use nodit::{Interval, NoditMap};
+use x2apic::lapic::IpiAllShorthand;
 use x86_64::{
     VirtAddr,
-    structures::paging::{Mapper, Page, PageSize, Size4KiB},
+    structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
 };
 
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
+    interrupt_vector::InterruptVector,
     memory::{MEMORY, MemoryType},
+    run_tasks::run_threads,
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
-        ThreadReadyState, ThreadState,
+        ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
     },
 };
 
@@ -24,14 +28,11 @@ pub struct SyscallSpawnProcessHandler;
 impl GenericSyscallHandler for SyscallSpawnProcessHandler {
     type S = SyscallSpawnProcess;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
-        enum Action {
-            Terminate,
-            Return,
-        }
         let result = (|| {
             let input = helper.input();
             let local = get_local();
-            let running_thread_id = local.running_thread.try_lock().unwrap().unwrap();
+            let mut running_thread_lock = local.running_thread.try_lock().unwrap();
+            let running_thread_id = running_thread_lock.unwrap();
             let mut threads = THREADS.write();
             let running_thread = threads.get(&running_thread_id).unwrap();
             let mut process_memory = running_thread.process.memory.write();
@@ -73,7 +74,6 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 new_mapper.level_4_table_mut()[i].clone_from(&current_mapper.level_4_table()[i]);
             }
             for memory_mapping in memory_mappings {
-                log::debug!("Mapping: {memory_mapping:#X?}");
                 // Don't let another thread modify this data while we're using it
                 let memory_mapping = memory_mapping.clone();
                 let interval = Interval::from(
@@ -126,18 +126,15 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 let page_count = memory_mapping.len / Size4KiB::SIZE;
                 for i in 0..page_count {
                     let page = start_page_current + i;
-                    // log::debug!("Unmapping {page:?}");
                     let (frame, _flags, flush) = current_mapper.unmap(page).unwrap();
                     flush.flush();
 
                     let page = start_page_new + i;
-                    let flags = page_permissions.into();
+                    let flags = PageTableFlags::PRESENT
+                        | PageTableFlags::USER_ACCESSIBLE
+                        | page_permissions.into();
                     let mut frame_allocator =
                         physical_memory.get_user_mode_program_frame_allocator(new_process_id);
-                    // log::debug!(
-                    //     "new process: mapping {page:?} to {frame:?} {:?}",
-                    //     new_mapper.level_4_table()
-                    // );
                     // FIXME: Gracefully handle out of memory
                     unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
                         .unwrap()
@@ -146,6 +143,12 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             }
             let new_thread_id = ThreadId::new_unique();
             drop(process_memory);
+            *running_thread_lock = None;
+            *running_thread.state.write() =
+                ThreadState::Ready(ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
+                    saved_regs: helper.saved_regs().clone(),
+                    output: <Self::S as Syscall>::encode_output(&()),
+                }));
             threads.insert(
                 new_thread_id,
                 Thread {
@@ -176,11 +179,18 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 ProcessRelativePriority::Higher => running_thread_position,
             };
             thread_priorities.insert(new_thread_position, new_thread_id);
+            let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();
+            unsafe {
+                local_apic.send_ipi_all(
+                    InterruptVector::CheckTasks.into(),
+                    IpiAllShorthand::AllExcludingSelf,
+                );
+            }
             Ok::<_, ()>(())
         })();
         match result {
             Err(_) => todo!(),
-            Ok(_) => helper.syscall_return(&()),
+            Ok(_) => run_threads(),
         }
     }
 }

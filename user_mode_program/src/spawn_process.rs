@@ -94,7 +94,7 @@ pub fn spawn_process() {
     });
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
-        priority: ProcessRelativePriority::Lower,
+        priority: ProcessRelativePriority::Higher,
         rip: entry_point,
         rsp: stack_top,
         memory_mapping: &memory_mappings,

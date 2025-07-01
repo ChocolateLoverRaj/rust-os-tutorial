@@ -32,6 +32,11 @@ fn main() {
     // Limine config will be in `limine.conf`
     let limine_conf = iso_dir.join("limine.conf");
     ensure_symlink(runner_dir.join("limine.conf"), limine_conf).unwrap();
+    ensure_symlink(
+        runner_dir.join("kernel_config.ron"),
+        iso_dir.join("kernel_config.ron"),
+    )
+    .unwrap();
 
     // Symlink the kernel binary to `kernel`
     let kernel_dest = iso_dir.join("kernel");

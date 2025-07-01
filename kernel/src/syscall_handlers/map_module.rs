@@ -2,16 +2,16 @@ use alloc::format;
 use common::{SliceData, SyscallMapModule, SyscallMapModuleError};
 use nodit::interval::ee;
 use x86_64::{
+    structures::paging::{mapper::MapToError, Mapper, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
-    structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB, mapper::MapToError},
 };
 
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     limine_requests::MODULE_REQUEST,
-    memory::{MEMORY, MemoryType},
-    task::{THREADS, VirtualMemoryPermissions},
+    memory::{MemoryType, MEMORY},
+    task::{VirtualMemoryPermissions, THREADS},
     translate_addr::GetFrameSlice,
 };
 
@@ -71,7 +71,6 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                 Page::<Size4KiB>::from_start_address(VirtAddr::new(*range.start())).unwrap();
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
-            log::debug!("n pages: {n_pages}");
             for i in 0..n_pages {
                 let frame = physical_memory
                     .allocate_frame_with_type(MemoryType::UsedByUserMode(current_process.id))
@@ -80,7 +79,6 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                 let frame_slice = unsafe { frame.get_slice_mut() };
                 let copy_start = (i * Size4KiB::SIZE) as usize;
                 let bytes_to_copy = (module_slice.len() - copy_start).min(Size4KiB::SIZE as usize);
-                log::info!("copy start: {copy_start} bytes to copy {bytes_to_copy}");
                 frame_slice[..bytes_to_copy]
                     .copy_from_slice(&module_slice[copy_start..copy_start + bytes_to_copy]);
                 // In the last frame, zero unused bytes
@@ -99,11 +97,9 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                         e => unreachable!("{:#?}", e),
                     })?
                     .flush();
-                log::debug!("mapped page {i}");
             }
             Ok(SliceData::new(range.start().clone(), len))
         })();
-        log::info!("Output: {output:?}");
         helper.syscall_return(&output)
     }
 }

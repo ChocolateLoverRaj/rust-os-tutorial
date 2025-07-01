@@ -24,6 +24,7 @@ force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync"
 limine = "0.5"
 log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode", version = "0.4.27", features = [
     "bincode",
+    "serde"
 ] }
 nodit = "0.9.2"
 num_enum = { version = "0.7.3", default-features = false }
@@ -31,6 +32,8 @@ owo-colors = "4.2.1"
 polished_pci = { version = "0.2.2", default-features = false, features = ["logger_log"], path = "../../../polished/pci" }
 ps2 = "0.2.0"
 raw-cpuid = "11.5.0"
+ron = { git = "https://github.com/ron-rs/ron", version = "0.10.1", default-features = false }
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 spin = "0.10.0"
 talc = "4.4.2"
 thiserror = { version = "2.0.12", default-features = false }
