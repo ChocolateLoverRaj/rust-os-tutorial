@@ -28,18 +28,14 @@ impl GenericSyscallHandler for SyscallExitProcessHandler {
             let running_thread_id = local.running_thread.lock().take().unwrap();
             let running_process_id = threads.get(&running_thread_id).unwrap().process.id;
             let mut index = 0;
-            loop {
-                if let Some(thread_id) = thread_priorities.get(index) {
-                    if let Entry::Occupied(entry) = threads.entry(thread_id.clone()) {
-                        if entry.get().process.id == running_process_id {
-                            thread_priorities.remove(index);
-                            entry.remove();
-                        } else {
-                            index += 1;
-                        }
+            while let Some(thread_id) = thread_priorities.get(index) {
+                if let Entry::Occupied(entry) = threads.entry(*thread_id) {
+                    if entry.get().process.id == running_process_id {
+                        thread_priorities.remove(index);
+                        entry.remove();
+                    } else {
+                        index += 1;
                     }
-                } else {
-                    break;
                 }
             }
             let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();

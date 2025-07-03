@@ -2,16 +2,16 @@ use alloc::format;
 use common::{SliceData, SyscallMapModule, SyscallMapModuleError};
 use nodit::interval::ee;
 use x86_64::{
-    structures::paging::{mapper::MapToError, Mapper, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
+    structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB, mapper::MapToError},
 };
 
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     limine_requests::MODULE_REQUEST,
-    memory::{MemoryType, MEMORY},
-    task::{VirtualMemoryPermissions, THREADS},
+    memory::{MEMORY, MemoryType},
+    task::{THREADS, VirtualMemoryPermissions},
     translate_addr::GetFrameSlice,
 };
 
@@ -98,7 +98,7 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                     })?
                     .flush();
             }
-            Ok(SliceData::new(range.start().clone(), len))
+            Ok(SliceData::new(*range.start(), len))
         })();
         helper.syscall_return(&output)
     }

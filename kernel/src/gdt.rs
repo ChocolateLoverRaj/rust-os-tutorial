@@ -39,9 +39,8 @@ pub unsafe fn init() {
             GuardedStack::new(64 * 0x400, StackType::FirstException(local_apic_id)).top();
         tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
             GuardedStack::new(64 * 0x400, StackType::DoubleFault(local_apic_id)).top();
-        tss.interrupt_stack_table[NORMAL_STACK_INDEX as usize] =
-            local.normal_stack.get().unwrap().clone();
-        tss.privilege_stack_table[0] = local.normal_stack.get().unwrap().clone();
+        tss.interrupt_stack_table[NORMAL_STACK_INDEX as usize] = *local.normal_stack.get().unwrap();
+        tss.privilege_stack_table[0] = *local.normal_stack.get().unwrap();
         tss
     });
     let gdt = local.gdt.call_once(|| {

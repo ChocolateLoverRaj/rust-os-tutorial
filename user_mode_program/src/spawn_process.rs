@@ -2,7 +2,7 @@ use core::alloc::Layout;
 
 use alloc::vec::Vec;
 use common::{
-    ElfSegmentFlags, PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping, log,
+    ElfSegmentFlags, PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
@@ -78,7 +78,6 @@ pub fn spawn_process() {
     let stack_with_guard_len = 0x1000 + stack_len;
     let stack =
         syscall_alloc(Layout::from_size_align(stack_with_guard_len, 0x1000).unwrap()).unwrap();
-    log::debug!("Stack: {stack:p}");
     // Guard page
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: stack.addr() as u64,

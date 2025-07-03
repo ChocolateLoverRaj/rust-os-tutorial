@@ -72,7 +72,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     },
                 )
                 .unwrap();
-            process_memory.frame_buffer_virtual_start = Some(range.start().clone());
+            process_memory.frame_buffer_virtual_start = Some(*range.start());
             let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
                 frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
             ))
@@ -144,7 +144,6 @@ impl GenericSyscallHandler for SyscallReleaseFrameBufferHandler {
             Return,
         }
         let action = {
-            // TODO: Actually release the frame buffer
             let local = get_local();
             let threads = THREADS.read();
             let running_thread_id = local.running_thread.try_lock().unwrap().unwrap();

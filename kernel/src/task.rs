@@ -119,6 +119,8 @@ pub struct ThreadReadyStateInSyscall {
 }
 
 impl ThreadReadyStateInSyscall {
+    /// # Safety
+    /// Enters user mode
     pub unsafe fn sysretq(self) -> ! {
         unsafe { self.saved_regs.sysretq(self.output) }
     }

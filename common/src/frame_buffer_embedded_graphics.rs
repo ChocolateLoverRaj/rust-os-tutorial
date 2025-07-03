@@ -23,7 +23,7 @@ impl<'a> FrameBufferEmbeddedGraphics<'a> {
     /// # Safety
     /// The frame buffer must be mapped at `addr`
     pub unsafe fn new(addr: *mut u8, info: FrameBufferInfo) -> Self {
-        if info.bits_per_pixel as usize == 8 * size_of::<u32>() {
+        if info.bits_per_pixel as u32 == u32::BITS {
             let len = (info.pitch * info.height) as usize;
             Self {
                 buffer: {

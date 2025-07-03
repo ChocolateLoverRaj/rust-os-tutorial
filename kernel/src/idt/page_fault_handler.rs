@@ -1,15 +1,15 @@
 use x86_64::{
+    PrivilegeLevel,
     registers::control::Cr2,
     structures::{
         idt::{InterruptStackFrame, PageFaultErrorCode},
         paging::{Page, Size4KiB},
     },
-    PrivilegeLevel,
 };
 
 use crate::{
     cpu_local_data::get_local,
-    guarded_stack::{StackType, STACK_GUARD_PAGES},
+    guarded_stack::{STACK_GUARD_PAGES, StackType},
 };
 
 pub extern "x86-interrupt" fn page_fault_handler(
@@ -35,7 +35,7 @@ pub extern "x86-interrupt" fn page_fault_handler(
                 guard_page: Page,
             }
             let stack_overflow = StackOverflow {
-                stack: stack.clone(),
+                stack: *stack,
                 guard_page: accessed_page,
             };
             panic!("{stack_overflow:?}")

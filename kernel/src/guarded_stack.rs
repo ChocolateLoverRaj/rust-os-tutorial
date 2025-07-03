@@ -29,7 +29,7 @@ impl GuardedStack {
             .unwrap();
         // We purposely don't map the bottom page
         // so that it causes a page fault instead of silently overwriting data used for other purposes
-        let guard_page = allocated_pages.range().start().clone();
+        let guard_page = *allocated_pages.range().start();
         STACK_GUARD_PAGES.lock().insert(guard_page, stack_type);
         let start_page = guard_page + 1;
         for i in 0..n_mapped_pages {

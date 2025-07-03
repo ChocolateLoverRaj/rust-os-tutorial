@@ -26,7 +26,7 @@ pub fn run_threads() -> ! {
         let threads = THREADS.read();
         let mut thread_priorities = thread_priorities.iter();
         let local = get_local();
-        let r = { local.running_thread.lock() }.clone();
+        let r = { *local.running_thread.lock() };
 
         assert!(r.is_none());
         // log::debug!("Threads: {threads:#?}. Priorities: {thread_priorities:?}");

@@ -38,7 +38,6 @@ pub mod limine_requests;
 pub mod local_apic;
 pub mod local_apic_id;
 pub mod logger;
-pub mod map_page;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;

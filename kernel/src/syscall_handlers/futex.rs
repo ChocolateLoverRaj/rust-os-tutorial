@@ -30,7 +30,7 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
             Terminate,
         }
         let action = {
-            let ptr_u64 = helper.input().clone();
+            let ptr_u64 = *helper.input();
             let local = get_local();
             let mut running_thread = local.running_thread.try_lock().unwrap();
             let running_thread_id = running_thread.unwrap();
@@ -60,7 +60,7 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
                                         process: lock_owner.process.id,
                                         virtual_address: ptr_u64,
                                     })
-                                    .or_insert_with(Default::default)
+                                    .or_default()
                                     .waiters
                                     .lock()
                                     .insert(running_thread_id);
@@ -104,7 +104,7 @@ impl GenericSyscallHandler for SyscallFutexUnlockHandler {
             Return,
         }
         let action = {
-            let ptr_u64 = helper.input().clone();
+            let ptr_u64 = *helper.input();
             if let Some(end) = ptr_u64.checked_add(size_of::<AtomicU64>() as u64) {
                 let interval = Interval::from(ptr_u64..=end);
                 let local = get_local();

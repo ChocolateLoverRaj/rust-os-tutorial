@@ -42,8 +42,7 @@ impl GenericSyscallHandler for SyscallAllocStackHandler {
                     }
                 })
                 .ok_or(SyscallAllocStackError::OutOfVirtualMemory)?;
-            let guard_page_range =
-                range.start().clone()..=range.start().clone() + (Size4KiB::SIZE - 1);
+            let guard_page_range = *range.start()..=*range.start() + (Size4KiB::SIZE - 1);
             process_memory
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
@@ -55,7 +54,7 @@ impl GenericSyscallHandler for SyscallAllocStackHandler {
                     },
                 )
                 .unwrap();
-            let usable_range = range.start().clone() + Size4KiB::SIZE..=range.end().clone();
+            let usable_range = *range.start() + Size4KiB::SIZE..=*range.end();
             process_memory
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
@@ -95,10 +94,7 @@ impl GenericSyscallHandler for SyscallAllocStackHandler {
                     .flush();
             }
             Ok(SyscallAllocStackOutput {
-                usable_stack: SliceData::new(
-                    usable_range.start().clone(),
-                    (n_pages - 1) * Size4KiB::SIZE,
-                ),
+                usable_stack: SliceData::new(*usable_range.start(), (n_pages - 1) * Size4KiB::SIZE),
             })
         })();
         helper.syscall_return(&result)
