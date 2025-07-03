@@ -6,7 +6,7 @@ use core::ops::DerefMut;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use async_mouse_decoded::AsyncMouseDecoded;
 use common::{
-    SpawnThreadRelativePriority,
+    EnvEntry, SpawnThreadRelativePriority,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, Point, Size, WebColors},
@@ -39,7 +39,10 @@ fn main() {
     logger::init();
     log::info!("Hi");
 
-    spawn_process();
+    spawn_process(&[
+        EnvEntry { key: 1, value: 2 },
+        EnvEntry { key: 11, value: 22 },
+    ]);
 
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     GuardedStack::new(64 * 0x400)
@@ -157,7 +160,7 @@ extern "sysv64" fn worker() -> ! {
     loop {
         log::debug!("{count}");
         count += 1;
-        if count == 1000 {
+        if count == 1 {
             break;
         }
     }

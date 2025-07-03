@@ -3,6 +3,7 @@
 extern crate alloc;
 
 mod elf_segment_flags;
+mod env;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod slice_data;
@@ -25,6 +26,7 @@ mod syscall_spawn_thread;
 mod syscall_wait_until_event;
 
 pub use elf_segment_flags::*;
+pub use env::*;
 pub use frame_buffer_embedded_graphics::*;
 pub use frame_buffer_info::*;
 pub use slice_data::SliceData;

@@ -2,7 +2,7 @@ use core::alloc::Layout;
 
 use alloc::vec::Vec;
 use common::{
-    ElfSegmentFlags, PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping,
+    ElfSegmentFlags, EnvEntry, PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
@@ -13,7 +13,7 @@ use x86_64::{
     structures::paging::{Page, PageSize, Size4KiB},
 };
 
-pub fn spawn_process() {
+pub fn spawn_process(env_entries: &[EnvEntry]) {
     let slice = syscall_map_module(0).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
@@ -78,6 +78,19 @@ pub fn spawn_process() {
     let stack_with_guard_len = 0x1000 + stack_len;
     let stack =
         syscall_alloc(Layout::from_size_align(stack_with_guard_len, 0x1000).unwrap()).unwrap();
+
+    let env_size = size_of_val(env_entries) + size_of::<u64>();
+    // Make sure the pointer is aligned by 16
+    let env_ptr = (stack.addr() + stack.len() - env_size) / 16 * 16;
+
+    let entries_count_ptr = env_ptr as *mut u64;
+    let entries_count = env_entries.len() as u64;
+    unsafe { entries_count_ptr.write(entries_count) };
+    let entries_ptr = (env_ptr + size_of::<u64>()) as *mut EnvEntry;
+    let entries_len = env_entries.len();
+    let entries = unsafe { core::slice::from_raw_parts_mut(entries_ptr, entries_len) };
+    entries.copy_from_slice(env_entries);
+
     // Guard page
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: stack.addr() as u64,
@@ -95,7 +108,7 @@ pub fn spawn_process() {
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority: ProcessRelativePriority::Higher,
         rip: entry_point,
-        rsp: stack_top,
+        rsp: stack_top - (stack.addr() + stack.len() - env_ptr) as u64,
         memory_mapping: &memory_mappings,
     });
 }
