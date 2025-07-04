@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 use common::{
-    PagePermissions, SpawnProcessMemoryMapping, SpawnProcessRelativePriority, Syscall,
+    SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority, Syscall,
     SyscallSpawnProcess, SyscallSpawnProcessInput,
 };
 use nodit::{Interval, NoditMap};
@@ -161,7 +161,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         ..memory_mapping.new_process_start + memory_mapping.len,
                 );
                 let page_permissions =
-                    PagePermissions::from_bits_retain(memory_mapping.permissions);
+                    SpawnProcessMemoryFlags::from_bits_retain(memory_mapping.flags);
                 mapped_virtual_memory
                     .insert_merge_touching_if_values_equal(interval, page_permissions.into())
                     .map_err(|_| ())?;

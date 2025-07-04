@@ -2,7 +2,7 @@ use core::alloc::Layout;
 
 use alloc::{boxed::Box, vec::Vec};
 use common::{
-    ElfSegmentFlags, EnvEntry, PagePermissions, SpawnProcessMemoryMapping,
+    ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
@@ -48,7 +48,7 @@ pub fn spawn_process(
                 current_process_start: frame.addr() as u64,
                 new_process_start: page.start_address().as_u64(),
                 len: page.size(),
-                permissions: PagePermissions::from(ElfSegmentFlags::from_bits_retain(
+                flags: SpawnProcessMemoryFlags::from(ElfSegmentFlags::from_bits_retain(
                     segment.p_flags,
                 ))
                 .bits(),
@@ -102,13 +102,13 @@ pub fn spawn_process(
         current_process_start: stack.addr() as u64,
         new_process_start: stack_top - stack_with_guard_len as u64,
         len: 0x1000,
-        permissions: PagePermissions::empty().bits(),
+        flags: SpawnProcessMemoryFlags::empty().bits(),
     });
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: stack.addr() as u64 + 0x1000,
         new_process_start: stack_top - stack_len as u64,
         len: stack_len as u64,
-        permissions: (PagePermissions::READABLE | PagePermissions::WRITABLE).bits(),
+        flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {

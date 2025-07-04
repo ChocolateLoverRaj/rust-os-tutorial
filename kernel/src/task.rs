@@ -9,7 +9,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use common::{PagePermissions, SliceData, Syscall, SyscallWaitUntilEvent};
+use common::{SliceData, SpawnProcessMemoryFlags, Syscall, SyscallWaitUntilEvent};
 use crossbeam_queue::ArrayQueue;
 use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
@@ -39,12 +39,12 @@ impl From<ElfSegmentFlags> for VirtualMemoryPermissions {
     }
 }
 
-impl From<PagePermissions> for VirtualMemoryPermissions {
-    fn from(value: PagePermissions) -> Self {
+impl From<SpawnProcessMemoryFlags> for VirtualMemoryPermissions {
+    fn from(value: SpawnProcessMemoryFlags) -> Self {
         Self {
-            read: value.contains(PagePermissions::READABLE),
-            write: value.contains(PagePermissions::WRITABLE),
-            execute: value.contains(PagePermissions::EXECUTABLE),
+            read: value.contains(SpawnProcessMemoryFlags::READABLE),
+            write: value.contains(SpawnProcessMemoryFlags::WRITABLE),
+            execute: value.contains(SpawnProcessMemoryFlags::EXECUTABLE),
         }
     }
 }

@@ -23,39 +23,40 @@ pub struct SyscallSpawnProcessInput {
 
 bitflags! {
     #[derive(Debug, Clone, Copy)]
-    pub struct PagePermissions: u64 {
+    pub struct SpawnProcessMemoryFlags: u64 {
         const EXECUTABLE = 1 << 0;
         const WRITABLE = 1 << 1;
         const READABLE = 1 << 2;
+        const SHARE = 1 << 2;
 
         // The source may set any bits
         const _ = !0;
     }
 }
 
-impl From<ElfSegmentFlags> for PagePermissions {
+impl From<ElfSegmentFlags> for SpawnProcessMemoryFlags {
     fn from(value: ElfSegmentFlags) -> Self {
-        let mut flags = PagePermissions::empty();
+        let mut flags = SpawnProcessMemoryFlags::empty();
         if value.contains(ElfSegmentFlags::READABLE) {
-            flags |= PagePermissions::READABLE;
+            flags |= SpawnProcessMemoryFlags::READABLE;
         };
         if value.contains(ElfSegmentFlags::WRITABLE) {
-            flags |= PagePermissions::WRITABLE;
+            flags |= SpawnProcessMemoryFlags::WRITABLE;
         };
         if value.contains(ElfSegmentFlags::EXECUTABLE) {
-            flags |= PagePermissions::EXECUTABLE;
+            flags |= SpawnProcessMemoryFlags::EXECUTABLE;
         };
         flags
     }
 }
 
-impl From<PagePermissions> for PageTableFlags {
-    fn from(value: PagePermissions) -> Self {
+impl From<SpawnProcessMemoryFlags> for PageTableFlags {
+    fn from(value: SpawnProcessMemoryFlags) -> Self {
         let mut page_table_flags = Self::empty();
-        if value.contains(PagePermissions::WRITABLE) {
+        if value.contains(SpawnProcessMemoryFlags::WRITABLE) {
             page_table_flags |= Self::WRITABLE;
         }
-        if !value.contains(PagePermissions::EXECUTABLE) {
+        if !value.contains(SpawnProcessMemoryFlags::EXECUTABLE) {
             page_table_flags |= Self::NO_EXECUTE;
         }
         page_table_flags
@@ -67,7 +68,7 @@ pub struct SpawnProcessMemoryMapping {
     pub current_process_start: u64,
     pub new_process_start: u64,
     pub len: u64,
-    pub permissions: u64,
+    pub flags: u64,
 }
 
 pub struct SyscallSpawnProcess;
