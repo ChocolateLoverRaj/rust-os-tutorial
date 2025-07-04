@@ -3,26 +3,24 @@
 #![feature(maybe_uninit_slice)]
 use core::ops::DerefMut;
 
-use alloc::vec;
+use alloc::vec::Vec;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
-use async_mouse_decoded::AsyncMouseDecoded;
 use common::{
-    EnvEntry, SpawnProcessRelativePriority, SpawnThreadRelativePriority,
     embedded_graphics::{
+        Drawable,
+        geometry::{AnchorX, AnchorY},
+        mono_font::{MonoTextStyleBuilder, iso_8859_3::FONT_10X20},
         pixelcolor::Rgb888,
-        prelude::{Dimensions, Point, Size, WebColors},
+        prelude::{Dimensions, Point, RgbColor, Size, WebColors},
         primitives::{PrimitiveStyleBuilder, Rectangle, StyledDrawable},
+        text::{Baseline, Text},
     },
     log,
 };
 use frame_buffer::FrameBuffer;
-use futures::{StreamExt, stream::select};
+use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use spawn_process::spawn_process;
-use user_lib::{
-    ExecutorContext, GuardedStack, async_channel, execute_future, logger, syscall_exit_process,
-    syscall_exit_thread,
-};
+use user_lib::{ExecutorContext, execute_future, logger, syscall_exit_process};
 
 extern crate alloc;
 
@@ -40,120 +38,224 @@ fn main() {
     logger::init();
     log::info!("Hi");
 
-    let (sender, mut receiver) = async_channel::create();
-    spawn_process(
-        SpawnProcessRelativePriority::Lower,
-        &[EnvEntry {
-            key: 0,
-            value: sender.channel_id(),
-        }],
-        vec![sender].into_iter(),
-    );
+    let apps = [
+        "Test App",
+        "Non-existent app (will crash if you try to launch)",
+    ];
 
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
-    GuardedStack::new(64 * 0x400)
-        .unwrap()
-        .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
-    GuardedStack::new(64 * 0x400)
-        .unwrap()
-        .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
+
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
-        log::info!("Waiting for events from spawned process");
-        receiver.receive(&executor_context).await;
-        log::info!("Received event from spawned process");
-        enum Input {
-            MoveCursor(Point),
-            Exit,
-        }
-        let keyboard = AsyncKeyboardDecoded::new(
+        let mut async_keyboard = AsyncKeyboardDecoded::new(
             &executor_context,
-            ScancodeSet1::default(),
+            ScancodeSet1::new(),
             Us104Key,
             HandleControl::Ignore,
-        )
-        .map(Result::unwrap)
-        .filter_map(async |key| {
-            if let KeyState::Down | KeyState::SingleShot = key.state {
-                let movement_amount = 5;
-                match key.code {
-                    KeyCode::ArrowUp => Some(Input::MoveCursor(Point::new(0, -movement_amount))),
-                    KeyCode::ArrowDown => Some(Input::MoveCursor(Point::new(0, movement_amount))),
-                    KeyCode::ArrowLeft => Some(Input::MoveCursor(Point::new(-movement_amount, 0))),
-                    KeyCode::ArrowRight => Some(Input::MoveCursor(Point::new(movement_amount, 0))),
-                    KeyCode::Escape | KeyCode::Q => Some(Input::Exit),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        });
-        let mouse = AsyncMouseDecoded::new(&executor_context)
-            .map(|stream| {
-                stream.map(|packet| {
-                    Input::MoveCursor(Point::new(
-                        match packet.x_movement() {
-                            ps2_mouse::MovementAmount::Overflow(_) => 0,
-                            ps2_mouse::MovementAmount::NoOverflow(change) => change as i32,
-                        },
-                        match packet.y_movement() {
-                            ps2_mouse::MovementAmount::Overflow(_) => 0,
-                            ps2_mouse::MovementAmount::NoOverflow(change) => -change as i32,
-                        },
-                    ))
-                })
-            })
-            .ok();
-        let mut movement = if let Some(mouse) = mouse {
-            select(keyboard, mouse).boxed_local()
-        } else {
-            keyboard.boxed_local()
+        );
+        struct State {
+            tabs: Vec<usize>,
+            focus: Focus,
+        }
+        enum Focus {
+            NewTab(usize),
+            Tab(usize),
+        }
+        let mut state = State {
+            tabs: Default::default(),
+            focus: Focus::NewTab(Default::default()),
         };
-        let mut cursor_position = Point::zero();
-        frame_buffer
-            .bounding_box()
-            .draw_styled(
-                &PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb888::CSS_LIGHT_GRAY)
-                    .build(),
-                frame_buffer.deref_mut(),
-            )
-            .unwrap();
-        let screen_size = frame_buffer.bounding_box().size;
-        Rectangle::new(cursor_position, Size::new(20, 20))
-            .draw_styled(
-                &PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb888::CSS_DARK_GRAY)
-                    .build(),
-                frame_buffer.deref_mut(),
-            )
-            .unwrap();
-        while let Some(Input::MoveCursor(movement)) = movement.next().await {
-            let new_cursor_position = Point::new(
-                (cursor_position.x + movement.x)
-                    .max(0)
-                    .min(screen_size.width as i32),
-                (cursor_position.y + movement.y)
-                    .max(0)
-                    .min(screen_size.height as i32),
-            );
-            Rectangle::new(cursor_position, Size::new(20, 20))
+        loop {
+            let top_bar_height = 40;
+            let top_bar_rect = frame_buffer
+                .bounding_box()
+                .resized_height(top_bar_height, AnchorY::Top);
+            top_bar_rect
                 .draw_styled(
                     &PrimitiveStyleBuilder::new()
-                        .fill_color(Rgb888::CSS_LIGHT_GRAY)
+                        .fill_color(Rgb888::new(20, 20, 20))
                         .build(),
                     frame_buffer.deref_mut(),
                 )
                 .unwrap();
-            Rectangle::new(new_cursor_position, Size::new(20, 20))
+            let new_tab_width = top_bar_height;
+            let new_tab_rect = top_bar_rect.resized_width(new_tab_width, AnchorX::Left);
+            new_tab_rect
                 .draw_styled(
                     &PrimitiveStyleBuilder::new()
-                        .fill_color(Rgb888::CSS_DARK_GRAY)
+                        .fill_color(if let Focus::NewTab(_) = state.focus {
+                            Rgb888::CSS_GREEN
+                        } else {
+                            Rgb888::CSS_DARK_GREEN
+                        })
                         .build(),
                     frame_buffer.deref_mut(),
                 )
                 .unwrap();
-            cursor_position = new_cursor_position;
+            let mut position = new_tab_width;
+            for (index, &tab) in state.tabs.iter().enumerate() {
+                let font = &FONT_10X20;
+                // TODO: Get UTF-8 character count and not byte-count
+                let app_name = apps[tab];
+                let text_width = font.character_size.width * u32::try_from(app_name.len()).unwrap()
+                    + font.character_spacing * u32::try_from(app_name.len() - 1).unwrap();
+                let padding_x = 10;
+                let tab_rect_width = padding_x + text_width + padding_x;
+                let tab_rect = Rectangle::new(
+                    Point::new(position.try_into().unwrap(), 0),
+                    Size::new(tab_rect_width, top_bar_height),
+                );
+                let is_focused = if let Focus::Tab(focused_tab_index) = state.focus
+                    && focused_tab_index == index
+                {
+                    true
+                } else {
+                    false
+                };
+                tab_rect
+                    .draw_styled(
+                        &PrimitiveStyleBuilder::new()
+                            .fill_color(if is_focused {
+                                Rgb888::new(40, 40, 40)
+                            } else {
+                                Rgb888::new(30, 30, 30)
+                            })
+                            .build(),
+                        frame_buffer.deref_mut(),
+                    )
+                    .unwrap();
+                Text::with_baseline(
+                    app_name,
+                    Point::new(
+                        (position + padding_x).try_into().unwrap(),
+                        (top_bar_height / 2).try_into().unwrap(),
+                    ),
+                    {
+                        let mut builder = MonoTextStyleBuilder::new()
+                            .font(font)
+                            .text_color(Rgb888::WHITE);
+                        if is_focused {
+                            builder = builder.underline();
+                        }
+                        builder.build()
+                    },
+                    Baseline::Middle,
+                )
+                .draw(frame_buffer.deref_mut())
+                .unwrap();
+                position += tab_rect_width;
+            }
+
+            match &mut state.focus {
+                Focus::NewTab(focused_index) => {
+                    let font = &FONT_10X20;
+                    apps.iter().enumerate().for_each(|(index, app)| {
+                        Text::with_baseline(
+                            app,
+                            Point::new(
+                                0,
+                                i32::try_from(top_bar_height).unwrap()
+                                    + i32::try_from(font.character_size.height).unwrap()
+                                        * i32::try_from(index).unwrap(),
+                            ),
+                            MonoTextStyleBuilder::new()
+                                .font(font)
+                                .text_color(if index == *focused_index {
+                                    Rgb888::BLACK
+                                } else {
+                                    Rgb888::WHITE
+                                })
+                                .background_color(if index == *focused_index {
+                                    Rgb888::WHITE
+                                } else {
+                                    Rgb888::BLACK
+                                })
+                                .build(),
+                            Baseline::Top,
+                        )
+                        .draw(frame_buffer.deref_mut())
+                        .unwrap();
+                    });
+                    loop {
+                        let key_event = async_keyboard.next().await.unwrap().unwrap();
+                        if let KeyState::Down | KeyState::SingleShot = key_event.state {
+                            match key_event.code {
+                                KeyCode::ArrowUp => {
+                                    let new_focused_index =
+                                        focused_index.checked_sub(1).unwrap_or(apps.len() - 1);
+                                    *focused_index = new_focused_index;
+                                    break;
+                                }
+                                KeyCode::ArrowDown => {
+                                    let new_focused_index = if *focused_index + 1 < apps.len() {
+                                        *focused_index + 1
+                                    } else {
+                                        0
+                                    };
+                                    *focused_index = new_focused_index;
+                                    break;
+                                }
+                                KeyCode::Return => {
+                                    state.tabs.push(*focused_index);
+                                    state.focus = Focus::Tab(0);
+                                    break;
+                                }
+                                KeyCode::Escape | KeyCode::W => {
+                                    if !state.tabs.is_empty() {
+                                        state.focus = Focus::Tab(0);
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Focus::Tab(tab_index) => {
+                    let tab_content_rect = frame_buffer.bounding_box().resized_height(
+                        frame_buffer.bounding_box().size.height - top_bar_height,
+                        AnchorY::Bottom,
+                    );
+                    tab_content_rect
+                        .draw_styled(
+                            &PrimitiveStyleBuilder::new()
+                                .fill_color(Rgb888::BLACK)
+                                .build(),
+                            frame_buffer.deref_mut(),
+                        )
+                        .unwrap();
+                    loop {
+                        let key_event = async_keyboard.next().await.unwrap().unwrap();
+                        if let KeyState::Down | KeyState::SingleShot = key_event.state {
+                            match key_event.code {
+                                KeyCode::W | KeyCode::Escape => {
+                                    let tab_index = *tab_index;
+                                    state.tabs.remove(tab_index);
+                                    state.focus = if !state.tabs.is_empty() {
+                                        Focus::Tab(tab_index.saturating_sub(1))
+                                    } else {
+                                        Focus::NewTab(Default::default())
+                                    };
+                                    break;
+                                }
+                                KeyCode::T => {
+                                    state.focus = Focus::NewTab(Default::default());
+                                    break;
+                                }
+                                KeyCode::Tab => {
+                                    *tab_index = if *tab_index + 1 < state.tabs.len() {
+                                        *tab_index + 1
+                                    } else {
+                                        0
+                                    };
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
         }
     });
 }
@@ -162,16 +264,4 @@ fn main() {
 unsafe extern "C" fn entry_point() -> ! {
     main();
     syscall_exit_process()
-}
-
-extern "sysv64" fn worker() -> ! {
-    let mut count = 0;
-    loop {
-        log::debug!("{count}");
-        count += 1;
-        if count == 1 {
-            break;
-        }
-    }
-    syscall_exit_thread()
 }
