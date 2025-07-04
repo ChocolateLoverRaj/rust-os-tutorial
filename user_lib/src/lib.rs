@@ -2,6 +2,7 @@
 #![feature(maybe_uninit_slice)]
 extern crate alloc;
 
+pub mod async_channel;
 mod async_keyboard;
 mod async_mouse;
 mod execute_future;

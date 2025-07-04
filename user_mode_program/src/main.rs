@@ -3,10 +3,11 @@
 #![feature(maybe_uninit_slice)]
 use core::ops::DerefMut;
 
+use alloc::vec;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use async_mouse_decoded::AsyncMouseDecoded;
 use common::{
-    EnvEntry, SpawnThreadRelativePriority,
+    EnvEntry, SpawnProcessRelativePriority, SpawnThreadRelativePriority,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, Point, Size, WebColors},
@@ -19,7 +20,7 @@ use futures::{StreamExt, stream::select};
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
 use user_lib::{
-    ExecutorContext, GuardedStack, execute_future, logger, syscall_exit_process,
+    ExecutorContext, GuardedStack, async_channel, execute_future, logger, syscall_exit_process,
     syscall_exit_thread,
 };
 
@@ -39,10 +40,15 @@ fn main() {
     logger::init();
     log::info!("Hi");
 
-    spawn_process(&[
-        EnvEntry { key: 1, value: 2 },
-        EnvEntry { key: 11, value: 22 },
-    ]);
+    let (sender, mut receiver) = async_channel::create();
+    spawn_process(
+        SpawnProcessRelativePriority::Lower,
+        &[EnvEntry {
+            key: 0,
+            value: sender.channel_id(),
+        }],
+        vec![sender].into_iter(),
+    );
 
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
     GuardedStack::new(64 * 0x400)
@@ -53,6 +59,9 @@ fn main() {
         .spawn_thread(worker, SpawnThreadRelativePriority::Lower);
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
+        log::info!("Waiting for events from spawned process");
+        receiver.receive(&executor_context).await;
+        log::info!("Received event from spawned process");
         enum Input {
             MoveCursor(Point),
             Exit,

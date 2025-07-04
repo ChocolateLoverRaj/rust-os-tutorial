@@ -1,15 +1,15 @@
 use core::{alloc::Layout, arch::asm, mem::MaybeUninit, num::NonZeroU32};
 
 use common::{
-    ProcessRelativePriority, SpawnProcessMemoryMapping, SpawnThreadRelativePriority, Syscall,
+    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, SpawnThreadRelativePriority, Syscall,
     SyscallAlloc, SyscallAllocError, SyscallAllocStack, SyscallAllocStackError,
-    SyscallAllocStackInput, SyscallAllocStackOutput, SyscallExists, SyscallExitProcess,
-    SyscallExitThread, SyscallGetThreadId, SyscallLog, SyscallLogInput, SyscallMapModule,
-    SyscallMapModuleError, SyscallReadEventStream, SyscallReadEventStreamInput,
+    SyscallAllocStackInput, SyscallAllocStackOutput, SyscallCreateChannel, SyscallExists,
+    SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallLog, SyscallLogInput,
+    SyscallMapModule, SyscallMapModuleError, SyscallReadEventStream, SyscallReadEventStreamInput,
     SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
     SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
     SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
-    SyscallWaitUntilEvent, log,
+    SyscallTxSend, SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -148,10 +148,11 @@ pub fn syscall_map_module(module_id: usize) -> Result<&'static [u8], SyscallMapM
 
 #[derive(Debug)]
 pub struct RustSyscallSpawnProcessInput<'a> {
-    pub priority: ProcessRelativePriority,
+    pub priority: SpawnProcessRelativePriority,
     pub rip: u64,
     pub rsp: u64,
     pub memory_mapping: &'a [SpawnProcessMemoryMapping],
+    pub send_channels: &'a [u64],
 }
 
 pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
@@ -160,7 +161,16 @@ pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
         rip: input.rip,
         rsp: input.rsp,
         memory_mappings: input.memory_mapping.into(),
+        send_channels: input.send_channels.into(),
     };
     // Safety: input ok
-    unsafe { syscall::<SyscallSpawnProcess>(&input) };
+    unsafe { syscall::<SyscallSpawnProcess>(&(&input as *const _ as u64)) };
+}
+
+pub fn syscall_create_channel() -> u64 {
+    unsafe { syscall::<SyscallCreateChannel>(&()) }
+}
+
+pub fn syscall_tx_send(channel_id: u64) {
+    unsafe { syscall::<SyscallTxSend>(&channel_id) };
 }

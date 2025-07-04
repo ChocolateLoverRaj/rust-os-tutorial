@@ -1,19 +1,25 @@
 use core::alloc::Layout;
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use common::{
-    ElfSegmentFlags, EnvEntry, PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping,
+    ElfSegmentFlags, EnvEntry, PagePermissions, SpawnProcessMemoryMapping,
+    SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
-    RustSyscallSpawnProcessInput, syscall_alloc, syscall_map_module, syscall_spawn_process,
+    RustSyscallSpawnProcessInput, async_channel::Sender, syscall_alloc, syscall_map_module,
+    syscall_spawn_process,
 };
 use x86_64::{
     VirtAddr,
     structures::paging::{Page, PageSize, Size4KiB},
 };
 
-pub fn spawn_process(env_entries: &[EnvEntry]) {
+pub fn spawn_process(
+    priority: SpawnProcessRelativePriority,
+    env_entries: &[EnvEntry],
+    send_rx_list: impl Iterator<Item = Sender>,
+) {
     let slice = syscall_map_module(0).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
@@ -106,9 +112,10 @@ pub fn spawn_process(env_entries: &[EnvEntry]) {
     });
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
-        priority: ProcessRelativePriority::Higher,
+        priority,
         rip: entry_point,
         rsp: stack_top - (stack.addr() + stack.len() - env_ptr) as u64,
         memory_mapping: &memory_mappings,
+        send_channels: &send_rx_list.map(|tx| tx.channel_id()).collect::<Box<_>>(),
     });
 }

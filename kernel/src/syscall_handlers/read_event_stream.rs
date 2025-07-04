@@ -5,7 +5,7 @@ use nodit::Interval;
 
 use crate::{
     cpu_local_data::get_local,
-    task::{EVENT_STREAMS, THREADS},
+    task::{PS2_EVENT_STREAMS, THREADS},
 };
 
 use super::GenericSyscallHandler;
@@ -27,7 +27,7 @@ impl GenericSyscallHandler for SyscallReadEventStreamHandler {
                 .get(&local.running_thread.lock().unwrap())
                 .unwrap()
                 .process;
-            let event_streams = EVENT_STREAMS.read();
+            let event_streams = PS2_EVENT_STREAMS.read();
             if let Some(event_stream) = event_streams.get(stream_id) {
                 if event_stream.process == current_process.id {
                     let is_valid = current_process

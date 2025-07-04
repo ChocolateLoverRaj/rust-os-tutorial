@@ -5,7 +5,7 @@ use crossbeam_queue::ArrayQueue;
 
 use crate::{
     cpu_local_data::get_local,
-    task::{EVENT_ID, EVENT_STREAMS, EventStream, EventStreamSource, THREADS},
+    task::{EVENT_ID, EventStream, EventStreamSource, PS2_EVENT_STREAMS, THREADS},
 };
 
 use super::GenericSyscallHandler;
@@ -16,7 +16,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let output = {
             let event_stream_id = EVENT_ID.fetch_add(1, Ordering::Relaxed);
-            let mut event_streams = EVENT_STREAMS.write();
+            let mut event_streams = PS2_EVENT_STREAMS.write();
             let threads = THREADS.read();
             let local = get_local();
             let current_process = &threads

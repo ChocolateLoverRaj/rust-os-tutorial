@@ -1,7 +1,7 @@
 use core::{
     mem::MaybeUninit,
     num::NonZeroU32,
-    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 
 use alloc::{
@@ -86,8 +86,6 @@ pub struct EventStream {
     pub process: ProcessId,
     pub source: EventStreamSource,
     pub queue: ArrayQueue<u8>,
-    // /// Event happened, but syscall wait event was not called
-    // pub pending_event: AtomicBool,
 }
 
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
@@ -148,6 +146,7 @@ pub struct WaitingForMutexState {
 pub enum ThreadState {
     Ready(ThreadReadyState),
     Running(LocalApicId),
+    /// A thread could be in this state even if it is ready (which is if at least 1 event which it is waiting for happened)
     WaitingForEvents(ThreadWaitingState),
     WaitingForMutex(WaitingForMutexState),
 }
@@ -209,8 +208,17 @@ impl ProcessId {
 pub static THREAD_PRIORITIES: spin::RwLock<Vec<ThreadId>> = spin::RwLock::new(Vec::new());
 pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new(BTreeMap::new());
 
-pub static EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
+pub static PS2_EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
     spin::RwLock::new(BTreeMap::new());
+
+#[derive(Debug)]
+pub struct Channel {
+    pub receiver: ProcessId,
+    pub sender: ProcessId,
+    pub pending_event: AtomicBool,
+}
+
+pub static CHANNELS: spin::RwLock<BTreeMap<u64, Channel>> = spin::RwLock::new(BTreeMap::new());
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MutexKey {

@@ -1,11 +1,11 @@
 use core::slice;
 
 use bincode::{Decode, Encode};
-use zerocopy::{Immutable, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 
 pub use zerocopy;
 
-#[derive(Clone, Copy, Debug, Encode, Decode, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Encode, Decode, PartialEq, Eq, FromBytes, Immutable)]
 pub struct SliceData {
     pointer: u64,
     /// The len of whatever type is being represented, not necessarily the number of `u8`s

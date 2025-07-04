@@ -1,5 +1,6 @@
 use alloc::collections::btree_map::{self, BTreeMap};
 use alloc_stack::SyscallAllocStackHandler;
+use channel::{SyscallCreateChannelHandler, SyscallTxSendHandler};
 use common::Syscall;
 use exists::SyscallExistsHandler;
 use exit_process::SyscallExitProcessHandler;
@@ -20,6 +21,7 @@ use wait_until_event::SyscallWaitUntilEventHandler;
 use crate::syscall_saved_regs::SyscallSavedRegs;
 
 mod alloc_stack;
+mod channel;
 mod exists;
 mod exit_process;
 mod exit_thread;
@@ -112,6 +114,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallExitThreadHandler,
     &SyscallMapModuleHandler,
     &SyscallSpawnProcessHandler,
+    &SyscallCreateChannelHandler,
+    &SyscallTxSendHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

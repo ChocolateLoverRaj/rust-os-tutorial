@@ -1,3 +1,5 @@
+use core::sync::atomic::Ordering;
+
 use alloc::boxed::Box;
 use common::SyscallWaitUntilEvent;
 use nodit::interval::ie;
@@ -5,7 +7,7 @@ use nodit::interval::ie;
 use crate::{
     cpu_local_data::get_local,
     run_tasks::run_threads,
-    task::{EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
+    task::{CHANNELS, PS2_EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
 };
 
 use super::GenericSyscallHandler;
@@ -40,15 +42,26 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
             let input_events = events.iter().copied().collect::<Box<_>>();
             let mut events_pushed = 0;
-            let event_streams = EVENT_STREAMS.read();
+            let event_streams = PS2_EVENT_STREAMS.read();
+            let channels = CHANNELS.read();
             for event in &input_events {
-                let event_stream = event_streams.get(event).ok_or(())?;
-                if event_stream.process != current_thread.process.id {
-                    Err(())?;
-                }
-                if !event_stream.queue.is_empty() {
-                    events[events_pushed] = *event;
-                    events_pushed += 1;
+                // TODO: Improve what happens if the event already happened. Maybe user space can directly check which events happened by itself.
+                if let Some(event_stream) = event_streams.get(event) {
+                    if event_stream.process != current_thread.process.id {
+                        Err(())?;
+                    }
+                    if !event_stream.queue.is_empty() {
+                        events[events_pushed] = *event;
+                        events_pushed += 1;
+                    }
+                } else if let Some(channel) = channels.get(event) {
+                    if channel.receiver != current_thread.process.id {
+                        Err(())?;
+                    }
+                    if channel.pending_event.load(Ordering::Relaxed) {
+                        events[events_pushed] = *event;
+                        events_pushed += 1;
+                    }
                 }
             }
 

@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use common::{
-    PagePermissions, ProcessRelativePriority, SpawnProcessMemoryMapping, Syscall,
-    SyscallSpawnProcess,
+    PagePermissions, SpawnProcessMemoryMapping, SpawnProcessRelativePriority, Syscall,
+    SyscallSpawnProcess, SyscallSpawnProcessInput,
 };
 use nodit::{Interval, NoditMap};
 use x2apic::lapic::IpiAllShorthand;
@@ -9,6 +9,7 @@ use x86_64::{
     VirtAddr,
     structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
 };
+use zerocopy::TryFromBytes;
 
 use crate::{
     cpu_local_data::get_local,
@@ -17,8 +18,8 @@ use crate::{
     memory::{MEMORY, MemoryType},
     run_tasks::run_threads,
     task::{
-        Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
-        ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
+        CHANNELS, Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread,
+        ThreadId, ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
     },
 };
 
@@ -29,13 +30,36 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
     type S = SyscallSpawnProcess;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let result = (|| {
-            let input = helper.input();
+            let input_ptr = *helper.input();
             let local = get_local();
             let mut running_thread_lock = local.running_thread.try_lock().unwrap();
             let running_thread_id = running_thread_lock.unwrap();
             let mut threads = THREADS.write();
             let running_thread = threads.get(&running_thread_id).unwrap();
             let mut process_memory = running_thread.process.memory.write();
+
+            let interval = Interval::from(
+                input_ptr
+                    ..input_ptr
+                        .checked_add(size_of::<SyscallSpawnProcessInput>() as u64)
+                        .ok_or(())?,
+            );
+            if !(process_memory
+                .mapped_virtual_memory
+                .contains_interval(interval)
+                && process_memory
+                    .mapped_virtual_memory
+                    .overlapping(interval)
+                    .all(|(_, permissions)| permissions.read))
+            {
+                Err(())?
+            }
+            let input = {
+                let data = input_ptr as *const u8;
+                let len = size_of::<SyscallSpawnProcessInput>();
+                unsafe { core::slice::from_raw_parts(data, len) }
+            };
+            let input = SyscallSpawnProcessInput::try_ref_from_bytes(input).map_err(|_| ())?;
 
             let interval = Interval::from(
                 input.memory_mappings.pointer()
@@ -61,9 +85,35 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     .try_to_slice::<SpawnProcessMemoryMapping>()
             }
             .ok_or(())?;
+
+            let interval = Interval::from(
+                input.send_channels.pointer()
+                    ..input.send_channels.pointer() + input.send_channels.len(),
+            );
+            if !(process_memory
+                .mapped_virtual_memory
+                .contains_interval(interval)
+                && process_memory
+                    .mapped_virtual_memory
+                    .overlapping(interval)
+                    .all(|(_, permissions)| permissions.read))
+            {
+                Err(())?
+            }
+            let send_channels = unsafe { input.send_channels.try_to_slice::<u64>().ok_or(()) }?;
+
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             let new_process_id = ProcessId::new_unique();
+            let mut channels = CHANNELS.write();
+            for send_chanel in send_channels {
+                let channel = channels.get_mut(send_chanel).ok_or(())?;
+                if channel.sender != running_thread.process.id {
+                    Err(())?
+                }
+                channel.sender = new_process_id;
+            }
+
             let new_cr3 = physical_memory
                 .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(new_process_id))
                 .unwrap(); // TODO: Don't panic here
@@ -174,9 +224,9 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 .iter()
                 .position(|thread_id| *thread_id == running_thread_id)
                 .unwrap();
-            let new_thread_position = match helper.input().priority {
-                ProcessRelativePriority::Lower => running_thread_position + 1,
-                ProcessRelativePriority::Higher => running_thread_position,
+            let new_thread_position = match input.priority {
+                SpawnProcessRelativePriority::Lower => running_thread_position + 1,
+                SpawnProcessRelativePriority::Higher => running_thread_position,
             };
             thread_priorities.insert(new_thread_position, new_thread_id);
             let mut local_apic = local.local_apic.get().unwrap().try_lock().unwrap();

@@ -1,22 +1,24 @@
 use bincode::{Decode, Encode};
 use bitflags::bitflags;
 use x86_64::structures::paging::PageTableFlags;
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use crate::{ElfSegmentFlags, SliceData, Syscall};
 
-#[derive(Debug, Encode, Decode)]
-pub enum ProcessRelativePriority {
+#[derive(Debug, Encode, Decode, TryFromBytes, Immutable)]
+#[repr(u8)]
+pub enum SpawnProcessRelativePriority {
     Higher,
     Lower,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, TryFromBytes, Immutable, KnownLayout)]
 pub struct SyscallSpawnProcessInput {
-    pub priority: ProcessRelativePriority,
+    pub priority: SpawnProcessRelativePriority,
     pub rip: u64,
     pub rsp: u64,
     pub memory_mappings: SliceData,
+    pub send_channels: SliceData,
 }
 
 bitflags! {
@@ -71,6 +73,6 @@ pub struct SpawnProcessMemoryMapping {
 pub struct SyscallSpawnProcess;
 impl Syscall for SyscallSpawnProcess {
     const ID: u64 = 0x5B0B4092EAC9C9CE;
-    type Input = SyscallSpawnProcessInput;
+    type Input = u64;
     type Output = ();
 }

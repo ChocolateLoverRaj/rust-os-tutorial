@@ -8,7 +8,7 @@ use crate::{
     interrupt_vector::InterruptVector,
     interrupted_context::InterruptedContext,
     run_tasks::run_threads,
-    task::{EVENT_STREAMS, EventStreamSource, THREADS, ThreadReadyState, ThreadState},
+    task::{EventStreamSource, PS2_EVENT_STREAMS, THREADS, ThreadReadyState, ThreadState},
 };
 
 /// # Safety
@@ -26,7 +26,7 @@ pub unsafe fn ps2_interrupt_handler(
         unsafe { local_apic.end_of_interrupt() };
 
         let threads = THREADS.read();
-        for (event_id, event_stream) in EVENT_STREAMS.read().deref() {
+        for (event_id, event_stream) in PS2_EVENT_STREAMS.read().deref() {
             if event_stream.source == ps2_source {
                 event_stream.queue.force_push(data);
                 for thread in threads.values() {
