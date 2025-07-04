@@ -204,6 +204,11 @@ impl ProcessId {
         )
     }
 }
+impl From<ProcessId> for NonZeroU32 {
+    fn from(value: ProcessId) -> Self {
+        value.0
+    }
+}
 
 pub static THREAD_PRIORITIES: spin::RwLock<Vec<ThreadId>> = spin::RwLock::new(Vec::new());
 pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new(BTreeMap::new());

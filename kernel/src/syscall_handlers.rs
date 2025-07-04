@@ -16,6 +16,7 @@ use read_event_stream::SyscallReadEventStreamHandler;
 use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc::SyscallAllocHandler;
+use terminate_process_handler::SyscallTerminateProcessHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
 
 use crate::syscall_saved_regs::SyscallSavedRegs;
@@ -36,6 +37,7 @@ mod read_event_stream;
 mod spawn_process;
 mod spawn_thread;
 mod syscall_alloc;
+mod terminate_process_handler;
 mod wait_until_event;
 
 struct ExtraData<'a> {
@@ -116,6 +118,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallSpawnProcessHandler,
     &SyscallCreateChannelHandler,
     &SyscallTxSendHandler,
+    &SyscallTerminateProcessHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

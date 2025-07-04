@@ -24,6 +24,7 @@ mod syscall_mouse;
 mod syscall_read_event_stream;
 mod syscall_spawn_process;
 mod syscall_spawn_thread;
+mod syscall_terminate_process;
 mod syscall_wait_until_event;
 
 pub use elf_segment_flags::*;
@@ -48,4 +49,5 @@ pub use syscall_mouse::*;
 pub use syscall_read_event_stream::*;
 pub use syscall_spawn_process::*;
 pub use syscall_spawn_thread::*;
+pub use syscall_terminate_process::*;
 pub use syscall_wait_until_event::*;
