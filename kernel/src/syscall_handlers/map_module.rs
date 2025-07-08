@@ -1,4 +1,4 @@
-use alloc::format;
+use alloc::{collections::btree_set::BTreeSet, format};
 use common::{SliceData, SyscallMapModule, SyscallMapModuleError};
 use nodit::interval::ee;
 use x86_64::{
@@ -73,7 +73,9 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
             let mut physical_memory = memory.physical_memory.lock();
             for i in 0..n_pages {
                 let frame = physical_memory
-                    .allocate_frame_with_type(MemoryType::UsedByUserMode(current_process.id))
+                    .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
+                        current_process.id,
+                    ])))
                     .ok_or(SyscallMapModuleError::OutOfPhysicalMemory)?;
                 // Safety: we have an exclusive reference
                 let frame_slice = unsafe { frame.get_slice_mut() };

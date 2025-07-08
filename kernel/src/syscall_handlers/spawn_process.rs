@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use common::{
     SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority, Syscall,
     SyscallSpawnProcess, SyscallSpawnProcessInput,
@@ -115,7 +115,9 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             }
 
             let new_cr3 = physical_memory
-                .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(new_process_id))
+                .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(BTreeSet::from([
+                    new_process_id,
+                ])))
                 .unwrap(); // TODO: Don't panic here
             let mut mapped_virtual_memory = NoditMap::default();
             let mut current_mapper = unsafe { get_page_table(running_thread.process.cr3, false) };
@@ -155,40 +157,82 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 {
                     Err(())?
                 }
-                let _ = process_memory.mapped_virtual_memory.cut(interval);
-                let interval = Interval::from(
-                    memory_mapping.new_process_start
-                        ..memory_mapping.new_process_start + memory_mapping.len,
-                );
-                let page_permissions =
+                let memory_mapping_flags =
                     SpawnProcessMemoryFlags::from_bits_retain(memory_mapping.flags);
-                mapped_virtual_memory
-                    .insert_merge_touching_if_values_equal(interval, page_permissions.into())
-                    .map_err(|_| ())?;
-                let start_page_current = Page::<Size4KiB>::from_start_address(VirtAddr::new(
-                    memory_mapping.current_process_start,
-                ))
-                .unwrap();
-                let start_page_new = Page::<Size4KiB>::from_start_address(VirtAddr::new(
-                    memory_mapping.new_process_start,
-                ))
-                .unwrap();
-                let page_count = memory_mapping.len / Size4KiB::SIZE;
-                for i in 0..page_count {
-                    let page = start_page_current + i;
-                    let (frame, _flags, flush) = current_mapper.unmap(page).unwrap();
-                    flush.flush();
-
-                    let page = start_page_new + i;
-                    let flags = PageTableFlags::PRESENT
-                        | PageTableFlags::USER_ACCESSIBLE
-                        | page_permissions.into();
-                    let mut frame_allocator =
-                        physical_memory.get_user_mode_program_frame_allocator(new_process_id);
-                    // FIXME: Gracefully handle out of memory
-                    unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
-                        .unwrap()
-                        .flush();
+                if memory_mapping_flags.contains(SpawnProcessMemoryFlags::SHARE) {
+                    let interval = Interval::from(
+                        memory_mapping.new_process_start
+                            ..memory_mapping.new_process_start + memory_mapping.len,
+                    );
+                    mapped_virtual_memory
+                        .insert_merge_touching_if_values_equal(
+                            interval,
+                            memory_mapping_flags.into(),
+                        )
+                        .map_err(|_| ())?;
+                    let start_page_current = Page::<Size4KiB>::from_start_address(VirtAddr::new(
+                        memory_mapping.current_process_start,
+                    ))
+                    .unwrap();
+                    let start_page_new = Page::<Size4KiB>::from_start_address(VirtAddr::new(
+                        memory_mapping.new_process_start,
+                    ))
+                    .unwrap();
+                    let page_count = memory_mapping.len / Size4KiB::SIZE;
+                    for i in 0..page_count {
+                        let page = start_page_current + i;
+                        let frame = current_mapper.translate_page(page).unwrap();
+                        physical_memory.share_memory(frame, new_process_id);
+                        // physical_memory.
+                        let page = start_page_new + i;
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::USER_ACCESSIBLE
+                            | memory_mapping_flags.into();
+                        let mut frame_allocator =
+                            physical_memory.get_user_mode_program_frame_allocator(new_process_id);
+                        // FIXME: Gracefully handle out of memory
+                        unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
+                            .unwrap()
+                            .flush();
+                    }
+                } else {
+                    let _ = process_memory.mapped_virtual_memory.cut(interval);
+                    let interval = Interval::from(
+                        memory_mapping.new_process_start
+                            ..memory_mapping.new_process_start + memory_mapping.len,
+                    );
+                    mapped_virtual_memory
+                        .insert_merge_touching_if_values_equal(
+                            interval,
+                            memory_mapping_flags.into(),
+                        )
+                        .map_err(|_| ())?;
+                    let start_page_current = Page::<Size4KiB>::from_start_address(VirtAddr::new(
+                        memory_mapping.current_process_start,
+                    ))
+                    .unwrap();
+                    let start_page_new = Page::<Size4KiB>::from_start_address(VirtAddr::new(
+                        memory_mapping.new_process_start,
+                    ))
+                    .unwrap();
+                    let page_count = memory_mapping.len / Size4KiB::SIZE;
+                    for i in 0..page_count {
+                        let page = start_page_current + i;
+                        let (frame, _flags, flush) = current_mapper.unmap(page).unwrap();
+                        flush.flush();
+                        physical_memory.share_memory(frame, new_process_id);
+                        physical_memory.unshare_memory(frame, running_thread.process.id);
+                        let page = start_page_new + i;
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::USER_ACCESSIBLE
+                            | memory_mapping_flags.into();
+                        let mut frame_allocator =
+                            physical_memory.get_user_mode_program_frame_allocator(new_process_id);
+                        // FIXME: Gracefully handle out of memory
+                        unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
+                            .unwrap()
+                            .flush();
+                    }
                 }
             }
             let new_thread_id = ThreadId::new_unique();

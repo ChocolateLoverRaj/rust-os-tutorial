@@ -1,8 +1,8 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, collections::btree_set::BTreeSet};
 use nodit::{Interval, NoditMap};
 use x86_64::{
-    structures::paging::{FrameAllocator, PageSize, PhysFrame},
     PhysAddr,
+    structures::paging::{FrameAllocator, PageSize, PhysFrame},
 };
 
 use crate::task::ProcessId;
@@ -15,12 +15,12 @@ pub enum KernelMemoryUsageType {
 }
 
 /// Note that there are other memory types (such as ACPI memory) that are not included here
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum MemoryType {
     Usable,
     UsedByLimine,
     UsedByKernel(KernelMemoryUsageType),
-    UsedByUserMode(ProcessId),
+    UsedByUserMode(BTreeSet<ProcessId>),
 }
 
 pub struct PhysicalMemory {
@@ -66,7 +66,7 @@ impl PhysicalMemory {
     ) -> PhysicalMemoryFrameAllocator<'_> {
         PhysicalMemoryFrameAllocator {
             physical_memory: self,
-            memory_type: MemoryType::UsedByUserMode(process_id),
+            memory_type: MemoryType::UsedByUserMode(BTreeSet::from([process_id])),
         }
     }
 
@@ -90,6 +90,44 @@ impl PhysicalMemory {
                 .unwrap();
         }
     }
+
+    /// The frame must currently be owned by a user process
+    pub fn share_memory<S: PageSize>(&mut self, frame: PhysFrame<S>, process_id: ProcessId) {
+        let interval = Interval::from({
+            let start = frame.start_address().as_u64();
+            start..start + frame.size()
+        });
+        let mut overlapping_mut = self.map.overlapping_mut(interval);
+        let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();
+        assert_eq!(overlapping_mut.next(), None);
+        match memory_type {
+            MemoryType::UsedByUserMode(processes) => {
+                processes.insert(process_id);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Remove a process from owning physical memory. If no processes are left, the frame is marked as unused.
+    pub fn unshare_memory<S: PageSize>(&mut self, frame: PhysFrame<S>, process_id: ProcessId) {
+        let interval = Interval::from({
+            let start = frame.start_address().as_u64();
+            start..start + frame.size()
+        });
+        let mut overlapping_mut = self.map.overlapping_mut(interval);
+        let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();
+        assert_eq!(overlapping_mut.next(), None);
+        match memory_type {
+            MemoryType::UsedByUserMode(processes) => {
+                processes.remove(&process_id);
+                if processes.is_empty() {
+                    drop(overlapping_mut);
+                    self.map.cut(interval);
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub struct PhysicalMemoryFrameAllocator<'a> {
@@ -101,7 +139,7 @@ unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryFrameAllocator<'_> 
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         let frame = self
             .physical_memory
-            .allocate_frame_with_type(self.memory_type)?;
+            .allocate_frame_with_type(self.memory_type.clone())?;
         Some(frame)
     }
 }

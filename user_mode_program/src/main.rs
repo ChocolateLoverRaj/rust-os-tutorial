@@ -1,11 +1,13 @@
 #![no_std]
 #![no_main]
 #![feature(maybe_uninit_slice)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 use core::ops::DerefMut;
 
 use alloc::vec::Vec;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use common::{
+    EnvEntry, SpawnProcessRelativePriority,
     embedded_graphics::{
         Drawable,
         geometry::{AnchorX, AnchorY},
@@ -20,7 +22,8 @@ use common::{
 use frame_buffer::FrameBuffer;
 use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
-use user_lib::{ExecutorContext, execute_future, logger, syscall_exit_process};
+use spawn_process::spawn_process;
+use user_lib::{ExecutorContext, async_channel, execute_future, logger, syscall_exit_process};
 
 extern crate alloc;
 
@@ -197,6 +200,21 @@ fn main() {
                                 }
                                 KeyCode::Return => {
                                     state.tabs.push(*focused_index);
+                                    let (sender, mut receiver) = async_channel::create();
+                                    // This is where we spawn the app
+                                    let shared_memory = spawn_process(
+                                        *focused_index,
+                                        SpawnProcessRelativePriority::Lower,
+                                        &[EnvEntry {
+                                            key: 0,
+                                            value: sender.channel_id(),
+                                        }],
+                                        [sender].into_iter(),
+                                    );
+                                    receiver.receive(&executor_context).await;
+                                    let n = unsafe { shared_memory.transpose()[0].assume_init() };
+                                    log::debug!("n: {n}");
+
                                     state.focus = Focus::Tab(0);
                                     break;
                                 }

@@ -1,4 +1,4 @@
-use core::alloc::Layout;
+use core::{alloc::Layout, mem::MaybeUninit};
 
 use alloc::{boxed::Box, vec::Vec};
 use common::{
@@ -16,11 +16,12 @@ use x86_64::{
 };
 
 pub fn spawn_process(
+    module_id: usize,
     priority: SpawnProcessRelativePriority,
     env_entries: &[EnvEntry],
     send_rx_list: impl Iterator<Item = Sender>,
-) {
-    let slice = syscall_map_module(0).unwrap();
+) -> &'static mut MaybeUninit<[u8; 0x1000]> {
+    let slice = syscall_map_module(module_id).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
     let mut memory_mappings = Vec::<SpawnProcessMemoryMapping>::new();
@@ -111,6 +112,18 @@ pub fn spawn_process(
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 
+    let shared_page = syscall_alloc(Layout::from_size_align(0x1000, 0x1000).unwrap()).unwrap();
+    memory_mappings.push(SpawnProcessMemoryMapping {
+        current_process_start: shared_page.addr() as u64,
+        new_process_start: 0x40000000,
+        len: 0x1000,
+        flags: (SpawnProcessMemoryFlags::READABLE
+            | SpawnProcessMemoryFlags::WRITABLE
+            | SpawnProcessMemoryFlags::SHARE)
+            .bits(),
+    });
+    let shared_page = unsafe { shared_page.cast::<MaybeUninit<[u8; 0x1000]>>().as_mut() }.unwrap();
+
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority,
         rip: entry_point,
@@ -118,4 +131,6 @@ pub fn spawn_process(
         memory_mapping: &memory_mappings,
         send_channels: &send_rx_list.map(|tx| tx.channel_id()).collect::<Box<_>>(),
     });
+
+    shared_page
 }

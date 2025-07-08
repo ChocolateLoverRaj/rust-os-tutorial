@@ -33,6 +33,7 @@ fn main(initial_rsp: *mut ()) -> ! {
     for i in 0..1_000 {
         log::debug!("{i}");
     }
+    unsafe { (0x40000000 as *mut u8).write_volatile(55) };
     sender.send();
 
     syscall_exit_process()

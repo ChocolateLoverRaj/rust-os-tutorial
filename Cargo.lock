@@ -439,6 +439,8 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "polished_pci"
 version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd35a0aaa68c4c944901e86f2f3ae5107eccb45c08d9a7bd247be8c74f76e1e"
 dependencies = [
  "log 0.4.27 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

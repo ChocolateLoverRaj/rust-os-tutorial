@@ -1,20 +1,21 @@
 use core::fmt::Debug;
 
+use alloc::collections::btree_set::BTreeSet;
 use common::{SliceData, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ue;
 use x86_64::{
-    structures::paging::{
-        mapper::MapToError, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame,
-        Size2MiB, Size4KiB,
-    },
     VirtAddr,
+    structures::paging::{
+        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
+        mapper::MapToError,
+    },
 };
 
 use crate::{
     cpu_local_data::get_local,
     get_page_table::get_page_table,
-    memory::{MemoryType, MEMORY},
-    task::{VirtualMemoryPermissions, THREADS},
+    memory::{MEMORY, MemoryType},
+    task::{THREADS, VirtualMemoryPermissions},
     translate_addr::ZeroFrame,
 };
 
@@ -80,9 +81,9 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     let mut physical_memory = memory.physical_memory.lock();
                     for page in start_page..=end_page_inclusive {
                         let frame = physical_memory
-                            .allocate_frame_with_type(MemoryType::UsedByUserMode(
+                            .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
                                 current_process.id,
-                            ))
+                            ])))
                             .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
                         unsafe { frame.zero() }
                         let flags = PageTableFlags::PRESENT

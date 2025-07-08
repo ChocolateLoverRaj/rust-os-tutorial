@@ -1,6 +1,6 @@
 use core::{num::NonZero, slice};
 
-use alloc::sync::Arc;
+use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use elf::{ElfBytes, endian::NativeEndian};
 use limine::response::ModuleResponse;
 use nodit::{Interval, NoditMap, OverlapError};
@@ -126,7 +126,9 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                         .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                     for page in start_page..=end_page {
                         let frame = physical_memory
-                            .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
+                            .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
+                                process_id,
+                            ])))
                             .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                         let flags = PageTableFlags::PRESENT
                             | PageTableFlags::USER_ACCESSIBLE
@@ -194,7 +196,9 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                     Page::<Size4KiB>::containing_address(VirtAddr::new(stack_end_inclusive));
                 for page in stack_start_page..=stack_end_page_inclusive {
                     let frame = physical_memory
-                        .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
+                        .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
+                            process_id,
+                        ])))
                         .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                     // Safety: We just claimed this frame
                     unsafe { frame.zero() };

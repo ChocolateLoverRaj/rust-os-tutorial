@@ -24,9 +24,18 @@ impl ExecutorContext {
             .register(waker);
     }
 
-    /// Returns the total number of events that we're listening to
-    pub fn events(&self) -> Box<[u64]> {
-        self.events.borrow().keys().copied().collect()
+    pub fn event_not_happened(&self) -> Box<[u64]> {
+        self.events
+            .borrow()
+            .iter()
+            .filter_map(|(event_id, event)| {
+                if !event.happened {
+                    Some(*event_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn wake(&self, event_id: u64) {

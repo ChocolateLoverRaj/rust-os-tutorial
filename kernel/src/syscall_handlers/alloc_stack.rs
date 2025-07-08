@@ -1,3 +1,4 @@
+use alloc::collections::btree_set::BTreeSet;
 use common::{SliceData, SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackOutput};
 use nodit::interval::ue;
 use x86_64::{
@@ -75,7 +76,9 @@ impl GenericSyscallHandler for SyscallAllocStackHandler {
             let mut physical_memory = memory.physical_memory.lock();
             for page in start_page..=end_page_inclusive {
                 let frame = physical_memory
-                    .allocate_frame_with_type(MemoryType::UsedByUserMode(current_process.id))
+                    .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
+                        current_process.id,
+                    ])))
                     .ok_or(SyscallAllocStackError::OutOfPhysicalMemory)?;
                 unsafe { frame.zero() }
                 let flags = PageTableFlags::PRESENT

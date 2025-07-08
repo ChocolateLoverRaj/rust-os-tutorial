@@ -11,7 +11,8 @@
 				"--smp",
 				"1",
 				"--no-reboot",
-				"--nographic",
+				"--serial",
+				"stdio"
 			],
 			"problemMatcher": [
 				"$rustc",
