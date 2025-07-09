@@ -7,7 +7,7 @@ use core::ops::DerefMut;
 use alloc::vec::Vec;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
 use common::{
-    EnvEntry, SpawnProcessRelativePriority,
+    SpawnProcessRelativePriority,
     embedded_graphics::{
         Drawable,
         geometry::{AnchorX, AnchorY},
@@ -23,7 +23,9 @@ use frame_buffer::FrameBuffer;
 use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
-use user_lib::{ExecutorContext, async_channel, execute_future, logger, syscall_exit_process};
+use user_lib::{
+    ExecutorContext, WindowSharedMemServer, execute_future, logger, syscall_exit_process,
+};
 
 extern crate alloc;
 
@@ -56,8 +58,12 @@ fn main() {
             Us104Key,
             HandleControl::Ignore,
         );
+        struct Tab {
+            app_index: usize,
+            window: WindowSharedMemServer,
+        }
         struct State {
-            tabs: Vec<usize>,
+            tabs: Vec<Tab>,
             focus: Focus,
         }
         enum Focus {
@@ -96,10 +102,10 @@ fn main() {
                 )
                 .unwrap();
             let mut position = new_tab_width;
-            for (index, &tab) in state.tabs.iter().enumerate() {
+            for (index, tab) in state.tabs.iter().enumerate() {
                 let font = &FONT_10X20;
                 // TODO: Get UTF-8 character count and not byte-count
-                let app_name = apps[tab];
+                let app_name = apps[tab.app_index];
                 let text_width = font.character_size.width * u32::try_from(app_name.len()).unwrap()
                     + font.character_spacing * u32::try_from(app_name.len() - 1).unwrap();
                 let padding_x = 10;
@@ -199,22 +205,23 @@ fn main() {
                                     break;
                                 }
                                 KeyCode::Return => {
-                                    state.tabs.push(*focused_index);
-                                    let (sender, mut receiver) = async_channel::create();
-                                    // This is where we spawn the app
-                                    let shared_memory = spawn_process(
+                                    let width =
+                                        frame_buffer.bounding_box().size.width.try_into().unwrap();
+                                    let height =
+                                        u64::try_from(frame_buffer.bounding_box().size.height)
+                                            .unwrap()
+                                            - u64::from(top_bar_height);
+                                    let window =
+                                        WindowSharedMemServer::new(width, height, &frame_buffer);
+                                    spawn_process(
                                         *focused_index,
                                         SpawnProcessRelativePriority::Lower,
-                                        &[EnvEntry {
-                                            key: 0,
-                                            value: sender.channel_id(),
-                                        }],
-                                        [sender].into_iter(),
+                                        &window,
                                     );
-                                    receiver.receive(&executor_context).await;
-                                    let n = unsafe { shared_memory.transpose()[0].assume_init() };
-                                    log::debug!("n: {n}");
-
+                                    state.tabs.push(Tab {
+                                        app_index: *focused_index,
+                                        window,
+                                    });
                                     state.focus = Focus::Tab(0);
                                     break;
                                 }
@@ -242,6 +249,11 @@ fn main() {
                             frame_buffer.deref_mut(),
                         )
                         .unwrap();
+                    let _ = state.tabs[*tab_index].window.draw_to_frame_buffer(
+                        &mut frame_buffer,
+                        0,
+                        top_bar_height.into(),
+                    );
                     loop {
                         let key_event = async_keyboard.next().await.unwrap().unwrap();
                         if let KeyState::Down | KeyState::SingleShot = key_event.state {

@@ -35,6 +35,10 @@ impl Receiver {
             executor_context,
         }
     }
+
+    pub fn channel_id(&self) -> u64 {
+        self.channel_id
+    }
 }
 
 pub struct ReceiveFuture<'a> {

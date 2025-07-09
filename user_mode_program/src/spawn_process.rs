@@ -1,14 +1,14 @@
-use core::{alloc::Layout, mem::MaybeUninit};
+use core::alloc::Layout;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use common::{
     ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
-    RustSyscallSpawnProcessInput, async_channel::Sender, syscall_alloc, syscall_map_module,
-    syscall_spawn_process,
+    ENV_KEY, RustSyscallSpawnProcessInput, WindowSharedMemServer, syscall_alloc,
+    syscall_map_module, syscall_spawn_process,
 };
 use x86_64::{
     VirtAddr,
@@ -18,9 +18,10 @@ use x86_64::{
 pub fn spawn_process(
     module_id: usize,
     priority: SpawnProcessRelativePriority,
-    env_entries: &[EnvEntry],
-    send_rx_list: impl Iterator<Item = Sender>,
-) -> &'static mut MaybeUninit<[u8; 0x1000]> {
+    // env_entries: &[EnvEntry],
+    // send_rx_list: impl Iterator<Item = Sender>,
+    window: &WindowSharedMemServer,
+) {
     let slice = syscall_map_module(module_id).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
@@ -86,6 +87,13 @@ pub fn spawn_process(
     let stack =
         syscall_alloc(Layout::from_size_align(stack_with_guard_len, 0x1000).unwrap()).unwrap();
 
+    // FIXME: make sure this doesn't conflict with other mem
+    let new_process_shared_mem_ptr = 0x40000000;
+
+    let env_entries = &[EnvEntry {
+        key: ENV_KEY,
+        value: new_process_shared_mem_ptr,
+    }];
     let env_size = size_of_val(env_entries) + size_of::<u64>();
     // Make sure the pointer is aligned by 16
     let env_ptr = (stack.addr() + stack.len() - env_size) / 16 * 16;
@@ -112,25 +120,22 @@ pub fn spawn_process(
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 
-    let shared_page = syscall_alloc(Layout::from_size_align(0x1000, 0x1000).unwrap()).unwrap();
+    // let shared_page = syscall_alloc(Layout::from_size_align(0x1000, 0x1000).unwrap()).unwrap();
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: shared_page.addr() as u64,
-        new_process_start: 0x40000000,
-        len: 0x1000,
+        current_process_start: window.addr().try_into().unwrap(),
+        new_process_start: new_process_shared_mem_ptr,
+        len: window.size().try_into().unwrap(),
         flags: (SpawnProcessMemoryFlags::READABLE
             | SpawnProcessMemoryFlags::WRITABLE
             | SpawnProcessMemoryFlags::SHARE)
             .bits(),
     });
-    let shared_page = unsafe { shared_page.cast::<MaybeUninit<[u8; 0x1000]>>().as_mut() }.unwrap();
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority,
         rip: entry_point,
         rsp: stack_top - (stack.addr() + stack.len() - env_ptr) as u64,
         memory_mapping: &memory_mappings,
-        send_channels: &send_rx_list.map(|tx| tx.channel_id()).collect::<Box<_>>(),
+        send_channels: &[window.channel_id()],
     });
-
-    shared_page
 }

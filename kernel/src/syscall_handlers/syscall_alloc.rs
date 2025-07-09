@@ -107,7 +107,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 if len < Size2MiB::SIZE {
                     map_with_page_size::<Size4KiB>(len, align)
                 } else {
-                    map_with_page_size::<Size2MiB>(len, align)
+                    map_with_page_size::<Size4KiB>(len, align)
                 }
             };
             helper.syscall_return(&get_output())

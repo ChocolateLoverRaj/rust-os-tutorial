@@ -6,14 +6,21 @@ extern crate alloc;
 use core::arch::naked_asm;
 
 use alloc::collections::btree_map::BTreeMap;
-use common::{EnvEntry, env_entries, log};
-use user_lib::{async_channel::Sender, logger, syscall_exit_process};
+use common::{
+    EnvEntry,
+    embedded_graphics::{
+        pixelcolor::Rgb888,
+        prelude::{Dimensions, RgbColor},
+        primitives::{PrimitiveStyleBuilder, StyledDrawable},
+    },
+    env_entries, log,
+};
+use user_lib::{CopyData, ENV_KEY, WindowSharedMemClient, logger, syscall_exit_process};
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    user_lib::panic_handler(info)
 }
-
 fn main(initial_rsp: *mut ()) -> ! {
     logger::init();
     log::debug!("Hello from user mode program 2");
@@ -28,13 +35,21 @@ fn main(initial_rsp: *mut ()) -> ! {
         .map(|EnvEntry { key, value }| (key, value))
         .collect::<BTreeMap<_, _>>();
 
-    let channel_id = *env_entries.get(&0).unwrap();
-    let mut sender = unsafe { Sender::from_channel_id(channel_id) };
-    for i in 0..1_000 {
-        log::debug!("{i}");
-    }
-    unsafe { (0x40000000 as *mut u8).write_volatile(55) };
-    sender.send();
+    let ptr = *env_entries.get(&ENV_KEY).unwrap();
+    let mut window_client = unsafe { WindowSharedMemClient::new(ptr) };
+    window_client
+        .bounding_box()
+        .draw_styled(
+            &PrimitiveStyleBuilder::new().fill_color(Rgb888::RED).build(),
+            &mut window_client,
+        )
+        .unwrap();
+    window_client.update_screen(CopyData {
+        x: 0,
+        y: 0,
+        width: window_client.bounding_box().size.width.into(),
+        height: window_client.bounding_box().size.height.into(),
+    });
 
     syscall_exit_process()
 }

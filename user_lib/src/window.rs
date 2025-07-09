@@ -1,24 +1,29 @@
-use core::convert::Infallible;
+use core::{alloc::Layout, convert::Infallible, mem::MaybeUninit, slice};
 
 use atomic_enum::atomic_enum;
-use common::embedded_graphics::{
-    pixelcolor::Rgb888,
-    prelude::{Dimensions, DrawTarget, Point, Size},
-    primitives::Rectangle,
+use common::{
+    FrameBufferEmbeddedGraphics, RgbPixelInfo,
+    embedded_graphics::{
+        Pixel,
+        pixelcolor::Rgb888,
+        prelude::{Dimensions, DrawTarget, Point, Size},
+        primitives::Rectangle,
+    },
+    log,
 };
 
-pub const ID: u64 = 56;
+use crate::{
+    async_channel::{self, Receiver, Sender},
+    syscall_alloc,
+};
+
+pub const ENV_KEY: u64 = 0x2994A6830F66D288;
 
 #[repr(C)]
 pub struct WindowInfo {
     pub width: u64,
     pub height: u64,
-    pub red_mask_size: u8,
-    pub red_mask_shift: u8,
-    pub green_mask_size: u8,
-    pub green_mask_shift: u8,
-    pub blue_mask_size: u8,
-    pub blue_mask_shift: u8,
+    pub pixel_info: RgbPixelInfo,
 }
 
 #[atomic_enum]
@@ -31,7 +36,7 @@ enum ActiveSlot {
 #[repr(C)]
 struct WindowSharedMem {
     request_channel_id: u64,
-    response_channel_id: u64,
+    // response_channel_id: u64,
     window_info: WindowInfo,
     copy_data: CopyData,
     // The client can write to the other slot while the server reads from one slot
@@ -41,27 +46,40 @@ struct WindowSharedMem {
     // data: [u8; 0x1000 - (size_of::<u64>() + size_of::<u64>() + size_of::<WindowInfo>())],
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
-struct CopyData {
-    x: u64,
-    y: u64,
-    width: u64,
-    height: u64,
+pub struct CopyData {
+    pub x: u64,
+    pub y: u64,
+    pub width: u64,
+    pub height: u64,
 }
 
-pub struct WindowsSharedMemClient {
+pub struct WindowSharedMemClient {
     data: &'static mut WindowSharedMem,
 }
 
-impl WindowsSharedMemClient {
+impl WindowSharedMemClient {
     pub unsafe fn new(data: u64) -> Self {
         let ptr = data as *mut WindowSharedMem;
         let data = unsafe { ptr.as_mut() }.unwrap();
         Self { data }
     }
+
+    fn buffer(&mut self) -> &mut [u32] {
+        let len = (self.data.window_info.width * self.data.window_info.height) as usize;
+        let ptr = ((self.data as *mut _ as usize) + size_of::<WindowSharedMem>()) as *mut u32;
+        unsafe { slice::from_raw_parts_mut(ptr, len) }
+    }
+
+    pub fn update_screen(&mut self, copy_data: CopyData) {
+        self.data.copy_data = copy_data;
+        let mut sender = unsafe { Sender::from_channel_id(self.data.request_channel_id) };
+        sender.send();
+    }
 }
 
-impl DrawTarget for WindowsSharedMemClient {
+impl DrawTarget for WindowSharedMemClient {
     type Color = Rgb888;
     type Error = Infallible;
 
@@ -69,11 +87,18 @@ impl DrawTarget for WindowsSharedMemClient {
     where
         I: IntoIterator<Item = common::embedded_graphics::Pixel<Self::Color>>,
     {
+        let width = self.data.window_info.width;
+        let pixel_info = self.data.window_info.pixel_info;
+        let buffer = self.buffer();
+        for Pixel(point, color) in pixels {
+            buffer[usize::try_from(point.y).unwrap() * usize::try_from(width).unwrap()
+                + usize::try_from(point.x).unwrap()] = pixel_info.build_pixel(color);
+        }
         Ok(())
     }
 }
 
-impl Dimensions for WindowsSharedMemClient {
+impl Dimensions for WindowSharedMemClient {
     fn bounding_box(&self) -> common::embedded_graphics::primitives::Rectangle {
         Rectangle::new(
             Point::zero(),
@@ -82,5 +107,92 @@ impl Dimensions for WindowsSharedMemClient {
                 self.data.window_info.height.try_into().unwrap(),
             ),
         )
+    }
+}
+
+pub struct WindowSharedMemServer {
+    shared_mem: *mut (),
+    receiver: Receiver,
+    width: u64,
+    height: u64,
+}
+
+#[derive(Debug)]
+pub enum DrawToFrameBufferError {
+    InvalidInput,
+}
+
+impl WindowSharedMemServer {
+    pub fn new(width: u64, height: u64, frame_buffer: &FrameBufferEmbeddedGraphics) -> Self {
+        let pixel_count = (width * height) as usize;
+        let total_size = (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count)
+            .next_multiple_of(0x1000);
+        log::debug!("Total size of shared mem: 0x{total_size:X}");
+        let shared_mem =
+            syscall_alloc(Layout::from_size_align(total_size, 0x1000).unwrap()).unwrap();
+        let (sender, receiver) = async_channel::create();
+        {
+            let shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
+            let shared_mem = unsafe { shared_mem.as_mut() }.unwrap();
+            shared_mem.write(WindowSharedMem {
+                request_channel_id: sender.channel_id(),
+                window_info: WindowInfo {
+                    width,
+                    height,
+                    pixel_info: frame_buffer.info().pixel_info,
+                },
+                copy_data: Default::default(),
+            });
+        }
+        Self {
+            shared_mem: shared_mem.cast(),
+            receiver,
+            width,
+            height,
+        }
+    }
+
+    pub fn addr(&self) -> usize {
+        self.shared_mem as usize
+    }
+
+    pub fn size(&self) -> usize {
+        let pixel_count = (self.width * self.height) as usize;
+        (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count).next_multiple_of(0x1000)
+    }
+
+    pub fn channel_id(&self) -> u64 {
+        self.receiver.channel_id()
+    }
+
+    pub fn draw_to_frame_buffer(
+        &mut self,
+        frame_buffer: &mut FrameBufferEmbeddedGraphics,
+        x: u64,
+        y: u64,
+    ) -> Result<(), DrawToFrameBufferError> {
+        let shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
+        let shared_mem = unsafe { shared_mem_ptr.as_mut() }.unwrap();
+        let pixels_ptr = (self.shared_mem as usize + size_of::<WindowSharedMem>()) as *mut u32;
+        let pixel_count = (self.width * self.height) as usize;
+        let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
+        let copy_data = shared_mem.copy_data;
+        log::info!("Copy data: {copy_data:#?}");
+        if copy_data.x + copy_data.width > self.width
+            || copy_data.y + copy_data.height > self.height
+        {
+            Err(DrawToFrameBufferError::InvalidInput)?
+        }
+        for src_y in copy_data.y as usize..(copy_data.y + copy_data.height) as usize {
+            let src_start_index = self.width as usize * src_y + copy_data.x as usize;
+            let dest_start_index = frame_buffer.info().pitch as usize / size_of::<u32>()
+                * (y as usize + src_y)
+                + x as usize
+                + copy_data.x as usize;
+            let copy_len = copy_data.width as usize;
+            frame_buffer.buffer_mut()[dest_start_index..dest_start_index + copy_len]
+                .copy_from_slice(&pixels[src_start_index..src_start_index + copy_len]);
+        }
+        Ok(())
     }
 }

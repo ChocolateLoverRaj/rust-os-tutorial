@@ -4,7 +4,7 @@ pub use embedded_graphics;
 use embedded_graphics::{
     Pixel,
     pixelcolor::Rgb888,
-    prelude::{Dimensions, DrawTarget, Point, RgbColor, Size},
+    prelude::{Dimensions, DrawTarget, Point, Size},
     primitives::Rectangle,
 };
 use zerocopy::TryFromBytes;
@@ -46,20 +46,17 @@ impl<'a> FrameBufferEmbeddedGraphics<'a> {
         }
     }
 
-    fn get_pixel(&self, color: Rgb888) -> u32 {
-        let mut n = 0;
-        n |=
-            ((color.r() as u32) & ((1 << self.info.red_mask_size) - 1)) << self.info.red_mask_shift;
-        n |= ((color.g() as u32) & ((1 << self.info.green_mask_size) - 1))
-            << self.info.green_mask_shift;
-        n |= ((color.b() as u32) & ((1 << self.info.blue_mask_size) - 1))
-            << self.info.blue_mask_shift;
-        n
-    }
-
     /// Moves everything on the screen up, leaving the bottom the same as it was before
     pub fn shift_up(&mut self, amount: usize) {
         self.buffer.copy_within(amount * self.pixel_pitch.., 0);
+    }
+
+    pub fn buffer_mut(&mut self) -> &mut [u32] {
+        self.buffer
+    }
+
+    pub fn info(&self) -> &FrameBufferInfo {
+        &self.info
     }
 }
 
@@ -78,14 +75,14 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
             .filter(|Pixel(point, _)| bounding_box.contains(*point))
             .for_each(|Pixel(point, color)| {
                 let pixel_index = point.y as usize * self.pixel_pitch + point.x as usize;
-                self.buffer[pixel_index] = self.get_pixel(color);
+                self.buffer[pixel_index] = self.info.pixel_info.build_pixel(color);
             });
         Ok(())
     }
 
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
         let area = area.intersection(&self.bounding_box);
-        let pixel = self.get_pixel(color);
+        let pixel = self.info.pixel_info.build_pixel(color);
         let width = area.size.width as usize;
         let top_left_x = area.top_left.x as usize;
         for y in area.top_left.y as usize..area.top_left.y as usize + area.size.height as usize {
