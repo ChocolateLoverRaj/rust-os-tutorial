@@ -13,6 +13,7 @@ pub mod logger;
 mod mutex;
 mod panic_handler;
 mod syscalls;
+mod window;
 
 pub use async_keyboard::*;
 pub use async_mouse::*;
@@ -23,3 +24,4 @@ pub use guarded_stack::*;
 pub use mutex::*;
 pub use panic_handler::*;
 pub use syscalls::*;
+pub use window::*;
