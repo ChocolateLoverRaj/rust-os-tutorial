@@ -15,7 +15,7 @@ use mouse::SyscallSubscribeToMouseHandler;
 use read_event_stream::SyscallReadEventStreamHandler;
 use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
-use syscall_alloc::SyscallAllocHandler;
+use syscall_alloc_handler::SyscallAllocHandler;
 use terminate_process_handler::SyscallTerminateProcessHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
 
@@ -36,7 +36,7 @@ mod mouse;
 mod read_event_stream;
 mod spawn_process;
 mod spawn_thread;
-mod syscall_alloc;
+mod syscall_alloc_handler;
 mod terminate_process_handler;
 mod wait_until_event;
 

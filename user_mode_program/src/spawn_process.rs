@@ -1,8 +1,6 @@
-use core::alloc::Layout;
-
 use alloc::vec::Vec;
 use common::{
-    ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
+    AllocPageSize, ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
@@ -42,8 +40,12 @@ pub fn spawn_process(
         ));
         for page in start_page..=end_page {
             let frame = syscall_alloc(
-                Layout::from_size_align(segment.p_memsz as usize, segment.p_align as usize)
+                segment
+                    .p_memsz
+                    .next_multiple_of(AllocPageSize::_4KiB.size_bytes())
+                    .try_into()
                     .unwrap(),
+                AllocPageSize::_4KiB,
             )
             .unwrap();
             memory_mappings.push(SpawnProcessMemoryMapping {
@@ -83,9 +85,12 @@ pub fn spawn_process(
     }
     let stack_top = 0x800000000000;
     let stack_len = 64 * 0x400;
-    let stack_with_guard_len = 0x1000 + stack_len;
-    let stack =
-        syscall_alloc(Layout::from_size_align(stack_with_guard_len, 0x1000).unwrap()).unwrap();
+    let stack_with_guard_len = Size4KiB::SIZE + stack_len;
+    let stack = syscall_alloc(
+        stack_with_guard_len.try_into().unwrap(),
+        AllocPageSize::_4KiB,
+    )
+    .unwrap();
 
     // FIXME: make sure this doesn't conflict with other mem
     let new_process_shared_mem_ptr = 0x40000000;
@@ -127,7 +132,8 @@ pub fn spawn_process(
         len: window.size().try_into().unwrap(),
         flags: (SpawnProcessMemoryFlags::READABLE
             | SpawnProcessMemoryFlags::WRITABLE
-            | SpawnProcessMemoryFlags::SHARE)
+            | SpawnProcessMemoryFlags::SHARE
+            | SpawnProcessMemoryFlags::_2MiB_PAGE)
             .bits(),
     });
 

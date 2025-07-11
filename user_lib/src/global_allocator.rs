@@ -1,6 +1,6 @@
 use core::alloc::Layout;
 
-use common::SyscallAllocError;
+use common::{AllocPageSize, SyscallAllocError};
 use spin::Once;
 use talc::{OomHandler, Talc, Talck};
 use x86_64::structures::paging::{PageSize, Size4KiB};
@@ -33,8 +33,13 @@ impl OomHandler for MyOomHandler {
                 .next_multiple_of(layout.align());
                 layout.size() + overhead_len
             };
-            let slice =
-                syscall_alloc(Layout::from_size_align(bytes_needed, layout.align()).unwrap())?;
+            let slice = syscall_alloc(
+                (bytes_needed as u64)
+                    .next_multiple_of(AllocPageSize::_4KiB.size_bytes())
+                    .try_into()
+                    .unwrap(),
+                AllocPageSize::_4KiB,
+            )?;
             let span = slice.into();
             unsafe { talc.claim(span) }.unwrap();
             Ok::<_, SyscallAllocError>(())

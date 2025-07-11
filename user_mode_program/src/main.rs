@@ -154,6 +154,10 @@ fn main() {
                 .unwrap();
                 position += tab_rect_width;
             }
+            let content_rect = frame_buffer.bounding_box().resized_height(
+                frame_buffer.bounding_box().size.height - top_bar_height,
+                AnchorY::Bottom,
+            );
 
             match &mut state.focus {
                 Focus::NewTab(focused_index) => {
@@ -249,7 +253,7 @@ fn main() {
                             frame_buffer.deref_mut(),
                         )
                         .unwrap();
-                    let _ = state.tabs[*tab_index].window.draw_to_frame_buffer(
+                    state.tabs[*tab_index].window.draw_to_frame_buffer(
                         &mut frame_buffer,
                         0,
                         top_bar_height.into(),
@@ -266,10 +270,26 @@ fn main() {
                                     } else {
                                         Focus::NewTab(Default::default())
                                     };
+                                    content_rect
+                                        .draw_styled(
+                                            &PrimitiveStyleBuilder::new()
+                                                .fill_color(Rgb888::BLACK)
+                                                .build(),
+                                            frame_buffer.deref_mut(),
+                                        )
+                                        .unwrap();
                                     break;
                                 }
                                 KeyCode::T => {
                                     state.focus = Focus::NewTab(Default::default());
+                                    content_rect
+                                        .draw_styled(
+                                            &PrimitiveStyleBuilder::new()
+                                                .fill_color(Rgb888::BLACK)
+                                                .build(),
+                                            frame_buffer.deref_mut(),
+                                        )
+                                        .unwrap();
                                     break;
                                 }
                                 KeyCode::Tab => {

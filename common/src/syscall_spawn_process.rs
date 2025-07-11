@@ -28,6 +28,8 @@ bitflags! {
         const WRITABLE = 1 << 1;
         const READABLE = 1 << 2;
         const SHARE = 1 << 2;
+        const _2MiB_PAGE = 1 << 3;
+        const _1GiB_PAGE = 1 << 4;
 
         // The source may set any bits
         const _ = !0;

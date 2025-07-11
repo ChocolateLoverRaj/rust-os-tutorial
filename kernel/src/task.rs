@@ -90,9 +90,11 @@ pub struct EventStream {
 
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
 
+pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>;
+
 #[derive(Debug)]
 pub struct ProcessMemory {
-    pub mapped_virtual_memory: NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>,
+    pub mapped_virtual_memory: ProcessMappedVirtMem,
     pub frame_buffer_virtual_start: Option<u64>,
 }
 

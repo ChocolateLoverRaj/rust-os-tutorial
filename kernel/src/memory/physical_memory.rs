@@ -122,7 +122,7 @@ impl PhysicalMemory {
                 processes.remove(&process_id);
                 if processes.is_empty() {
                     drop(overlapping_mut);
-                    self.map.cut(interval);
+                    let _ = self.map.cut(interval);
                 }
             }
             _ => unreachable!(),

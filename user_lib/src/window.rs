@@ -1,15 +1,14 @@
-use core::{alloc::Layout, convert::Infallible, mem::MaybeUninit, slice};
+use core::{convert::Infallible, mem::MaybeUninit, slice};
 
 use atomic_enum::atomic_enum;
 use common::{
-    FrameBufferEmbeddedGraphics, RgbPixelInfo,
+    AllocPageSize, FrameBufferEmbeddedGraphics, RgbPixelInfo,
     embedded_graphics::{
         Pixel,
         pixelcolor::Rgb888,
         prelude::{Dimensions, DrawTarget, Point, Size},
         primitives::Rectangle,
     },
-    log,
 };
 
 use crate::{
@@ -125,11 +124,10 @@ pub enum DrawToFrameBufferError {
 impl WindowSharedMemServer {
     pub fn new(width: u64, height: u64, frame_buffer: &FrameBufferEmbeddedGraphics) -> Self {
         let pixel_count = (width * height) as usize;
-        let total_size = (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count)
-            .next_multiple_of(0x1000);
-        log::debug!("Total size of shared mem: 0x{total_size:X}");
+        let total_size = ((size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count) as u64)
+            .next_multiple_of(AllocPageSize::_2MiB.size_bytes());
         let shared_mem =
-            syscall_alloc(Layout::from_size_align(total_size, 0x1000).unwrap()).unwrap();
+            syscall_alloc(total_size.try_into().unwrap(), AllocPageSize::_2MiB).unwrap();
         let (sender, receiver) = async_channel::create();
         {
             let shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
@@ -158,7 +156,8 @@ impl WindowSharedMemServer {
 
     pub fn size(&self) -> usize {
         let pixel_count = (self.width * self.height) as usize;
-        (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count).next_multiple_of(0x1000)
+        (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count)
+            .next_multiple_of(AllocPageSize::_2MiB.size_bytes() as usize)
     }
 
     pub fn channel_id(&self) -> u64 {
@@ -170,29 +169,29 @@ impl WindowSharedMemServer {
         frame_buffer: &mut FrameBufferEmbeddedGraphics,
         x: u64,
         y: u64,
-    ) -> Result<(), DrawToFrameBufferError> {
+    ) {
         let shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
         let shared_mem = unsafe { shared_mem_ptr.as_mut() }.unwrap();
         let pixels_ptr = (self.shared_mem as usize + size_of::<WindowSharedMem>()) as *mut u32;
         let pixel_count = (self.width * self.height) as usize;
         let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
         let copy_data = shared_mem.copy_data;
-        log::info!("Copy data: {copy_data:#?}");
-        if copy_data.x + copy_data.width > self.width
-            || copy_data.y + copy_data.height > self.height
-        {
-            Err(DrawToFrameBufferError::InvalidInput)?
+        // Restrict copy rect horizontal bounds
+        if copy_data.x <= self.width {
+            // Restrict copy rect vertical bounds
+            for src_y in
+                copy_data.y as usize..(copy_data.y + copy_data.height).min(self.height) as usize
+            {
+                let src_start_index = self.width as usize * src_y + copy_data.x as usize;
+                let dest_start_index = frame_buffer.info().pitch as usize / size_of::<u32>()
+                    * (y as usize + src_y)
+                    + x as usize
+                    + copy_data.x as usize;
+                // Restrict copy rect horizontal bounds
+                let copy_len = copy_data.width.min(self.width - copy_data.x) as usize;
+                frame_buffer.buffer_mut()[dest_start_index..dest_start_index + copy_len]
+                    .copy_from_slice(&pixels[src_start_index..src_start_index + copy_len]);
+            }
         }
-        for src_y in copy_data.y as usize..(copy_data.y + copy_data.height) as usize {
-            let src_start_index = self.width as usize * src_y + copy_data.x as usize;
-            let dest_start_index = frame_buffer.info().pitch as usize / size_of::<u32>()
-                * (y as usize + src_y)
-                + x as usize
-                + copy_data.x as usize;
-            let copy_len = copy_data.width as usize;
-            frame_buffer.buffer_mut()[dest_start_index..dest_start_index + copy_len]
-                .copy_from_slice(&pixels[src_start_index..src_start_index + copy_len]);
-        }
-        Ok(())
     }
 }

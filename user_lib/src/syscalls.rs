@@ -1,15 +1,20 @@
-use core::{alloc::Layout, arch::asm, mem::MaybeUninit, num::NonZeroU32};
+use core::{
+    arch::asm,
+    mem::MaybeUninit,
+    num::{NonZeroU32, NonZeroU64},
+};
 
 use common::{
-    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, SpawnThreadRelativePriority, Syscall,
-    SyscallAlloc, SyscallAllocError, SyscallAllocStack, SyscallAllocStackError,
-    SyscallAllocStackInput, SyscallAllocStackOutput, SyscallCreateChannel, SyscallExists,
-    SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallLog, SyscallLogInput,
-    SyscallMapModule, SyscallMapModuleError, SyscallReadEventStream, SyscallReadEventStreamInput,
-    SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
-    SyscallSpawnThreadInput, SyscallSubscribeToKeyboard, SyscallSubscribeToMouse,
-    SyscallTakeFrameBuffer, SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
-    SyscallTxSend, SyscallWaitUntilEvent, log,
+    AllocPageSize, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
+    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
+    SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
+    SyscallCreateChannel, SyscallExists, SyscallExitProcess, SyscallExitThread, SyscallGetThreadId,
+    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallReadEventStream,
+    SyscallReadEventStreamInput, SyscallReleaseFrameBuffer, SyscallSpawnProcess,
+    SyscallSpawnProcessInput, SyscallSpawnThread, SyscallSpawnThreadInput,
+    SyscallSubscribeToKeyboard, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
+    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput, SyscallTxSend,
+    SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -61,8 +66,12 @@ pub fn syscall_log(level: log::Level, message: &str) {
     .unwrap()
 }
 
-pub fn syscall_alloc(layout: Layout) -> Result<*mut [u8], SyscallAllocError> {
-    let input = layout.into();
+pub fn syscall_alloc(
+    len: NonZeroU64,
+    page_size: AllocPageSize,
+) -> Result<*mut [u8], SyscallAllocError> {
+    assert!(u64::from(len).is_multiple_of(u64::from(page_size.size_bytes())));
+    let input = SyscallAllocInput { len, page_size };
     let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
     Ok(unsafe { slice.to_slice_mut() })
 }
