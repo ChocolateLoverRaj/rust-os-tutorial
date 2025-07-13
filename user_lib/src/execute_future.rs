@@ -19,11 +19,12 @@ pub fn execute_future<T>(executor_context: &ExecutorContext, future: impl Future
             Poll::Pending => {}
         }
         let mut events_buffer = executor_context.event_not_happened();
-        // FIXME: If there is a keyboard event that we didn't read yet (because we're waiting for something else), then this will instantly return, resulting in a busy loop forever
-        syscall_wait_until_event(&mut events_buffer)
-            .iter()
-            .for_each(|event_id| {
-                executor_context.wake(*event_id);
-            });
+        if !events_buffer.is_empty() {
+            syscall_wait_until_event(&mut events_buffer)
+                .iter()
+                .for_each(|event_id| {
+                    executor_context.wake(*event_id);
+                });
+        }
     }
 }

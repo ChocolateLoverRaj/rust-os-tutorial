@@ -24,7 +24,8 @@ use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
 use user_lib::{
-    ExecutorContext, WindowSharedMemServer, execute_future, logger, syscall_exit_process,
+    AsyncKeyboard2, ExecutorContext, WindowSharedMemServer, execute_future, logger,
+    syscall_exit_process,
 };
 
 extern crate alloc;
@@ -53,7 +54,7 @@ fn main() {
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
         let mut async_keyboard = AsyncKeyboardDecoded::new(
-            &executor_context,
+            AsyncKeyboard2::new(&executor_context, 64),
             ScancodeSet1::new(),
             Us104Key,
             HandleControl::Ignore,

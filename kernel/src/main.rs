@@ -23,6 +23,7 @@ pub mod cpu_local_data;
 pub mod create_normal_stack;
 pub mod elf_segment_flags;
 pub mod enter_user_mode;
+pub mod event_stream_mem;
 pub mod gdt;
 pub mod get_page_table;
 pub mod guarded_stack;
@@ -53,6 +54,7 @@ pub mod syscalls;
 pub mod task;
 pub mod translate_addr;
 pub mod user_mode_program_path;
+pub mod virt;
 pub mod writer_with_cr;
 
 #[unsafe(no_mangle)]

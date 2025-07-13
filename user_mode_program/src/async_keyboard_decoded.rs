@@ -2,22 +2,22 @@ use core::task::Poll;
 
 use futures::{Stream, StreamExt};
 use pc_keyboard::{HandleControl, KeyEvent, Keyboard, KeyboardLayout, ScancodeSet};
-use user_lib::{AsyncKeyboard, ExecutorContext};
+use user_lib::AsyncKeyboard2;
 
 pub struct AsyncKeyboardDecoded<'a, L: KeyboardLayout, S: ScancodeSet> {
-    async_keyboard: AsyncKeyboard<'a>,
+    async_keyboard: AsyncKeyboard2<'a>,
     keyboard: Keyboard<L, S>,
 }
 
 impl<'a, L: KeyboardLayout, S: ScancodeSet> AsyncKeyboardDecoded<'a, L, S> {
     pub fn new(
-        executor_context: &'a ExecutorContext,
+        async_keyboard: AsyncKeyboard2<'a>,
         scancode_set: S,
         layout: L,
         handle_ctrl: HandleControl,
     ) -> Self {
         Self {
-            async_keyboard: AsyncKeyboard::new(executor_context),
+            async_keyboard,
             keyboard: Keyboard::new(scancode_set, layout, handle_ctrl),
         }
     }

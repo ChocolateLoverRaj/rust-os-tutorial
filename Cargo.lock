@@ -662,6 +662,7 @@ dependencies = [
  "spin",
  "talc",
  "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zerocopy",
 ]
 
 [[package]]

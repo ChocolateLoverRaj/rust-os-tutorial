@@ -9,6 +9,7 @@ use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandl
 use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
 use keyboard::SyscallSubscribeToKeyboardHandler;
+use keyboard_2_handler::SyscallSubscribeToKeyboard2Handler;
 use log::SyscallLogHandler;
 use map_module::SyscallMapModuleHandler;
 use mouse::SyscallSubscribeToMouseHandler;
@@ -30,6 +31,7 @@ mod frame_buffer;
 mod futex;
 mod get_thread_id;
 mod keyboard;
+mod keyboard_2_handler;
 mod log;
 mod map_module;
 mod mouse;
@@ -119,6 +121,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallCreateChannelHandler,
     &SyscallTxSendHandler,
     &SyscallTerminateProcessHandler,
+    &SyscallSubscribeToKeyboard2Handler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

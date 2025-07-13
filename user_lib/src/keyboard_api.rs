@@ -1,13 +1,28 @@
-use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use core::{
+    mem::MaybeUninit,
+    slice,
+    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+};
 
 use atomic_enum::atomic_enum;
+use common::{AllocPageSize, SyscallAllocError};
+use zerocopy::{FromBytes, IntoBytes, KnownLayout};
+
+use crate::{
+    async_channel::{self, Receiver, Sender},
+    syscall_alloc,
+};
+
+pub const KEYBOARD_ENV_KEY: u64 = 0x1D099897F69410FA;
 
 #[atomic_enum]
 pub enum KeyboardResponseResult {
+    None,
     Ok,
     Err,
 }
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct KeyboardSharedMem {
     /// 0 - Not requested
@@ -24,65 +39,155 @@ pub struct KeyboardSharedMem {
     pub keyboard_response_rx: u64,
 }
 
-/// A single trusted producer, single non-trusted consumer lock-free u8 queue.
-/// Pre-allocated slots without dynamic buffer growth.
-#[derive(Debug)]
-#[repr(C)]
-pub struct ConcurrentQueue {
-    write_count: AtomicUsize,
-    read_count: AtomicUsize,
-    buffer: [AtomicU8; 100],
+pub struct KeyboardSharedMemServer {
+    shared_mem: *mut KeyboardSharedMem,
+    unused_allocated_bytes: *mut [u8],
+    keyboard_request_rx: Receiver,
+    keyboard_response_tx: Sender,
 }
 
-impl Default for ConcurrentQueue {
-    fn default() -> Self {
-        ConcurrentQueue {
+impl KeyboardSharedMemServer {
+    pub fn new() -> Result<Self, SyscallAllocError> {
+        let used_len = size_of::<Self>();
+        let page_size = AllocPageSize::_4KiB;
+        let allocated_bytes = syscall_alloc(
+            (used_len as u64)
+                .next_multiple_of(page_size.size_bytes())
+                .try_into()
+                .unwrap(),
+            page_size,
+        )?;
+        let allocated_bytes = unsafe { allocated_bytes.as_mut() }.unwrap();
+        let (s, unused_allocated_bytes) =
+            allocated_bytes.split_at_mut(size_of::<KeyboardSharedMem>());
+        let (keyboard_request_tx, keyboard_request_rx) = async_channel::create();
+        let (keyboard_response_tx, keyboard_response_rx) = async_channel::create();
+        let shared_mem_ptr = (s as *mut [u8]).cast::<MaybeUninit<KeyboardSharedMem>>();
+        let shared_mem = unsafe { shared_mem_ptr.as_mut() }
+            .unwrap()
+            .write(KeyboardSharedMem {
+                keyboard_request: AtomicUsize::new(0),
+                keyboard_request_tx: keyboard_request_tx.channel_id(),
+                keyboard_response_result: AtomicKeyboardResponseResult::new(
+                    KeyboardResponseResult::None,
+                ),
+                keyboard_response: AtomicUsize::new(0),
+                keyboard_response_rx: keyboard_response_rx.channel_id(),
+            });
+        Ok(Self {
+            keyboard_request_rx,
+            keyboard_response_tx,
+            shared_mem,
+            unused_allocated_bytes,
+        })
+    }
+}
+
+impl Drop for KeyboardSharedMemServer {
+    fn drop(&mut self) {
+        // TODO: Unmap shared mem
+    }
+}
+
+#[derive(Debug, FromBytes, IntoBytes, KnownLayout)]
+#[repr(C)]
+pub struct SharedConcurrentQueue {
+    write_count: AtomicUsize,
+    read_count: AtomicUsize,
+    slots_count: usize,
+    /// A dynamic number of items
+    slots: [AtomicU8; 0],
+}
+
+impl SharedConcurrentQueue {
+    pub fn len(slots_len: usize) -> usize {
+        size_of::<Self>() + size_of::<AtomicU8>() * slots_len
+    }
+
+    /// Size of slice must be exact. Bytes can be uninitialized. They will be zeroed by this function.
+    pub fn init(bytes: &mut [u8]) -> &mut Self {
+        let (queue_bytes, slots_bytes) = bytes.split_at_mut(size_of::<Self>());
+        let s = Self::mut_from_bytes(queue_bytes).unwrap();
+        *s = Self {
             write_count: AtomicUsize::new(0),
             read_count: AtomicUsize::new(0),
-            buffer: core::array::from_fn(|_| Default::default()),
-        }
+            slots_count: slots_bytes.len(),
+            slots: [],
+        };
+        slots_bytes.fill(0);
+        s
+    }
+
+    /// Do not have multiple writers at the same time
+    ///
+    /// # Safety
+    /// The slots len should be correct
+    pub unsafe fn get_writer(&self, slots_len: usize) -> QueueWriter<'_> {
+        let slots = (&self.slots as *const [AtomicU8; 0]).cast::<AtomicU8>();
+        let slots = unsafe { slice::from_raw_parts(slots, slots_len) };
+        QueueWriter::new(&self.write_count, &self.read_count, slots)
+    }
+
+    /// Do not have multiple readers at the same time
+    ///
+    /// # Safety
+    /// The slots len should be correct
+    pub unsafe fn get_reader(&self, slots_len: usize) -> QueueReader<'_> {
+        let slots = (&self.slots as *const [AtomicU8; 0]).cast::<AtomicU8>();
+        let slots = unsafe { slice::from_raw_parts(slots, slots_len) };
+        QueueReader::new(&self.write_count, &self.read_count, slots)
     }
 }
 
 /// A writer does not trust the reader
-pub struct Writer<'a> {
-    queue: &'a ConcurrentQueue,
-    write_count: usize,
+pub struct QueueWriter<'a> {
+    shared_write_count: &'a AtomicUsize,
+    shared_read_count: &'a AtomicUsize,
+    shared_slots: &'a [AtomicU8],
 }
 
-impl<'a> Writer<'a> {
+impl<'a> QueueWriter<'a> {
     /// Creating multiple writers will cause unexpected behavior
-    pub fn new(queue: &'a ConcurrentQueue) -> Self {
+    pub fn new(
+        shared_write_count: &'a AtomicUsize,
+        shared_read_count: &'a AtomicUsize,
+        slots: &'a [AtomicU8],
+    ) -> Self {
         Self {
-            queue,
-            write_count: 0,
+            shared_write_count,
+            shared_read_count,
+            shared_slots: slots,
         }
     }
 }
 
 #[derive(Debug)]
 pub enum PushError {
-    /// For some reason the read count is more than the write count
+    /// For some reason the read count or write count is an invalid value
     InvalidState,
     /// The buffer is full
     NoSlotsAvailable(u8),
+    /// The write count overflowed. This should not happen, but it could happen if the reader messes up the write count.
+    WriteCountOverflow,
 }
 
-impl Writer<'_> {
+impl QueueWriter<'_> {
     pub fn push(&mut self, item: u8) -> Result<(), PushError> {
-        let read_count = self.queue.read_count.load(Ordering::Relaxed);
-        let slots_available = 100
-            - self
-                .write_count
+        let read_count = self.shared_read_count.load(Ordering::Relaxed);
+        let write_count = self.shared_write_count.load(Ordering::Relaxed);
+        if self.shared_slots.len()
+            > write_count
                 .checked_sub(read_count)
-                .ok_or(PushError::InvalidState)?;
-        if slots_available >= 1 {
-            let slot_index = self.write_count % 100;
-            self.queue.buffer[slot_index].store(item, Ordering::Relaxed);
-            self.write_count += 1;
-            self.queue
-                .write_count
-                .store(self.write_count, Ordering::Release);
+                .ok_or(PushError::InvalidState)?
+        {
+            let slot_index = write_count % self.shared_slots.len();
+            self.shared_slots[slot_index].store(item, Ordering::Relaxed);
+            self.shared_write_count.store(
+                write_count
+                    .checked_add(1)
+                    .ok_or(PushError::WriteCountOverflow)?,
+                Ordering::Release,
+            );
         } else {
             Err(PushError::NoSlotsAvailable(item))?;
         }
@@ -91,28 +196,37 @@ impl Writer<'_> {
 }
 
 /// A reader trusts the writer
-pub struct Reader<'a> {
-    queue: &'a ConcurrentQueue,
+pub struct QueueReader<'a> {
+    shared_write_count: &'a AtomicUsize,
+    shared_read_count: &'a AtomicUsize,
+    shared_slots: &'a [AtomicU8],
 }
 
-impl<'a> Reader<'a> {
+impl<'a> QueueReader<'a> {
     /// Creating multiple readers will cause unexpected behavior
-    pub fn new(queue: &'a ConcurrentQueue) -> Self {
-        Self { queue }
+    pub fn new(
+        shared_write_count: &'a AtomicUsize,
+        shared_read_count: &'a AtomicUsize,
+        shared_slots: &'a [AtomicU8],
+    ) -> Self {
+        Self {
+            shared_write_count,
+            shared_read_count,
+            shared_slots,
+        }
     }
 }
 
-impl Reader<'_> {
+impl QueueReader<'_> {
     pub fn pop(&mut self) -> Option<u8> {
-        let read_count = self.queue.read_count.load(Ordering::Relaxed);
-        let write_count = self.queue.write_count.load(Ordering::Relaxed);
+        let read_count = self.shared_read_count.load(Ordering::Relaxed);
+        let write_count = self.shared_write_count.load(Ordering::Relaxed);
         if write_count > read_count {
             // This makes the data in slots read what the writer wrote, and not read something outdated
             core::sync::atomic::fence(Ordering::Acquire);
             let slot_index = read_count % 100;
-            let value = self.queue.buffer[slot_index].load(Ordering::Relaxed);
-            self.queue
-                .read_count
+            let value = self.shared_slots[slot_index].load(Ordering::Relaxed);
+            self.shared_read_count
                 .store(read_count + 1, Ordering::Relaxed);
             Some(value)
         } else {

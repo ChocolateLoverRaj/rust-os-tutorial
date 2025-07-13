@@ -10,7 +10,6 @@ use alloc::{
     vec::Vec,
 };
 use common::{SliceData, SpawnProcessMemoryFlags, Syscall, SyscallWaitUntilEvent};
-use crossbeam_queue::ArrayQueue;
 use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
@@ -83,9 +82,9 @@ pub enum EventStreamSource {
 
 #[derive(Debug)]
 pub struct EventStream {
-    pub process: ProcessId,
+    pub process: Arc<Process>,
     pub source: EventStreamSource,
-    pub queue: ArrayQueue<u8>,
+    pub ptr: usize,
 }
 
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);

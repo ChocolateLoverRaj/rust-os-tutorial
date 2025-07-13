@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use common::{
     AllocPageSize, ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
-    SpawnProcessRelativePriority,
+    SpawnProcessRelativePriority, log,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
@@ -21,6 +21,8 @@ pub fn spawn_process(
     window: &WindowSharedMemServer,
 ) {
     let slice = syscall_map_module(module_id).unwrap();
+    // let slice = include_bytes!("extra_module_0");
+    log::debug!("Slice: {slice:p}");
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
     let mut memory_mappings = Vec::<SpawnProcessMemoryMapping>::new();

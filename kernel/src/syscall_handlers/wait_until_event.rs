@@ -6,6 +6,7 @@ use nodit::interval::ie;
 
 use crate::{
     cpu_local_data::get_local,
+    event_stream_mem::EventStreamMem,
     run_tasks::run_threads,
     task::{CHANNELS, PS2_EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
 };
@@ -22,6 +23,9 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
         }
         let get_action = || {
             let input = helper.input();
+            if input.len() == 0 {
+                Err(())?;
+            }
             let threads = THREADS.read();
             let local = get_local();
             let mut running_thread = local.running_thread.lock();
@@ -47,10 +51,14 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             for event in &input_events {
                 // TODO: Improve what happens if the event already happened. Maybe user space can directly check which events happened by itself.
                 if let Some(event_stream) = event_streams.get(event) {
-                    if event_stream.process != current_thread.process.id {
+                    if event_stream.process.id != current_thread.process.id {
                         Err(())?;
                     }
-                    if !event_stream.queue.is_empty() {
+                    let mem = event_stream.ptr as *const EventStreamMem;
+                    let mem = unsafe { mem.as_ref() }.unwrap();
+                    if mem.read_count.load(Ordering::Relaxed)
+                        < mem.write_count.load(Ordering::Relaxed)
+                    {
                         events[events_pushed] = *event;
                         events_pushed += 1;
                     }

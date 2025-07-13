@@ -12,3 +12,4 @@ lock_api = "0.4.13"
 spin = "0.10.0"
 talc = { version = "4.4.3", features = ["counters"] }
 x86_64 = "0.15.2"
+zerocopy = { version = "0.8.26", features = ["derive"] }
