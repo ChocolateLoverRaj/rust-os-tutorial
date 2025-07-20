@@ -2,16 +2,16 @@ use core::task::Poll;
 
 use futures::{Stream, StreamExt};
 use pc_keyboard::{HandleControl, KeyEvent, Keyboard, KeyboardLayout, ScancodeSet};
-use user_lib::AsyncKeyboard2;
+use user_lib::AsyncKeyboard;
 
 pub struct AsyncKeyboardDecoded<'a, L: KeyboardLayout, S: ScancodeSet> {
-    async_keyboard: AsyncKeyboard2<'a>,
+    async_keyboard: AsyncKeyboard<'a>,
     keyboard: Keyboard<L, S>,
 }
 
 impl<'a, L: KeyboardLayout, S: ScancodeSet> AsyncKeyboardDecoded<'a, L, S> {
     pub fn new(
-        async_keyboard: AsyncKeyboard2<'a>,
+        async_keyboard: AsyncKeyboard<'a>,
         scancode_set: S,
         layout: L,
         handle_ctrl: HandleControl,

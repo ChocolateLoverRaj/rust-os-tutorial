@@ -1,20 +1,19 @@
 use core::{
     arch::asm,
-    mem::MaybeUninit,
     num::{NonZeroU32, NonZeroU64},
+    ptr::NonNull,
 };
 
+use common::SyscallTakeFrameBufferError;
 use common::{
     AllocPageSize, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
     SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
     SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
     SyscallCreateChannel, SyscallExists, SyscallExitProcess, SyscallExitThread, SyscallGetThreadId,
-    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallReadEventStream,
-    SyscallReadEventStreamInput, SyscallReleaseFrameBuffer, SyscallSpawnProcess,
-    SyscallSpawnProcessInput, SyscallSpawnThread, SyscallSpawnThreadInput,
-    SyscallSubscribeToKeyboard, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
-    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput, SyscallTxSend,
-    SyscallWaitUntilEvent, log,
+    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError,
+    SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
+    SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
+    SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent, log,
 };
 
 /// # Safety
@@ -69,11 +68,11 @@ pub fn syscall_log(level: log::Level, message: &str) {
 pub fn syscall_alloc(
     len: NonZeroU64,
     page_size: AllocPageSize,
-) -> Result<*mut [u8], SyscallAllocError> {
+) -> Result<NonNull<[u8]>, SyscallAllocError> {
     assert!(u64::from(len).is_multiple_of(u64::from(page_size.size_bytes())));
     let input = SyscallAllocInput { len, page_size };
     let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
-    Ok(unsafe { slice.to_slice_mut() })
+    Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())
 }
 
 pub fn syscall_take_frame_buffer()
@@ -87,11 +86,6 @@ pub fn syscall_release_frame_buffer() {
     unsafe { syscall::<SyscallReleaseFrameBuffer>(&()) }
 }
 
-pub fn syscall_subscribe_to_keyboard() -> u64 {
-    // Safety: input is correct
-    unsafe { syscall::<SyscallSubscribeToKeyboard>(&()) }
-}
-
 pub fn syscall_wait_until_event(events: &mut [u64]) -> &mut [u64] {
     let input = events.into();
     // Safety: The input is valid
@@ -102,17 +96,6 @@ pub fn syscall_wait_until_event(events: &mut [u64]) -> &mut [u64] {
 pub fn syscall_subscribe_to_mouse() -> Result<u64, common::SyscallSubscribeToMouseError> {
     // Safety: input is correct
     unsafe { syscall::<SyscallSubscribeToMouse>(&()) }
-}
-
-pub fn syscall_read_event_stream(stream_id: u64, buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    let input = SyscallReadEventStreamInput {
-        stream_id,
-        buffer: buffer.into(),
-    };
-    // Safety: The input is valid
-    let count = unsafe { syscall::<SyscallReadEventStream>(&input) };
-    // Safety: the kernel initialized them
-    unsafe { buffer[..count as usize].assume_init_mut() }
 }
 
 /// # Safety
@@ -161,7 +144,8 @@ pub struct RustSyscallSpawnProcessInput<'a> {
     pub rip: u64,
     pub rsp: u64,
     pub memory_mapping: &'a [SpawnProcessMemoryMapping],
-    pub send_channels: &'a [u64],
+    pub send_senders: &'a [u64],
+    pub send_receivers: &'a [u64],
 }
 
 pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
@@ -170,7 +154,8 @@ pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
         rip: input.rip,
         rsp: input.rsp,
         memory_mappings: input.memory_mapping.into(),
-        send_channels: input.send_channels.into(),
+        send_senders: input.send_senders.into(),
+        send_receivers: input.send_receivers.into(),
     };
     // Safety: input ok
     unsafe { syscall::<SyscallSpawnProcess>(&(&input as *const _ as u64)) };

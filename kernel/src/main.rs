@@ -54,7 +54,6 @@ pub mod syscalls;
 pub mod task;
 pub mod translate_addr;
 pub mod user_mode_program_path;
-pub mod virt;
 pub mod writer_with_cr;
 
 #[unsafe(no_mangle)]

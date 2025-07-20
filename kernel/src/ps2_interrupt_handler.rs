@@ -4,7 +4,7 @@ use core::{
     sync::atomic::AtomicU8,
 };
 
-use common::QueueWriter;
+use common::{LOWER_HALF_END, QueueWriter};
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::{instructions::port::Port, registers::control::Cr3};
 
@@ -16,7 +16,6 @@ use crate::{
     memory::MEMORY,
     run_tasks::run_threads,
     task::{EventStreamSource, PS2_EVENT_STREAMS, THREADS, ThreadReadyState, ThreadState},
-    virt::LOWER_HALF_END,
 };
 
 /// # Safety

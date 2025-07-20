@@ -1,14 +1,17 @@
 use core::{
     mem::MaybeUninit,
+    num::{NonZero, NonZeroUsize},
+    ptr::NonNull,
     slice,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
 use atomic_enum::atomic_enum;
-use common::{AllocPageSize, SyscallAllocError};
+use common::{AllocPageSize, SyscallAllocError, log};
 use zerocopy::{FromBytes, IntoBytes, KnownLayout};
 
 use crate::{
+    EnvEntries, ExecutorContext,
     async_channel::{self, Receiver, Sender},
     syscall_alloc,
 };
@@ -20,6 +23,16 @@ pub enum KeyboardResponseResult {
     None,
     Ok,
     Err,
+}
+
+impl KeyboardResponseResult {
+    pub fn result(self) -> Option<Result<(), ()>> {
+        match self {
+            KeyboardResponseResult::None => None,
+            KeyboardResponseResult::Ok => Some(Ok(())),
+            KeyboardResponseResult::Err => Some(Err(())),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -40,8 +53,8 @@ pub struct KeyboardSharedMem {
 }
 
 pub struct KeyboardSharedMemServer {
-    shared_mem: *mut KeyboardSharedMem,
-    unused_allocated_bytes: *mut [u8],
+    shared_mem: NonNull<KeyboardSharedMem>,
+    unused_allocated_bytes: NonNull<[u8]>,
     keyboard_request_rx: Receiver,
     keyboard_response_tx: Sender,
 }
@@ -50,19 +63,20 @@ impl KeyboardSharedMemServer {
     pub fn new() -> Result<Self, SyscallAllocError> {
         let used_len = size_of::<Self>();
         let page_size = AllocPageSize::_4KiB;
-        let allocated_bytes = syscall_alloc(
+        let mut allocated_bytes = syscall_alloc(
             (used_len as u64)
                 .next_multiple_of(page_size.size_bytes())
                 .try_into()
                 .unwrap(),
             page_size,
         )?;
-        let allocated_bytes = unsafe { allocated_bytes.as_mut() }.unwrap();
-        let (s, unused_allocated_bytes) =
+        let allocated_bytes = unsafe { allocated_bytes.as_mut() };
+        let (keyboard_shared_mem, unused_allocated_bytes) =
             allocated_bytes.split_at_mut(size_of::<KeyboardSharedMem>());
         let (keyboard_request_tx, keyboard_request_rx) = async_channel::create();
         let (keyboard_response_tx, keyboard_response_rx) = async_channel::create();
-        let shared_mem_ptr = (s as *mut [u8]).cast::<MaybeUninit<KeyboardSharedMem>>();
+        let shared_mem_ptr =
+            (keyboard_shared_mem as *mut [u8]).cast::<MaybeUninit<KeyboardSharedMem>>();
         let shared_mem = unsafe { shared_mem_ptr.as_mut() }
             .unwrap()
             .write(KeyboardSharedMem {
@@ -77,15 +91,89 @@ impl KeyboardSharedMemServer {
         Ok(Self {
             keyboard_request_rx,
             keyboard_response_tx,
-            shared_mem,
-            unused_allocated_bytes,
+            shared_mem: NonNull::from_mut(shared_mem),
+            unused_allocated_bytes: NonNull::from_mut(unused_allocated_bytes),
         })
+    }
+
+    pub fn share_addr(&self) -> usize {
+        self.shared_mem.addr().into()
+    }
+
+    pub fn share_len(&self) -> usize {
+        size_of::<KeyboardSharedMem>() + self.unused_allocated_bytes.len()
+    }
+
+    pub fn request_channel_id(&self) -> u64 {
+        self.keyboard_request_rx.channel_id()
+    }
+
+    pub fn response_channel_id(&self) -> u64 {
+        self.keyboard_response_tx.channel_id()
+    }
+
+    pub async fn wait_for_request(&mut self, executor_context: &ExecutorContext) -> NonZero<usize> {
+        let shared_mem = unsafe { self.shared_mem.as_mut() };
+        let requested_buffer_len = loop {
+            if let Some(requested_buffer_len) =
+                NonZero::new(shared_mem.keyboard_request.load(Ordering::Relaxed))
+            {
+                break requested_buffer_len;
+            }
+            self.keyboard_request_rx.receive(executor_context).await;
+        };
+        requested_buffer_len
     }
 }
 
 impl Drop for KeyboardSharedMemServer {
     fn drop(&mut self) {
         // TODO: Unmap shared mem
+    }
+}
+
+pub struct KeyboardSharedMemClient {
+    shared_mem: &'static mut KeyboardSharedMem,
+    request_tx: Sender,
+    response_rx: Receiver,
+}
+
+impl KeyboardSharedMemClient {
+    /// # Safety
+    /// Only have 1 client
+    pub unsafe fn new(env: &EnvEntries) -> Option<Self> {
+        let addr = *env.get(&KEYBOARD_ENV_KEY)? as *mut KeyboardSharedMem;
+        let shared_mem = unsafe { addr.as_mut() }.unwrap();
+        Some(Self {
+            request_tx: unsafe { Sender::from_channel_id(shared_mem.keyboard_request_tx) },
+            response_rx: unsafe { Receiver::from_channel_id(shared_mem.keyboard_response_rx) },
+            shared_mem,
+        })
+    }
+
+    pub async fn request(
+        &mut self,
+        executor_context: &ExecutorContext,
+        slots_len: NonZeroUsize,
+    ) -> Result<(), ()> {
+        self.shared_mem
+            .keyboard_request
+            .store(slots_len.into(), Ordering::Relaxed);
+        self.request_tx.send();
+        loop {
+            if let Some(result) = self
+                .shared_mem
+                .keyboard_response_result
+                .load(Ordering::Acquire)
+                .result()
+            {
+                break result;
+            };
+            self.response_rx.receive(executor_context);
+        }?;
+        let addr = self.shared_mem.keyboard_response.load(Ordering::Relaxed);
+        log::info!("response addr: {addr:X}");
+        Ok(())
     }
 }
 

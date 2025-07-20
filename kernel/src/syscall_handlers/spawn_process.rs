@@ -93,8 +93,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             .ok_or(())?;
 
             let interval = Interval::from(
-                input.send_channels.pointer()
-                    ..input.send_channels.pointer() + input.send_channels.len(),
+                input.send_senders.pointer()
+                    ..input.send_senders.pointer() + input.send_senders.len(),
             );
             if !(process_memory
                 .mapped_virtual_memory
@@ -106,18 +106,26 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             {
                 Err(())?
             }
-            let send_channels = unsafe { input.send_channels.try_to_slice::<u64>().ok_or(()) }?;
+            let send_senders = unsafe { input.send_senders.try_to_slice::<u64>().ok_or(()) }?;
+            let send_receivers = unsafe { input.send_receivers.try_to_slice::<u64>().ok_or(()) }?;
 
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             let new_process_id = ProcessId::new_unique();
             let mut channels = CHANNELS.write();
-            for send_chanel in send_channels {
+            for send_chanel in send_senders {
                 let channel = channels.get_mut(send_chanel).ok_or(())?;
                 if channel.sender != running_thread.process.id {
                     Err(())?
                 }
                 channel.sender = new_process_id;
+            }
+            for send_receiver in send_receivers {
+                let channel = channels.get_mut(send_receiver).ok_or(())?;
+                if channel.receiver != running_thread.process.id {
+                    Err(())?;
+                }
+                channel.receiver = new_process_id;
             }
 
             let new_cr3 = physical_memory

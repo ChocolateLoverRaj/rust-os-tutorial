@@ -40,7 +40,7 @@ impl OomHandler for MyOomHandler {
                     .unwrap(),
                 AllocPageSize::_4KiB,
             )?;
-            let span = slice.into();
+            let span = slice.as_ptr().into();
             unsafe { talc.claim(span) }.unwrap();
             Ok::<_, SyscallAllocError>(())
         })();

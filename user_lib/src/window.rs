@@ -1,4 +1,4 @@
-use core::{convert::Infallible, mem::MaybeUninit, slice};
+use core::{convert::Infallible, mem::MaybeUninit, ptr::NonNull, slice};
 
 use atomic_enum::atomic_enum;
 use common::{
@@ -110,7 +110,7 @@ impl Dimensions for WindowSharedMemClient {
 }
 
 pub struct WindowSharedMemServer {
-    shared_mem: *mut (),
+    shared_mem: NonNull<()>,
     receiver: Receiver,
     width: u64,
     height: u64,
@@ -130,8 +130,8 @@ impl WindowSharedMemServer {
             syscall_alloc(total_size.try_into().unwrap(), AllocPageSize::_2MiB).unwrap();
         let (sender, receiver) = async_channel::create();
         {
-            let shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
-            let shared_mem = unsafe { shared_mem.as_mut() }.unwrap();
+            let mut shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
+            let shared_mem = unsafe { shared_mem.as_mut() };
             shared_mem.write(WindowSharedMem {
                 request_channel_id: sender.channel_id(),
                 window_info: WindowInfo {
@@ -151,7 +151,7 @@ impl WindowSharedMemServer {
     }
 
     pub fn addr(&self) -> usize {
-        self.shared_mem as usize
+        self.shared_mem.addr().into()
     }
 
     pub fn size(&self) -> usize {
@@ -170,9 +170,10 @@ impl WindowSharedMemServer {
         x: u64,
         y: u64,
     ) {
-        let shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
-        let shared_mem = unsafe { shared_mem_ptr.as_mut() }.unwrap();
-        let pixels_ptr = (self.shared_mem as usize + size_of::<WindowSharedMem>()) as *mut u32;
+        let mut shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
+        let shared_mem = unsafe { shared_mem_ptr.as_mut() };
+        let pixels_ptr =
+            (usize::from(self.shared_mem.addr()) + size_of::<WindowSharedMem>()) as *mut u32;
         let pixel_count = (self.width * self.height) as usize;
         let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
         let copy_data = shared_mem.copy_data;

@@ -8,12 +8,10 @@ use exit_thread::SyscallExitThreadHandler;
 use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
 use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
-use keyboard::SyscallSubscribeToKeyboardHandler;
-use keyboard_2_handler::SyscallSubscribeToKeyboard2Handler;
+use keyboard_handler::SyscallSubscribeToKeyboardHandler;
 use log::SyscallLogHandler;
 use map_module::SyscallMapModuleHandler;
 use mouse::SyscallSubscribeToMouseHandler;
-use read_event_stream::SyscallReadEventStreamHandler;
 use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc_handler::SyscallAllocHandler;
@@ -30,12 +28,10 @@ mod exit_thread;
 mod frame_buffer;
 mod futex;
 mod get_thread_id;
-mod keyboard;
-mod keyboard_2_handler;
+mod keyboard_handler;
 mod log;
 mod map_module;
 mod mouse;
-mod read_event_stream;
 mod spawn_process;
 mod spawn_thread;
 mod syscall_alloc_handler;
@@ -106,10 +102,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallAllocHandler,
     &SyscallTakeFrameBufferHandler,
     &SyscallReleaseFrameBufferHandler,
-    &SyscallSubscribeToKeyboardHandler,
     &SyscallWaitUntilEventHandler,
     &SyscallSubscribeToMouseHandler,
-    &SyscallReadEventStreamHandler,
     &SyscallSpawnThreadHandler,
     &SyscallFutexLockHandler,
     &SyscallFutexUnlockHandler,
@@ -121,7 +115,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallCreateChannelHandler,
     &SyscallTxSendHandler,
     &SyscallTerminateProcessHandler,
-    &SyscallSubscribeToKeyboard2Handler,
+    &SyscallSubscribeToKeyboardHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

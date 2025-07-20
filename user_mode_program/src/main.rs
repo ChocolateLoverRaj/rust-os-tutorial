@@ -2,7 +2,7 @@
 #![no_main]
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_uninit_array_transpose)]
-use core::ops::DerefMut;
+use core::{arch::naked_asm, ops::DerefMut, ptr::NonNull};
 
 use alloc::vec::Vec;
 use async_keyboard_decoded::AsyncKeyboardDecoded;
@@ -24,8 +24,8 @@ use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
 use user_lib::{
-    AsyncKeyboard2, ExecutorContext, WindowSharedMemServer, execute_future, logger,
-    syscall_exit_process,
+    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardSharedMemServer, WindowSharedMemServer,
+    execute_future, logger,
 };
 
 extern crate alloc;
@@ -40,9 +40,10 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     user_lib::panic_handler(info)
 }
 
-fn main() {
+fn main(initial_rsp: NonNull<()>) {
     logger::init();
-    log::info!("Hi");
+    let env_entries = unsafe { EnvEntries::from_initial_rsp(initial_rsp) };
+    log::info!("{env_entries:#X?}");
 
     let apps = [
         "Test App",
@@ -54,7 +55,7 @@ fn main() {
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
         let mut async_keyboard = AsyncKeyboardDecoded::new(
-            AsyncKeyboard2::new(&executor_context, 64),
+            AsyncKeyboard::new(&env_entries, &executor_context, 64),
             ScancodeSet1::new(),
             Us104Key,
             HandleControl::Ignore,
@@ -62,6 +63,7 @@ fn main() {
         struct Tab {
             app_index: usize,
             window: WindowSharedMemServer,
+            keyboard_server: KeyboardSharedMemServer,
         }
         struct State {
             tabs: Vec<Tab>,
@@ -218,14 +220,17 @@ fn main() {
                                             - u64::from(top_bar_height);
                                     let window =
                                         WindowSharedMemServer::new(width, height, &frame_buffer);
+                                    let keyboard_server = KeyboardSharedMemServer::new().unwrap();
                                     spawn_process(
                                         *focused_index,
                                         SpawnProcessRelativePriority::Lower,
                                         &window,
+                                        &keyboard_server,
                                     );
                                     state.tabs.push(Tab {
                                         app_index: *focused_index,
                                         window,
+                                        keyboard_server,
                                     });
                                     state.focus = Focus::Tab(0);
                                     break;
@@ -260,6 +265,11 @@ fn main() {
                         top_bar_height.into(),
                     );
                     loop {
+                        let s = state.tabs[*tab_index]
+                            .keyboard_server
+                            .wait_for_request(&executor_context)
+                            .await;
+                        log::debug!("requested slots count: {s:?}");
                         let key_event = async_keyboard.next().await.unwrap().unwrap();
                         if let KeyState::Down | KeyState::SingleShot = key_event.state {
                             match key_event.code {
@@ -312,7 +322,13 @@ fn main() {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn entry_point() -> ! {
-    main();
-    syscall_exit_process()
+#[unsafe(naked)]
+unsafe extern "sysv64" fn entry_point() -> ! {
+    naked_asm!(
+        "
+            mov rdi, rsp
+            call {main}
+        ",
+        main = sym main
+    )
 }

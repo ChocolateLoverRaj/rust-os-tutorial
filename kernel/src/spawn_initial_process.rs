@@ -1,6 +1,7 @@
 use core::{num::NonZero, slice};
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use common::{ENV_PS2_KEYBOARD_CAPABILITY, EnvEntry, STACK_ALIGNMENT};
 use elf::{ElfBytes, endian::NativeEndian};
 use limine::response::ModuleResponse;
 use nodit::{Interval, NoditMap, OverlapError};
@@ -20,8 +21,9 @@ use crate::{
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
     task::{
-        Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
-        ThreadReadyState, ThreadState, VirtualMemoryPermissions,
+        CAPABILITIES, Capability, CapabilityId, CapabilityType, Process, ProcessId, ProcessMemory,
+        StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState, ThreadState,
+        VirtualMemoryPermissions,
     },
     translate_addr::{GetFrameSlice, ZeroFrame},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,
@@ -227,6 +229,45 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                     level_4_table_mut[i].clone_from(&current_level_4_table[i]);
                 }
                 unsafe { Cr3::write(user_l4_frame, memory.new_kernel_cr3_flags) };
+
+                let process = Arc::new(Process {
+                    id: process_id,
+                    cr3: user_l4_frame,
+                    memory: RwLock::new(ProcessMemory {
+                        mapped_virtual_memory,
+                        frame_buffer_virtual_start: None,
+                    }),
+                    mutexes: Default::default(),
+                });
+
+                let env_entries = &[{
+                    let id = CapabilityId::new_unique();
+                    CAPABILITIES.write().insert(
+                        id,
+                        Capability {
+                            _type: CapabilityType::Ps2Keyboard,
+                            process: process.clone(),
+                        },
+                    );
+                    EnvEntry {
+                        key: ENV_PS2_KEYBOARD_CAPABILITY,
+                        value: id.into(),
+                    }
+                }];
+                let env_size = size_of_val(env_entries) + size_of::<u64>();
+                // Make sure the pointer is aligned by 16
+                let env_ptr = (stack_start as usize + stack_size as usize - env_size)
+                    / STACK_ALIGNMENT as usize
+                    * STACK_ALIGNMENT as usize;
+
+                let entries_count_ptr = env_ptr as *mut u64;
+                let entries_count = env_entries.len() as u64;
+                unsafe { entries_count_ptr.write(entries_count) };
+                let entries_ptr = (env_ptr + size_of::<u64>()) as *mut EnvEntry;
+                let entries_len = env_entries.len();
+                let entries = unsafe { core::slice::from_raw_parts_mut(entries_ptr, entries_len) };
+                entries.copy_from_slice(env_entries);
+
                 log::info!("New process's Cr3: {user_l4_frame:?}");
                 let thread_id = ThreadId::new_unique();
                 THREADS.write().insert(
@@ -235,18 +276,10 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                         state: RwLock::new(ThreadState::Ready(ThreadReadyState::ReadyToStart(
                             StartData {
                                 rip: entry_point.into(),
-                                rsp: INITIAL_RSP,
+                                rsp: env_ptr as u64,
                             },
                         ))),
-                        process: Arc::new(Process {
-                            id: process_id,
-                            cr3: user_l4_frame,
-                            memory: RwLock::new(ProcessMemory {
-                                mapped_virtual_memory,
-                                frame_buffer_virtual_start: None,
-                            }),
-                            mutexes: Default::default(),
-                        }),
+                        process,
                     },
                 );
                 THREAD_PRIORITIES.write().push(thread_id);

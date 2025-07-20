@@ -3,54 +3,53 @@
 
 extern crate alloc;
 
-use core::arch::naked_asm;
+use core::{arch::naked_asm, ptr::NonNull};
 
-use alloc::collections::btree_map::BTreeMap;
 use common::{
-    EnvEntry,
     embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::{Dimensions, RgbColor},
         primitives::{PrimitiveStyleBuilder, StyledDrawable},
     },
-    env_entries, log,
+    log,
 };
-use user_lib::{CopyData, ENV_KEY, WindowSharedMemClient, logger, syscall_exit_process};
+use user_lib::{
+    CopyData, ENV_KEY, EnvEntries, ExecutorContext, KeyboardSharedMemClient, WindowSharedMemClient,
+    execute_future, logger, syscall_exit_process,
+};
 
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     user_lib::panic_handler(info)
 }
-fn main(initial_rsp: *mut ()) -> ! {
+fn main(initial_rsp: NonNull<()>) -> ! {
     logger::init();
-    log::debug!("Hello from user mode program 2");
-
-    let env_entries = unsafe { env_entries(initial_rsp).as_mut() };
-
-    log::debug!("Env entries: {env_entries:#X?}");
-
-    let env_entries = env_entries
-        .iter()
-        .copied()
-        .map(|EnvEntry { key, value }| (key, value))
-        .collect::<BTreeMap<_, _>>();
+    let env_entries = unsafe { EnvEntries::from_initial_rsp(initial_rsp) };
+    log::debug!("{env_entries:#X?}");
 
     let ptr = *env_entries.get(&ENV_KEY).unwrap();
     let mut window_client = unsafe { WindowSharedMemClient::new(ptr) };
-    window_client
-        .bounding_box()
-        .draw_styled(
-            &PrimitiveStyleBuilder::new().fill_color(Rgb888::RED).build(),
-            &mut window_client,
-        )
-        .unwrap();
-    window_client.update_screen(CopyData {
-        x: 0,
-        y: 0,
-        width: window_client.bounding_box().size.width.into(),
-        height: window_client.bounding_box().size.height.into(),
+    let mut keyboard = unsafe { KeyboardSharedMemClient::new(&env_entries) }.unwrap();
+    let executor_context = ExecutorContext::default();
+    execute_future(&executor_context, async {
+        window_client
+            .bounding_box()
+            .draw_styled(
+                &PrimitiveStyleBuilder::new().fill_color(Rgb888::RED).build(),
+                &mut window_client,
+            )
+            .unwrap();
+        window_client.update_screen(CopyData {
+            x: 0,
+            y: 0,
+            width: window_client.bounding_box().size.width.into(),
+            height: window_client.bounding_box().size.height.into(),
+        });
+        keyboard
+            .request(&executor_context, 64.try_into().unwrap())
+            .await
+            .unwrap();
     });
-
     syscall_exit_process()
 }
 

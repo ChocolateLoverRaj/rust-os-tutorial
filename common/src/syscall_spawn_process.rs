@@ -18,7 +18,8 @@ pub struct SyscallSpawnProcessInput {
     pub rip: u64,
     pub rsp: u64,
     pub memory_mappings: SliceData,
-    pub send_channels: SliceData,
+    pub send_senders: SliceData,
+    pub send_receivers: SliceData,
 }
 
 bitflags! {

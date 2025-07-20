@@ -1,20 +1,11 @@
-use core::sync::atomic::Ordering;
-
-use common::{SyscallSubscribeToMouse, SyscallSubscribeToMouseError};
-use crossbeam_queue::ArrayQueue;
-
-use crate::{
-    cpu_local_data::get_local,
-    init_ps2_mouse,
-    task::{EVENT_ID, EventStream, EventStreamSource, PS2_EVENT_STREAMS, THREADS},
-};
+use common::SyscallSubscribeToMouse;
 
 use super::GenericSyscallHandler;
 
 pub struct SyscallSubscribeToMouseHandler;
 impl GenericSyscallHandler for SyscallSubscribeToMouseHandler {
     type S = SyscallSubscribeToMouse;
-    fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
+    fn handle_decoded_syscall(_helper: super::SyscallHelper<Self::S>) -> ! {
         unimplemented!()
         // let output = {
         //     if init_ps2_mouse::mouse_exists() {

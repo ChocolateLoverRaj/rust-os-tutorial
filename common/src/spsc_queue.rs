@@ -36,17 +36,12 @@ impl QueueWriter<'_> {
     pub fn push(&mut self, item: u8) -> Result<(), PushError> {
         let read_count = self.shared_read_count.load(Ordering::Relaxed);
         let write_count = self.shared_write_count.load(Ordering::Relaxed);
-        log::debug!(
-            "Read {read_count} Write {write_count} total {}",
-            self.shared_slots.len()
-        );
         if self.shared_slots.len()
             > write_count
                 .checked_sub(read_count)
                 .ok_or(PushError::InvalidState)?
         {
             let slot_index = write_count % self.shared_slots.len();
-            log::debug!("Storing item: {item}");
             self.shared_slots[slot_index].store(item, Ordering::Relaxed);
             self.shared_write_count.store(
                 write_count
@@ -55,7 +50,6 @@ impl QueueWriter<'_> {
                 Ordering::Release,
             );
         } else {
-            log::debug!("No slots item: {item}");
             Err(PushError::NoSlotsAvailable(item))?;
         }
         Ok(())
@@ -88,7 +82,6 @@ impl QueueReader<'_> {
     pub fn pop(&mut self) -> Option<u8> {
         let read_count = self.shared_read_count.load(Ordering::Relaxed);
         let write_count = self.shared_write_count.load(Ordering::Relaxed);
-        log::debug!("Read {read_count} Write {write_count}");
         if write_count > read_count {
             // This makes the data in slots read what the writer wrote, and not read something outdated
             core::sync::atomic::fence(Ordering::Acquire);

@@ -1,1 +1,2 @@
 pub const LOWER_HALF_END: u64 = 0x800000000000;
+pub const STACK_ALIGNMENT: u64 = 16;

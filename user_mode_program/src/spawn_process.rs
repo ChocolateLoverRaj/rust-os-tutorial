@@ -1,12 +1,12 @@
 use alloc::vec::Vec;
 use common::{
-    AllocPageSize, ElfSegmentFlags, EnvEntry, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
-    SpawnProcessRelativePriority, log,
+    AllocPageSize, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT, SpawnProcessMemoryFlags,
+    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, log,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
-    ENV_KEY, RustSyscallSpawnProcessInput, WindowSharedMemServer, syscall_alloc,
-    syscall_map_module, syscall_spawn_process,
+    ENV_KEY, KEYBOARD_ENV_KEY, KeyboardSharedMemServer, RustSyscallSpawnProcessInput,
+    WindowSharedMemServer, syscall_alloc, syscall_map_module, syscall_spawn_process,
 };
 use x86_64::{
     VirtAddr,
@@ -19,6 +19,7 @@ pub fn spawn_process(
     // env_entries: &[EnvEntry],
     // send_rx_list: impl Iterator<Item = Sender>,
     window: &WindowSharedMemServer,
+    keyboard: &KeyboardSharedMemServer,
 ) {
     let slice = syscall_map_module(module_id).unwrap();
     // let slice = include_bytes!("extra_module_0");
@@ -41,7 +42,7 @@ pub fn spawn_process(
             segment.p_vaddr + (segment.p_memsz - 1),
         ));
         for page in start_page..=end_page {
-            let frame = syscall_alloc(
+            let mut frame = syscall_alloc(
                 segment
                     .p_memsz
                     .next_multiple_of(AllocPageSize::_4KiB.size_bytes())
@@ -51,7 +52,7 @@ pub fn spawn_process(
             )
             .unwrap();
             memory_mappings.push(SpawnProcessMemoryMapping {
-                current_process_start: frame.addr() as u64,
+                current_process_start: usize::from(frame.addr()).try_into().unwrap(),
                 new_process_start: page.start_address().as_u64(),
                 len: page.size(),
                 flags: SpawnProcessMemoryFlags::from(ElfSegmentFlags::from_bits_retain(
@@ -59,7 +60,7 @@ pub fn spawn_process(
                 ))
                 .bits(),
             });
-            let frame_data = unsafe { frame.as_mut().unwrap() };
+            let frame_data = unsafe { frame.as_mut() };
             let bytes_to_zero_before = segment
                 .p_vaddr
                 .saturating_sub(page.start_address().as_u64())
@@ -95,15 +96,23 @@ pub fn spawn_process(
     .unwrap();
 
     // FIXME: make sure this doesn't conflict with other mem
-    let new_process_shared_mem_ptr = 0x40000000;
+    let window_shared_mem_ptr = 0x40000000;
+    let keyboard_shared_mem_ptr = 0x80000000;
 
-    let env_entries = &[EnvEntry {
-        key: ENV_KEY,
-        value: new_process_shared_mem_ptr,
-    }];
+    let env_entries = &[
+        EnvEntry {
+            key: ENV_KEY,
+            value: window_shared_mem_ptr,
+        },
+        EnvEntry {
+            key: KEYBOARD_ENV_KEY,
+            value: keyboard_shared_mem_ptr,
+        },
+    ];
     let env_size = size_of_val(env_entries) + size_of::<u64>();
     // Make sure the pointer is aligned by 16
-    let env_ptr = (stack.addr() + stack.len() - env_size) / 16 * 16;
+    let env_ptr = (usize::from(stack.addr()) + stack.len() - env_size) / STACK_ALIGNMENT as usize
+        * STACK_ALIGNMENT as usize;
 
     let entries_count_ptr = env_ptr as *mut u64;
     let entries_count = env_entries.len() as u64;
@@ -115,22 +124,22 @@ pub fn spawn_process(
 
     // Guard page
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: stack.addr() as u64,
+        current_process_start: usize::from(stack.addr()).try_into().unwrap(),
         new_process_start: stack_top - stack_with_guard_len as u64,
-        len: 0x1000,
+        len: AllocPageSize::_4KiB.size_bytes(),
         flags: SpawnProcessMemoryFlags::empty().bits(),
     });
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: stack.addr() as u64 + 0x1000,
+        current_process_start: u64::try_from(usize::from(stack.addr())).unwrap()
+            + AllocPageSize::_4KiB.size_bytes(),
         new_process_start: stack_top - stack_len as u64,
         len: stack_len as u64,
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 
-    // let shared_page = syscall_alloc(Layout::from_size_align(0x1000, 0x1000).unwrap()).unwrap();
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: window.addr().try_into().unwrap(),
-        new_process_start: new_process_shared_mem_ptr,
+        new_process_start: window_shared_mem_ptr,
         len: window.size().try_into().unwrap(),
         flags: (SpawnProcessMemoryFlags::READABLE
             | SpawnProcessMemoryFlags::WRITABLE
@@ -138,12 +147,22 @@ pub fn spawn_process(
             | SpawnProcessMemoryFlags::_2MiB_PAGE)
             .bits(),
     });
+    memory_mappings.push(SpawnProcessMemoryMapping {
+        current_process_start: keyboard.share_addr().try_into().unwrap(),
+        new_process_start: keyboard_shared_mem_ptr,
+        len: keyboard.share_len().try_into().unwrap(),
+        flags: (SpawnProcessMemoryFlags::READABLE
+            | SpawnProcessMemoryFlags::WRITABLE
+            | SpawnProcessMemoryFlags::SHARE)
+            .bits(),
+    });
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority,
         rip: entry_point,
-        rsp: stack_top - (stack.addr() + stack.len() - env_ptr) as u64,
+        rsp: stack_top - u64::try_from(usize::from(stack.addr()) + stack.len() - env_ptr).unwrap(),
         memory_mapping: &memory_mappings,
-        send_channels: &[window.channel_id()],
+        send_senders: &[window.channel_id(), keyboard.request_channel_id()],
+        send_receivers: &[keyboard.response_channel_id()],
     });
 }
