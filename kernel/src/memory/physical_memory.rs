@@ -21,6 +21,7 @@ pub enum MemoryType {
     UsedByLimine,
     UsedByKernel(KernelMemoryUsageType),
     UsedByUserMode(BTreeSet<ProcessId>),
+    Shared(u64),
 }
 
 pub struct PhysicalMemory {

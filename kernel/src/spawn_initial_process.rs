@@ -17,13 +17,13 @@ use x86_64::{
 };
 
 use crate::{
+    capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     elf_segment_flags::ElfSegmentFlags,
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
     task::{
-        CAPABILITIES, Capability, CapabilityId, CapabilityType, Process, ProcessId, ProcessMemory,
-        StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState, ThreadState,
-        VirtualMemoryPermissions,
+        Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
+        ThreadReadyState, ThreadState, VirtualMemoryPermissions,
     },
     translate_addr::{GetFrameSlice, ZeroFrame},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,

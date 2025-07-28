@@ -66,7 +66,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
                     if channel.receiver != current_thread.process.id {
                         Err(())?;
                     }
-                    if channel.pending_event.load(Ordering::Relaxed) {
+                    if channel.pending_event.swap(false, Ordering::Relaxed) {
                         events[events_pushed] = *event;
                         events_pushed += 1;
                     }

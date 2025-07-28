@@ -1,0 +1,60 @@
+use alloc::vec::Vec;
+use common::{AllocPageSize, SyscallNewSharedMem};
+use x86_64::structures::paging::Size4KiB;
+
+use crate::{
+    capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
+    cpu_local_data::get_local,
+    memory::{MEMORY, MemoryType},
+    shared_mem::{NEXT_SHARED_MEM_ID, SHARED_MEM, SharedMem},
+    task::THREADS,
+};
+
+use super::GenericSyscallHandler;
+
+pub struct SyscallNewSharedMemHandler;
+
+impl GenericSyscallHandler for SyscallNewSharedMemHandler {
+    type S = SyscallNewSharedMem;
+
+    fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
+        let output = {
+            let mut phys_mem = MEMORY.get().unwrap().physical_memory.lock();
+            let shared_mem_id =
+                NEXT_SHARED_MEM_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            let mut phys_frames = Vec::new();
+            for _ in 0..helper.input().pages_len {
+                if let Some(phys_frame) =
+                    phys_mem.allocate_frame_with_type::<Size4KiB>(MemoryType::Shared(shared_mem_id))
+                {
+                    phys_frames.push(phys_frame);
+                } else {
+                    todo!("Clean up frames and return err")
+                }
+            }
+            let mut shared_mem = SHARED_MEM.write();
+            shared_mem.insert(
+                shared_mem_id,
+                SharedMem {
+                    size: AllocPageSize::_4KiB,
+                    phys_frames: phys_frames.into_boxed_slice(),
+                },
+            );
+            log::debug!("Shared mem: {shared_mem:#?}");
+            let capability_id = CapabilityId::new_unique();
+            let mut capabilities = CAPABILITIES.write();
+            let threads = THREADS.read();
+            let thread_id = get_local().running_thread.try_lock().unwrap().unwrap();
+            let thread = threads.get(&thread_id).unwrap();
+            capabilities.insert(
+                capability_id,
+                Capability {
+                    _type: CapabilityType::SharedMem(shared_mem_id),
+                    process: thread.process.clone(),
+                },
+            );
+            Ok(capability_id.into())
+        };
+        helper.syscall_return(&output);
+    }
+}

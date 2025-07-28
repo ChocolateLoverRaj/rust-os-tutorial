@@ -61,7 +61,6 @@ impl Future for ReceiveFuture<'_> {
         if self.executor_context.take(self.receiver.channel_id) {
             Poll::Ready(())
         } else {
-            log::debug!("Registering wake for channel {}", self.receiver.channel_id);
             self.executor_context
                 .register_waker(self.receiver.channel_id, cx.waker());
             Poll::Pending

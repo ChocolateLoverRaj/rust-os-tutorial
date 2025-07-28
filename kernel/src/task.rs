@@ -18,7 +18,6 @@ use crate::{
     local_apic_id::LocalApicId, syscall_saved_regs::SyscallSavedRegs,
 };
 
-/// Read is always given, because it doesn't make sense not to have read
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VirtualMemoryPermissions {
     /// If this is fault, this means that the page is intentionally left unmapped.
@@ -231,37 +230,3 @@ pub struct MutexKey {
     pub process: ProcessId,
     pub virtual_address: u64,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CapabilityId(u64);
-impl CapabilityId {
-    pub fn new_unique() -> Self {
-        static NEXT_CAPABILITY_ID: AtomicU64 = AtomicU64::new(0);
-        Self(NEXT_CAPABILITY_ID.fetch_add(1, Ordering::Relaxed))
-    }
-}
-impl From<u64> for CapabilityId {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-impl From<CapabilityId> for u64 {
-    fn from(value: CapabilityId) -> Self {
-        value.0
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum CapabilityType {
-    /// Allows reading PS/2 keyboard input
-    Ps2Keyboard,
-}
-
-#[derive(Debug)]
-pub struct Capability {
-    pub _type: CapabilityType,
-    pub process: Arc<Process>,
-}
-
-pub static CAPABILITIES: spin::RwLock<BTreeMap<CapabilityId, Capability>> =
-    spin::RwLock::new(BTreeMap::new());

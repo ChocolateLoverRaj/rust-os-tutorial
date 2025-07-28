@@ -3,12 +3,10 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use common::{SyscallSubscribeToKeyboard, SyscallSubscribeToKeyboardError};
 
 use crate::{
+    capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     event_stream_mem::EventStreamMem,
-    task::{
-        CAPABILITIES, CapabilityType, EVENT_ID, EventStream, EventStreamSource, PS2_EVENT_STREAMS,
-        THREADS,
-    },
+    task::{EVENT_ID, EventStream, EventStreamSource, PS2_EVENT_STREAMS, THREADS},
 };
 
 use super::GenericSyscallHandler;

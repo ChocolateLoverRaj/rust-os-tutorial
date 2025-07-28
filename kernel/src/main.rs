@@ -19,6 +19,7 @@ use x86_64::registers::control::Cr3;
 
 pub mod acpi;
 pub mod call_with_rsp;
+pub mod capabilities;
 pub mod cpu_local_data;
 pub mod create_normal_stack;
 pub mod elf_segment_flags;
@@ -46,6 +47,7 @@ pub mod pci;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
+pub mod shared_mem;
 pub mod spawn_initial_process;
 pub mod spcr;
 pub mod syscall_handlers;

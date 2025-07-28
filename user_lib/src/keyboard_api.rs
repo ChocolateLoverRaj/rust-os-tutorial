@@ -7,13 +7,15 @@ use core::{
 };
 
 use atomic_enum::atomic_enum;
-use common::{AllocPageSize, SyscallAllocError, log};
+use common::{
+    AllocPageSize, SyscallAllocError, SyscallNewSharedMem, SyscallNewSharedMemInput, log,
+};
 use zerocopy::{FromBytes, IntoBytes, KnownLayout};
 
 use crate::{
     EnvEntries, ExecutorContext,
     async_channel::{self, Receiver, Sender},
-    syscall_alloc,
+    syscall, syscall_alloc,
 };
 
 pub const KEYBOARD_ENV_KEY: u64 = 0x1D099897F69410FA;
@@ -40,6 +42,8 @@ impl KeyboardResponseResult {
 pub struct KeyboardSharedMem {
     /// 0 - Not requested
     /// >0 - Buffer size
+    ///
+    /// The server sets this back to 0 when processing the request
     pub keyboard_request: AtomicUsize,
     /// Channel tx to notify that the keyboard is requested
     pub keyboard_request_tx: u64,
@@ -116,7 +120,7 @@ impl KeyboardSharedMemServer {
         let shared_mem = unsafe { self.shared_mem.as_mut() };
         let requested_buffer_len = loop {
             if let Some(requested_buffer_len) =
-                NonZero::new(shared_mem.keyboard_request.load(Ordering::Relaxed))
+                NonZero::new(shared_mem.keyboard_request.swap(0, Ordering::Relaxed))
             {
                 break requested_buffer_len;
             }
@@ -169,11 +173,57 @@ impl KeyboardSharedMemClient {
             {
                 break result;
             };
-            self.response_rx.receive(executor_context);
+            self.response_rx.receive(executor_context).await;
         }?;
         let addr = self.shared_mem.keyboard_response.load(Ordering::Relaxed);
         log::info!("response addr: {addr:X}");
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct KeyboardBufSharedMem {
+    write_count: AtomicUsize,
+    new_data_channel: u64,
+    read_count: AtomicUsize,
+    slots_len: usize,
+    slots: [AtomicU8; 0],
+}
+
+pub struct KeyboardBufServer {
+    shared_mem: NonNull<[u8]>,
+    slots_len: usize,
+    new_data_sender: Sender,
+}
+
+impl KeyboardBufServer {
+    pub fn new(slots_len: usize) -> Result<Self, SyscallAllocError> {
+        let len = size_of::<KeyboardBufSharedMem>() + size_of::<AtomicU8>() * slots_len;
+        let len_2 = NonZero::new(len.try_into().unwrap()).unwrap();
+
+        let input = SyscallNewSharedMemInput {
+            page_size: AllocPageSize::_4KiB,
+            pages_len: len.div_ceil(AllocPageSize::_4KiB.len()),
+        };
+        let capability = unsafe { syscall::<SyscallNewSharedMem>(&input) }.unwrap();
+        log::debug!("KeyboardBufServer::new: capability = {:?}", capability);
+
+        let shared_mem = syscall_alloc(len_2, AllocPageSize::_4KiB)?;
+        let mut ptr = shared_mem.cast::<MaybeUninit<KeyboardBufSharedMem>>();
+        let (sender, receiver) = async_channel::create();
+        unsafe { ptr.as_mut() }.write(KeyboardBufSharedMem {
+            write_count: Default::default(),
+            new_data_channel: receiver.channel_id(),
+            read_count: Default::default(),
+            slots_len,
+            slots: Default::default(),
+        });
+        Ok(Self {
+            shared_mem,
+            slots_len,
+            new_data_sender: sender,
+        })
     }
 }
 
