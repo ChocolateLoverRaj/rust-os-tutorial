@@ -688,6 +688,7 @@ name = "user_mode_program_2"
 version = "0.1.0"
 dependencies = [
  "common",
+ "pc-keyboard",
  "user_lib",
 ]
 

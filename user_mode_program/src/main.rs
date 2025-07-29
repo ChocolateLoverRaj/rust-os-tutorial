@@ -21,7 +21,7 @@ use common::{
 };
 use frame_buffer::FrameBuffer;
 use futures::StreamExt;
-use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
+use pc_keyboard::{HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
 use user_lib::{
     AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufClient, KeyboardSharedMemServer,
@@ -54,12 +54,8 @@ fn main(initial_rsp: NonNull<()>) {
 
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
-        let mut async_keyboard = AsyncKeyboardDecoded::new(
-            AsyncKeyboard::new(&env_entries, &executor_context, 64),
-            ScancodeSet1::new(),
-            Us104Key,
-            HandleControl::Ignore,
-        );
+        let mut async_keyboard = AsyncKeyboard::new(&env_entries, &executor_context, 64);
+        let mut keyboard = Keyboard::new(ScancodeSet1::new(), Us104Key, HandleControl::Ignore);
         struct Tab {
             app_index: usize,
             window: WindowSharedMemServer,
@@ -193,7 +189,12 @@ fn main(initial_rsp: NonNull<()>) {
                         .unwrap();
                     });
                     loop {
-                        let key_event = async_keyboard.next().await.unwrap().unwrap();
+                        let key_event = loop {
+                            let data = async_keyboard.next().await.unwrap();
+                            if let Ok(Some(key_event)) = keyboard.add_byte(data) {
+                                break key_event;
+                            }
+                        };
                         if let KeyState::Down | KeyState::SingleShot = key_event.state {
                             match key_event.code {
                                 KeyCode::ArrowUp => {
@@ -271,10 +272,15 @@ fn main(initial_rsp: NonNull<()>) {
                             .await
                             .unwrap();
                         log::debug!("established keyboardo buf: {keyboard_buf:?}");
-                        while let Some(_) = async_keyboard.next().await {
-                            keyboard_buf.push(42);
+                        while let Some(data) = async_keyboard.next().await {
+                            let _ = keyboard_buf.push(data);
                         }
-                        let key_event = async_keyboard.next().await.unwrap().unwrap();
+                        let key_event = loop {
+                            let data = async_keyboard.next().await.unwrap();
+                            if let Ok(Some(key_event)) = keyboard.add_byte(data) {
+                                break key_event;
+                            }
+                        };
                         if let KeyState::Down | KeyState::SingleShot = key_event.state {
                             match key_event.code {
                                 KeyCode::W | KeyCode::Escape => {

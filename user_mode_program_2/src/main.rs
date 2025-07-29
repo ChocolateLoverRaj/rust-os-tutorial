@@ -13,6 +13,7 @@ use common::{
     },
     log,
 };
+use pc_keyboard::{HandleControl, Keyboard, ScancodeSet1, layouts::Us104Key};
 use user_lib::{
     CopyData, ENV_KEY, EnvEntries, ExecutorContext, KeyboardSharedMemClient, WindowSharedMemClient,
     execute_future, logger, syscall_exit_process,
@@ -50,9 +51,12 @@ fn main(initial_rsp: NonNull<()>) -> ! {
             .await
             .unwrap();
         log::info!("Got client: {client:#?}");
+        let mut keyboard = Keyboard::new(ScancodeSet1::new(), Us104Key, HandleControl::Ignore);
         loop {
             let data = client.read(&executor_context).await;
-            log::info!("Got data: {data:#?}");
+            if let Ok(Some(key_event)) = keyboard.add_byte(data) {
+                log::info!("Key event: {key_event:#?}");
+            }
         }
     });
     syscall_exit_process()

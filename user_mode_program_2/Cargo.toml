@@ -10,4 +10,5 @@ bench = false
 
 [dependencies]
 common = { version = "0.1.0", path = "../common" }
+pc-keyboard = "0.8.0"
 user_lib = { version = "0.1.0", path = "../user_lib" }
