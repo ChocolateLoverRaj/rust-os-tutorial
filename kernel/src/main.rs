@@ -15,6 +15,7 @@ use limine_requests::{
 use local_apic_id::LocalApicId;
 use memory::MEMORY;
 use run_tasks::run_threads;
+pub use virt_mem_permissions::*;
 use x86_64::registers::control::Cr3;
 
 pub mod acpi;
@@ -22,7 +23,6 @@ pub mod call_with_rsp;
 pub mod capabilities;
 pub mod cpu_local_data;
 pub mod create_normal_stack;
-pub mod elf_segment_flags;
 pub mod enter_user_mode;
 pub mod event_stream_mem;
 pub mod gdt;
@@ -56,6 +56,7 @@ pub mod syscalls;
 pub mod task;
 pub mod translate_addr;
 pub mod user_mode_program_path;
+pub mod virt_mem_permissions;
 pub mod writer_with_cr;
 
 #[unsafe(no_mangle)]

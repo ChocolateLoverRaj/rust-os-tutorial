@@ -9,43 +9,14 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use common::{SliceData, SpawnProcessMemoryFlags, Syscall, SyscallWaitUntilEvent};
+use common::{SliceData, Syscall, SyscallWaitUntilEvent};
 use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
 use crate::{
-    elf_segment_flags::ElfSegmentFlags, interrupted_context::InterruptedContext,
-    local_apic_id::LocalApicId, syscall_saved_regs::SyscallSavedRegs,
+    VirtMemPermissions, interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
+    syscall_saved_regs::SyscallSavedRegs,
 };
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct VirtualMemoryPermissions {
-    /// If this is fault, this means that the page is intentionally left unmapped.
-    /// This is useful for stack guard pages
-    pub read: bool,
-    pub write: bool,
-    pub execute: bool,
-}
-
-impl From<ElfSegmentFlags> for VirtualMemoryPermissions {
-    fn from(value: ElfSegmentFlags) -> Self {
-        Self {
-            read: value.contains(ElfSegmentFlags::READABLE),
-            write: value.contains(ElfSegmentFlags::WRITABLE),
-            execute: value.contains(ElfSegmentFlags::EXECUTABLE),
-        }
-    }
-}
-
-impl From<SpawnProcessMemoryFlags> for VirtualMemoryPermissions {
-    fn from(value: SpawnProcessMemoryFlags) -> Self {
-        Self {
-            read: value.contains(SpawnProcessMemoryFlags::READABLE),
-            write: value.contains(SpawnProcessMemoryFlags::WRITABLE),
-            execute: value.contains(SpawnProcessMemoryFlags::EXECUTABLE),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ThreadWaitingState {
@@ -88,12 +59,44 @@ pub struct EventStream {
 
 pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
 
-pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, VirtualMemoryPermissions>;
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SharedVirtMem {
+    pub shared_mem_id: u64,
+    pub permissions: VirtMemPermissions,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum UserVirtMem {
+    /// Memory that is not shared or MMIO, just owned by the process
+    Plain(VirtMemPermissions),
+    /// The framebuffer is MMIO with fixed permissions and cache behavior set by the kernel
+    FrameBuffer,
+    /// Different processes can have different permissions for the same shared mem
+    Shared(SharedVirtMem),
+}
+
+const FRAME_BUFFER_PERMISSIONS: VirtMemPermissions = VirtMemPermissions {
+    read: true,
+    write: true,
+    execute: false,
+};
+
+impl UserVirtMem {
+    pub fn permissions(&self) -> &VirtMemPermissions {
+        match self {
+            Self::Plain(permissions) => permissions,
+            Self::FrameBuffer => &FRAME_BUFFER_PERMISSIONS,
+            Self::Shared(shared) => &shared.permissions,
+        }
+    }
+}
+
+pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, UserVirtMem>;
 
 #[derive(Debug)]
 pub struct ProcessMemory {
     pub mapped_virtual_memory: ProcessMappedVirtMem,
-    pub frame_buffer_virtual_start: Option<u64>,
+    // pub frame_buffer_virtual_start: Option<u64>,
 }
 
 #[derive(Debug)]

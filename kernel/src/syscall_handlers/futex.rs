@@ -45,7 +45,7 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
                     && process_memory
                         .mapped_virtual_memory
                         .overlapping(interval)
-                        .all(|(_, permissions)| permissions.write)
+                        .all(|(_, mem)| mem.permissions().write)
                 {
                     let ptr = ptr_u64 as *mut AtomicU64;
                     if ptr.is_aligned() {
@@ -119,7 +119,7 @@ impl GenericSyscallHandler for SyscallFutexUnlockHandler {
                     && process_memory
                         .mapped_virtual_memory
                         .overlapping(interval)
-                        .all(|(_, permissions)| permissions.write)
+                        .all(|(_, mem)| mem.permissions().write)
                 {
                     let ptr = ptr_u64 as *mut AtomicU64;
                     if ptr.is_aligned() {

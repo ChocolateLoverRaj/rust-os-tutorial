@@ -7,11 +7,12 @@ use x86_64::{
 };
 
 use crate::{
+    VirtMemPermissions,
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     limine_requests::MODULE_REQUEST,
     memory::{MEMORY, MemoryType},
-    task::{THREADS, VirtualMemoryPermissions},
+    task::{THREADS, UserVirtMem},
     translate_addr::GetFrameSlice,
 };
 
@@ -59,11 +60,11 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
                     range.clone().into(),
-                    VirtualMemoryPermissions {
+                    UserVirtMem::Plain(VirtMemPermissions {
                         read: true,
                         write: false,
                         execute: false,
-                    },
+                    }),
                 )
                 .unwrap();
             let mut mapper = unsafe { get_page_table(current_process.cr3, false) };

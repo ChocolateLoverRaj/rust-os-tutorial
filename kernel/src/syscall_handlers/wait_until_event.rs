@@ -39,7 +39,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
                     input.pointer(),
                     input.pointer().saturating_add(input.len()),
                 ))
-                .all(|(_interval, mem)| mem.write)
+                .all(|(_interval, permissions)| permissions.permissions().write)
             {
                 Err(())?;
             }

@@ -1,7 +1,7 @@
 use core::{num::NonZero, slice};
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
-use common::{ENV_PS2_KEYBOARD_CAPABILITY, EnvEntry, STACK_ALIGNMENT};
+use common::{ENV_PS2_KEYBOARD_CAPABILITY, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT};
 use elf::{ElfBytes, endian::NativeEndian};
 use limine::response::ModuleResponse;
 use nodit::{Interval, NoditMap, OverlapError};
@@ -17,13 +17,13 @@ use x86_64::{
 };
 
 use crate::{
+    VirtMemPermissions,
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
-    elf_segment_flags::ElfSegmentFlags,
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
-        ThreadReadyState, ThreadState, VirtualMemoryPermissions,
+        ThreadReadyState, ThreadState, UserVirtMem,
     },
     translate_addr::{GetFrameSlice, ZeroFrame},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,
@@ -51,7 +51,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
             #[error("No segment table")]
             NoSegmentTable,
             #[error("ELF has overlapping loadable segments")]
-            OverlappingElfSegments(OverlapError<VirtualMemoryPermissions>),
+            OverlappingElfSegments(OverlapError<UserVirtMem>),
             #[error("Error creating a page table mapping")]
             MapToError(MapToError<Size4KiB>),
             #[error("ELF tried to use higher half virtual memory")]
@@ -59,7 +59,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
             #[error("The ELF specified an invalid virtual address")]
             InvalidVirtAddr(VirtAddrNotValid),
             #[error("ELF segments overlap with the stack")]
-            OverlappingElfSegmentsAndStack(OverlapError<VirtualMemoryPermissions>),
+            OverlappingElfSegmentsAndStack(OverlapError<UserVirtMem>),
             #[error("The ELF has 0 segments")]
             NoSegments,
         }
@@ -84,7 +84,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 let mut mapper = unsafe { get_page_table(user_l4_frame, true) };
 
                 let mut mapped_virtual_memory =
-                    NoditMap::<u64, Interval<_>, VirtualMemoryPermissions>::default();
+                    NoditMap::<u64, Interval<_>, UserVirtMem>::default();
                 let segments = elf
                     .segments()
                     .ok_or(LoadUserModeProgramError::NoSegmentTable)?;
@@ -123,7 +123,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                             (start_page.start_address().as_u64()
                                 ..=(end_page.start_address() + (end_page.size() - 1)).as_u64())
                                 .into(),
-                            flags.into(),
+                            UserVirtMem::Plain(flags.into()),
                         )
                         .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                     for page in start_page..=end_page {
@@ -185,11 +185,11 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 mapped_virtual_memory
                     .insert_merge_touching(
                         (stack_start..=stack_end_inclusive).into(),
-                        VirtualMemoryPermissions {
+                        UserVirtMem::Plain(VirtMemPermissions {
                             read: true,
                             write: true,
                             execute: false,
-                        },
+                        }),
                     )
                     .map_err(LoadUserModeProgramError::OverlappingElfSegmentsAndStack)?;
                 let stack_start_page =
@@ -235,7 +235,6 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                     cr3: user_l4_frame,
                     memory: RwLock::new(ProcessMemory {
                         mapped_virtual_memory,
-                        frame_buffer_virtual_start: None,
                     }),
                     mutexes: Default::default(),
                 });
@@ -246,12 +245,12 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                         id,
                         Capability {
                             _type: CapabilityType::Ps2Keyboard,
-                            process: process.clone(),
+                            process_id: process.id.into(),
                         },
                     );
                     EnvEntry {
                         key: ENV_PS2_KEYBOARD_CAPABILITY,
-                        value: id.into(),
+                        value: NonZero::from(id).get(),
                     }
                 }];
                 let env_size = size_of_val(env_entries) + size_of::<u64>();

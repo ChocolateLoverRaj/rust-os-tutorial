@@ -45,10 +45,15 @@ fn main(initial_rsp: NonNull<()>) -> ! {
             width: window_client.bounding_box().size.width.into(),
             height: window_client.bounding_box().size.height.into(),
         });
-        keyboard
+        let mut client = keyboard
             .request(&executor_context, 64.try_into().unwrap())
             .await
             .unwrap();
+        log::info!("Got client: {client:#?}");
+        loop {
+            let data = client.read(&executor_context).await;
+            log::info!("Got data: {data:#?}");
+        }
     });
     syscall_exit_process()
 }

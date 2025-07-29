@@ -1,5 +1,6 @@
 use core::{
     mem::MaybeUninit,
+    num::NonZero,
     slice::{self},
     sync::atomic::{AtomicU8, AtomicUsize},
     task::Poll,
@@ -51,7 +52,7 @@ impl<'a> AsyncKeyboard<'a> {
             slots: [],
         });
         let input = SyscallSubscribeToKeyboardInput {
-            capability: *env.get(&ENV_PS2_KEYBOARD_CAPABILITY).unwrap(),
+            capability: NonZero::new(*env.get(&ENV_PS2_KEYBOARD_CAPABILITY).unwrap()).unwrap(),
             queue_ptr: mem as *mut _ as u64,
         };
         // Safety: The pointer points to valid memory

@@ -1,20 +1,21 @@
 use core::{
     arch::asm,
-    num::{NonZeroU32, NonZeroU64},
+    num::{NonZero, NonZeroU64},
     ptr::NonNull,
 };
 
-use common::SyscallTakeFrameBufferError;
 use common::{
     AllocPageSize, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
     SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
     SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
     SyscallCreateChannel, SyscallExists, SyscallExitProcess, SyscallExitThread, SyscallGetThreadId,
-    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError,
+    SyscallGetThreadIdOutput, SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError,
+    SyscallMapSharedMem, SyscallMapSharedMemError, SyscallMapSharedMemInput,
     SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
     SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
     SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent, log,
 };
+use common::{PermissionFlags, SyscallTakeFrameBufferError};
 
 /// # Safety
 /// The input must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
@@ -114,7 +115,7 @@ pub unsafe fn syscall_spawn_thread(
 }
 
 /// Get this thread's id
-pub fn syscall_get_thread_id() -> NonZeroU32 {
+pub fn syscall_get_thread_id() -> SyscallGetThreadIdOutput {
     unsafe { syscall::<SyscallGetThreadId>(&()) }
 }
 
@@ -167,4 +168,16 @@ pub fn syscall_create_channel() -> u64 {
 
 pub fn syscall_tx_send(channel_id: u64) {
     unsafe { syscall::<SyscallTxSend>(&channel_id) };
+}
+
+pub fn syscall_map_shared_mem(
+    capability: NonZero<u64>,
+    permission_flags: PermissionFlags,
+) -> Result<NonNull<[u8]>, SyscallMapSharedMemError> {
+    let input = SyscallMapSharedMemInput {
+        capability,
+        permission_flags: permission_flags.bits(),
+    };
+    let slice = unsafe { syscall::<SyscallMapSharedMem>(&input) }?;
+    Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())
 }

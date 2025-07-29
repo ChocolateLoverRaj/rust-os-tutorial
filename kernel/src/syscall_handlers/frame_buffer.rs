@@ -2,7 +2,7 @@ use common::{
     SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer, SyscallTakeFrameBufferError,
     SyscallTakeFrameBufferOutput,
 };
-use nodit::{Interval, interval::ue};
+use nodit::interval::ue;
 use raw_cpuid::CpuId;
 use x86_64::{
     PhysAddr, VirtAddr,
@@ -18,7 +18,7 @@ use crate::{
     limine_requests::FRAME_BUFFER_REQUEST,
     logger,
     memory::MEMORY,
-    task::{THREADS, VirtualMemoryPermissions},
+    task::{THREADS, UserVirtMem},
 };
 
 use super::GenericSyscallHandler;
@@ -65,14 +65,10 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
                     range.clone().into(),
-                    VirtualMemoryPermissions {
-                        read: true,
-                        write: true,
-                        execute: false,
-                    },
+                    UserVirtMem::FrameBuffer,
                 )
                 .unwrap();
-            process_memory.frame_buffer_virtual_start = Some(*range.start());
+            // process_memory.frame_buffer_virtual_start = Some(*range.start());
             let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
                 frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
             ))
@@ -149,26 +145,35 @@ impl GenericSyscallHandler for SyscallReleaseFrameBufferHandler {
             let running_thread_id = local.running_thread.try_lock().unwrap().unwrap();
             let runnning_thread = threads.get(&running_thread_id).unwrap();
             let mut process_memory = runnning_thread.process.memory.write();
-            if let Some(frame_buffer_virtual_start) =
-                process_memory.frame_buffer_virtual_start.take()
-            {
+            let frame_buffer_interval =
+                process_memory
+                    .mapped_virtual_memory
+                    .iter()
+                    .find_map(|(interval, mem)| {
+                        if let UserVirtMem::FrameBuffer = mem {
+                            Some(*interval)
+                        } else {
+                            None
+                        }
+                    });
+            if let Some(frame_buffer_interval) = frame_buffer_interval {
                 let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
                 let frame_buffer = frame_buffer_response.framebuffers().next().unwrap();
                 // Safety: the page table is valid
                 let mut mapper = unsafe { get_page_table(runnning_thread.process.cr3, false) };
                 let frame_buffer_len = frame_buffer.pitch() * frame_buffer.height();
                 let n_pages = frame_buffer_len / Size4KiB::SIZE;
-                let start_page =
-                    Page::<Size4KiB>::from_start_address(VirtAddr::new(frame_buffer_virtual_start))
-                        .unwrap();
+                let start_page = Page::<Size4KiB>::from_start_address(VirtAddr::new(
+                    frame_buffer_interval.start(),
+                ))
+                .unwrap();
                 for i in 0..n_pages {
                     let page = start_page + i;
                     mapper.unmap(page).unwrap().2.flush();
                 }
-                let _ = process_memory.mapped_virtual_memory.cut(Interval::from(
-                    frame_buffer_virtual_start
-                        ..=frame_buffer_virtual_start + (frame_buffer_len - 1),
-                ));
+                let _ = process_memory
+                    .mapped_virtual_memory
+                    .cut(frame_buffer_interval);
                 logger::init_frame_buffer(frame_buffer_response, true);
                 log::debug!(
                     "User mode program released frame buffer. Frame buffer will again be used by the kernel for logging."

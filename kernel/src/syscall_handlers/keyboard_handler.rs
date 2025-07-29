@@ -30,7 +30,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                 .get(&helper.input().capability.into())
                 .ok_or(SyscallSubscribeToKeyboardError::InvalidCapability)?;
             if !(capability._type == CapabilityType::Ps2Keyboard
-                && capability.process.id == current_process.id)
+                && capability.process_id == current_process.id.into())
             {
                 Err(SyscallSubscribeToKeyboardError::InvalidCapability)?;
             }

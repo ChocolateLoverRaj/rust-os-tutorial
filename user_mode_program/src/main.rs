@@ -24,7 +24,7 @@ use futures::StreamExt;
 use pc_keyboard::{HandleControl, KeyCode, KeyState, ScancodeSet1, layouts::Us104Key};
 use spawn_process::spawn_process;
 use user_lib::{
-    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufServer, KeyboardSharedMemServer,
+    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufClient, KeyboardSharedMemServer,
     WindowSharedMemServer, execute_future, logger,
 };
 
@@ -265,13 +265,15 @@ fn main(initial_rsp: NonNull<()>) {
                         top_bar_height.into(),
                     );
                     loop {
-                        log::debug!("In loop");
-                        let s = state.tabs[*tab_index]
+                        let mut keyboard_buf = state.tabs[*tab_index]
                             .keyboard_server
                             .wait_for_request(&executor_context)
-                            .await;
-                        let keyboard_buf_server = KeyboardBufServer::new(s.get()).unwrap();
-                        log::debug!("requested slots count: {s:?}");
+                            .await
+                            .unwrap();
+                        log::debug!("established keyboardo buf: {keyboard_buf:?}");
+                        while let Some(_) = async_keyboard.next().await {
+                            keyboard_buf.push(42);
+                        }
                         let key_event = async_keyboard.next().await.unwrap().unwrap();
                         if let KeyState::Down | KeyState::SingleShot = key_event.state {
                             match key_event.code {

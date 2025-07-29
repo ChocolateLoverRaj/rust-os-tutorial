@@ -1,9 +1,8 @@
 use core::task::Poll;
 
-use common::log;
-
 use crate::{ExecutorContext, syscall_create_channel, syscall_tx_send};
 
+#[derive(Debug)]
 pub struct Sender {
     channel_id: u64,
 }

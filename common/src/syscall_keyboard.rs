@@ -1,10 +1,12 @@
+use core::num::NonZero;
+
 use bincode::{Decode, Encode};
 
 use crate::Syscall;
 
 #[derive(Debug, Encode, Decode)]
 pub struct SyscallSubscribeToKeyboardInput {
-    pub capability: u64,
+    pub capability: NonZero<u64>,
     /// A ptr to a struct which is slots_len (`usize`), write_count (`AtomicUsize`), read_count (`AtomicUsize`), and slots (`[AtomicU8]`).
     /// User mode is responsible for initializing the read and write counts.
     pub queue_ptr: u64,

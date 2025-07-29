@@ -50,7 +50,7 @@ impl GenericSyscallHandler for SyscallNewSharedMemHandler {
                 capability_id,
                 Capability {
                     _type: CapabilityType::SharedMem(shared_mem_id),
-                    process: thread.process.clone(),
+                    process_id: thread.process.id.into(),
                 },
             );
             Ok(capability_id.into())

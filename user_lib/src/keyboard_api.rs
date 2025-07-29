@@ -1,21 +1,22 @@
 use core::{
     mem::MaybeUninit,
-    num::{NonZero, NonZeroUsize},
+    num::NonZero,
     ptr::NonNull,
     slice,
-    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
 };
 
 use atomic_enum::atomic_enum;
 use common::{
-    AllocPageSize, SyscallAllocError, SyscallNewSharedMem, SyscallNewSharedMemInput, log,
+    AllocPageSize, PermissionFlags, PushError, QueueReader, QueueWriter, SyscallAllocError,
+    SyscallMapSharedMemError, SyscallNewSharedMem, SyscallNewSharedMemInput,
+    SyscallShareCapability, SyscallShareCapabilityInput,
 };
-use zerocopy::{FromBytes, IntoBytes, KnownLayout};
 
 use crate::{
     EnvEntries, ExecutorContext,
     async_channel::{self, Receiver, Sender},
-    syscall, syscall_alloc,
+    syscall, syscall_alloc, syscall_get_thread_id, syscall_map_shared_mem,
 };
 
 pub const KEYBOARD_ENV_KEY: u64 = 0x1D099897F69410FA;
@@ -40,18 +41,16 @@ impl KeyboardResponseResult {
 #[derive(Debug)]
 #[repr(C)]
 pub struct KeyboardSharedMem {
-    /// 0 - Not requested
-    /// >0 - Buffer size
+    pub server_process_id: NonZero<u32>,
+    /// 0 => Not requested
+    /// _ => Capability of shared mem
     ///
     /// The server sets this back to 0 when processing the request
-    pub keyboard_request: AtomicUsize,
+    pub keyboard_request: AtomicU64,
     /// Channel tx to notify that the keyboard is requested
     pub keyboard_request_tx: u64,
     /// Server sets this after the keyboard is requested
-    pub keyboard_response_result: AtomicKeyboardResponseResult,
-    /// The server sets this to the address of the keyboard buffer shared mem, if successfull.
-    /// Depending on the buffer size, this same page could be reused.
-    pub keyboard_response: AtomicUsize,
+    pub keyboard_response: AtomicBool,
     /// Channel rx to notify that the keyboard response is available (result and buffer address if set)
     pub keyboard_response_rx: u64,
 }
@@ -84,12 +83,10 @@ impl KeyboardSharedMemServer {
         let shared_mem = unsafe { shared_mem_ptr.as_mut() }
             .unwrap()
             .write(KeyboardSharedMem {
-                keyboard_request: AtomicUsize::new(0),
+                server_process_id: syscall_get_thread_id().process_id,
+                keyboard_request: Default::default(),
                 keyboard_request_tx: keyboard_request_tx.channel_id(),
-                keyboard_response_result: AtomicKeyboardResponseResult::new(
-                    KeyboardResponseResult::None,
-                ),
-                keyboard_response: AtomicUsize::new(0),
+                keyboard_response: Default::default(),
                 keyboard_response_rx: keyboard_response_rx.channel_id(),
             });
         Ok(Self {
@@ -116,9 +113,12 @@ impl KeyboardSharedMemServer {
         self.keyboard_response_tx.channel_id()
     }
 
-    pub async fn wait_for_request(&mut self, executor_context: &ExecutorContext) -> NonZero<usize> {
+    pub async fn wait_for_request(
+        &mut self,
+        executor_context: &ExecutorContext,
+    ) -> Result<KeyboardBufServer, SyscallMapSharedMemError> {
         let shared_mem = unsafe { self.shared_mem.as_mut() };
-        let requested_buffer_len = loop {
+        let shared_mem_capability = loop {
             if let Some(requested_buffer_len) =
                 NonZero::new(shared_mem.keyboard_request.swap(0, Ordering::Relaxed))
             {
@@ -126,7 +126,25 @@ impl KeyboardSharedMemServer {
             }
             self.keyboard_request_rx.receive(executor_context).await;
         };
-        requested_buffer_len
+        let buf_shared_mem = syscall_map_shared_mem(
+            shared_mem_capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )?;
+        let mut ptr = buf_shared_mem.cast::<MaybeUninit<KeyboardBufSharedMem>>();
+        let (sender, receiver) = async_channel::create();
+        unsafe { ptr.as_mut() }.write(KeyboardBufSharedMem {
+            write_count: Default::default(),
+            new_data_channel: receiver.channel_id(),
+            read_count: Default::default(),
+            slots: Default::default(),
+        });
+        shared_mem.keyboard_response.store(true, Ordering::Release);
+        self.keyboard_response_tx.send();
+        Ok(KeyboardBufServer {
+            shared_mem_capability,
+            shared_mem: buf_shared_mem,
+            new_data_sender: sender,
+        })
     }
 }
 
@@ -158,26 +176,39 @@ impl KeyboardSharedMemClient {
     pub async fn request(
         &mut self,
         executor_context: &ExecutorContext,
-        slots_len: NonZeroUsize,
-    ) -> Result<(), ()> {
+        slots_len: usize,
+    ) -> Result<KeyboardBufClient, SyscallMapSharedMemError> {
+        let len = size_of::<KeyboardBufSharedMem>() + size_of::<AtomicU8>() * slots_len;
+        let input = SyscallNewSharedMemInput {
+            page_size: AllocPageSize::_4KiB,
+            pages_len: len.div_ceil(AllocPageSize::_4KiB.len()),
+        };
+        let capability = unsafe { syscall::<SyscallNewSharedMem>(&input) }.unwrap();
+        let shared_mem = syscall_map_shared_mem(
+            capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )?;
+        let server_capability = {
+            let input = SyscallShareCapabilityInput {
+                capability,
+                process_id: self.shared_mem.server_process_id,
+            };
+            unsafe { syscall::<SyscallShareCapability>(&input) }
+        };
         self.shared_mem
             .keyboard_request
-            .store(slots_len.into(), Ordering::Relaxed);
+            .store(server_capability.get(), Ordering::Relaxed);
         self.request_tx.send();
         loop {
-            if let Some(result) = self
-                .shared_mem
-                .keyboard_response_result
-                .load(Ordering::Acquire)
-                .result()
-            {
-                break result;
+            if self.shared_mem.keyboard_response.load(Ordering::Acquire) {
+                break;
             };
             self.response_rx.receive(executor_context).await;
-        }?;
-        let addr = self.shared_mem.keyboard_response.load(Ordering::Relaxed);
-        log::info!("response addr: {addr:X}");
-        Ok(())
+        }
+        Ok(KeyboardBufClient {
+            shared_mem_capability: capability,
+            shared_mem,
+        })
     }
 }
 
@@ -187,188 +218,75 @@ pub struct KeyboardBufSharedMem {
     write_count: AtomicUsize,
     new_data_channel: u64,
     read_count: AtomicUsize,
-    slots_len: usize,
+    /// Whatever shared memory left is for slots
     slots: [AtomicU8; 0],
 }
 
-pub struct KeyboardBufServer {
+#[derive(Debug)]
+pub struct KeyboardBufClient {
+    shared_mem_capability: NonZero<u64>,
     shared_mem: NonNull<[u8]>,
-    slots_len: usize,
-    new_data_sender: Sender,
 }
 
-impl KeyboardBufServer {
-    pub fn new(slots_len: usize) -> Result<Self, SyscallAllocError> {
-        let len = size_of::<KeyboardBufSharedMem>() + size_of::<AtomicU8>() * slots_len;
-        let len_2 = NonZero::new(len.try_into().unwrap()).unwrap();
-
-        let input = SyscallNewSharedMemInput {
-            page_size: AllocPageSize::_4KiB,
-            pages_len: len.div_ceil(AllocPageSize::_4KiB.len()),
-        };
-        let capability = unsafe { syscall::<SyscallNewSharedMem>(&input) }.unwrap();
-        log::debug!("KeyboardBufServer::new: capability = {:?}", capability);
-
-        let shared_mem = syscall_alloc(len_2, AllocPageSize::_4KiB)?;
-        let mut ptr = shared_mem.cast::<MaybeUninit<KeyboardBufSharedMem>>();
-        let (sender, receiver) = async_channel::create();
-        unsafe { ptr.as_mut() }.write(KeyboardBufSharedMem {
-            write_count: Default::default(),
-            new_data_channel: receiver.channel_id(),
-            read_count: Default::default(),
-            slots_len,
-            slots: Default::default(),
-        });
-        Ok(Self {
-            shared_mem,
-            slots_len,
-            new_data_sender: sender,
-        })
-    }
-}
-
-#[derive(Debug, FromBytes, IntoBytes, KnownLayout)]
-#[repr(C)]
-pub struct SharedConcurrentQueue {
-    write_count: AtomicUsize,
-    read_count: AtomicUsize,
-    slots_count: usize,
-    /// A dynamic number of items
-    slots: [AtomicU8; 0],
-}
-
-impl SharedConcurrentQueue {
-    pub fn len(slots_len: usize) -> usize {
-        size_of::<Self>() + size_of::<AtomicU8>() * slots_len
-    }
-
-    /// Size of slice must be exact. Bytes can be uninitialized. They will be zeroed by this function.
-    pub fn init(bytes: &mut [u8]) -> &mut Self {
-        let (queue_bytes, slots_bytes) = bytes.split_at_mut(size_of::<Self>());
-        let s = Self::mut_from_bytes(queue_bytes).unwrap();
-        *s = Self {
-            write_count: AtomicUsize::new(0),
-            read_count: AtomicUsize::new(0),
-            slots_count: slots_bytes.len(),
-            slots: [],
-        };
-        slots_bytes.fill(0);
-        s
-    }
-
-    /// Do not have multiple writers at the same time
-    ///
-    /// # Safety
-    /// The slots len should be correct
-    pub unsafe fn get_writer(&self, slots_len: usize) -> QueueWriter<'_> {
-        let slots = (&self.slots as *const [AtomicU8; 0]).cast::<AtomicU8>();
-        let slots = unsafe { slice::from_raw_parts(slots, slots_len) };
-        QueueWriter::new(&self.write_count, &self.read_count, slots)
-    }
-
-    /// Do not have multiple readers at the same time
-    ///
-    /// # Safety
-    /// The slots len should be correct
-    pub unsafe fn get_reader(&self, slots_len: usize) -> QueueReader<'_> {
-        let slots = (&self.slots as *const [AtomicU8; 0]).cast::<AtomicU8>();
-        let slots = unsafe { slice::from_raw_parts(slots, slots_len) };
-        QueueReader::new(&self.write_count, &self.read_count, slots)
-    }
-}
-
-/// A writer does not trust the reader
-pub struct QueueWriter<'a> {
-    shared_write_count: &'a AtomicUsize,
-    shared_read_count: &'a AtomicUsize,
-    shared_slots: &'a [AtomicU8],
-}
-
-impl<'a> QueueWriter<'a> {
-    /// Creating multiple writers will cause unexpected behavior
-    pub fn new(
-        shared_write_count: &'a AtomicUsize,
-        shared_read_count: &'a AtomicUsize,
-        slots: &'a [AtomicU8],
-    ) -> Self {
-        Self {
-            shared_write_count,
-            shared_read_count,
-            shared_slots: slots,
+impl KeyboardBufClient {
+    pub async fn read(&mut self, executor_context: &ExecutorContext) -> u8 {
+        let slots_len =
+            (self.shared_mem.len() - size_of::<KeyboardBufSharedMem>()) / size_of::<AtomicU8>();
+        let shared_mem_ptr = self.shared_mem.cast::<KeyboardBufSharedMem>();
+        let shared_mem = unsafe { shared_mem_ptr.as_ref() };
+        let shared_slots_ptr = shared_mem.slots.as_ptr();
+        let shared_slots = unsafe { slice::from_raw_parts(shared_slots_ptr, slots_len) };
+        let mut reader = QueueReader::new(
+            &shared_mem.write_count,
+            &shared_mem.read_count,
+            shared_slots,
+        );
+        let mut receiver = unsafe { Receiver::from_channel_id(shared_mem.new_data_channel) };
+        loop {
+            if let Some(data) = reader.pop() {
+                break data;
+            }
+            receiver.receive(executor_context);
         }
+    }
+}
+
+impl Drop for KeyboardBufClient {
+    fn drop(&mut self) {
+        // TODO: Drop the shared mem
+        let _ = self.shared_mem_capability;
     }
 }
 
 #[derive(Debug)]
-pub enum PushError {
-    /// For some reason the read count or write count is an invalid value
-    InvalidState,
-    /// The buffer is full
-    NoSlotsAvailable(u8),
-    /// The write count overflowed. This should not happen, but it could happen if the reader messes up the write count.
-    WriteCountOverflow,
+pub struct KeyboardBufServer {
+    shared_mem_capability: NonZero<u64>,
+    shared_mem: NonNull<[u8]>,
+    new_data_sender: Sender,
 }
 
-impl QueueWriter<'_> {
+impl KeyboardBufServer {
     pub fn push(&mut self, item: u8) -> Result<(), PushError> {
-        let read_count = self.shared_read_count.load(Ordering::Relaxed);
-        let write_count = self.shared_write_count.load(Ordering::Relaxed);
-        if self.shared_slots.len()
-            > write_count
-                .checked_sub(read_count)
-                .ok_or(PushError::InvalidState)?
-        {
-            let slot_index = write_count % self.shared_slots.len();
-            self.shared_slots[slot_index].store(item, Ordering::Relaxed);
-            self.shared_write_count.store(
-                write_count
-                    .checked_add(1)
-                    .ok_or(PushError::WriteCountOverflow)?,
-                Ordering::Release,
-            );
-        } else {
-            Err(PushError::NoSlotsAvailable(item))?;
-        }
+        let slots_len =
+            (self.shared_mem.len() - size_of::<KeyboardBufSharedMem>()) / size_of::<AtomicU8>();
+        let shared_mem_ptr = self.shared_mem.cast::<KeyboardBufSharedMem>();
+        let shared_mem = unsafe { shared_mem_ptr.as_ref() };
+        let shared_slots_ptr = shared_mem.slots.as_ptr();
+        let shared_slots = unsafe { slice::from_raw_parts(shared_slots_ptr, slots_len) };
+        let mut writer = QueueWriter::new(
+            &shared_mem.write_count,
+            &shared_mem.read_count,
+            shared_slots,
+        );
+        writer.push(item)?;
+        self.new_data_sender.send();
         Ok(())
     }
 }
 
-/// A reader trusts the writer
-pub struct QueueReader<'a> {
-    shared_write_count: &'a AtomicUsize,
-    shared_read_count: &'a AtomicUsize,
-    shared_slots: &'a [AtomicU8],
-}
-
-impl<'a> QueueReader<'a> {
-    /// Creating multiple readers will cause unexpected behavior
-    pub fn new(
-        shared_write_count: &'a AtomicUsize,
-        shared_read_count: &'a AtomicUsize,
-        shared_slots: &'a [AtomicU8],
-    ) -> Self {
-        Self {
-            shared_write_count,
-            shared_read_count,
-            shared_slots,
-        }
-    }
-}
-
-impl QueueReader<'_> {
-    pub fn pop(&mut self) -> Option<u8> {
-        let read_count = self.shared_read_count.load(Ordering::Relaxed);
-        let write_count = self.shared_write_count.load(Ordering::Relaxed);
-        if write_count > read_count {
-            // This makes the data in slots read what the writer wrote, and not read something outdated
-            core::sync::atomic::fence(Ordering::Acquire);
-            let slot_index = read_count % 100;
-            let value = self.shared_slots[slot_index].load(Ordering::Relaxed);
-            self.shared_read_count
-                .store(read_count + 1, Ordering::Relaxed);
-            Some(value)
-        } else {
-            None
-        }
+impl Drop for KeyboardBufServer {
+    fn drop(&mut self) {
+        // TODO: Drop the shared mem
+        let _ = self.shared_mem_capability;
     }
 }

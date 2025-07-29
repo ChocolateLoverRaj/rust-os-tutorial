@@ -25,7 +25,7 @@ use crate::{
     task::{
         CHANNELS, Process, ProcessId, ProcessMappedVirtMem, ProcessMemory, StartData,
         THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState, ThreadReadyStateInSyscall,
-        ThreadState,
+        ThreadState, UserVirtMem,
     },
 };
 
@@ -56,7 +56,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 && process_memory
                     .mapped_virtual_memory
                     .overlapping(interval)
-                    .all(|(_, permissions)| permissions.read))
+                    .all(|(_, mem)| mem.permissions().read))
             {
                 Err(())?
             }
@@ -81,7 +81,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 && process_memory
                     .mapped_virtual_memory
                     .overlapping(interval)
-                    .all(|(_, permissions)| permissions.read))
+                    .all(|(_, mem)| mem.permissions().read))
             {
                 Err(())?
             }
@@ -102,7 +102,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 && process_memory
                     .mapped_virtual_memory
                     .overlapping(interval)
-                    .all(|(_, permissions)| permissions.read))
+                    .all(|(_, mem)| mem.permissions().read))
             {
                 Err(())?
             }
@@ -166,7 +166,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         && process_memory
                             .mapped_virtual_memory
                             .overlapping(interval)
-                            .all(|(_, permissions)| permissions.read)
+                            .all(|(_, mem)| mem.permissions().read)
                         && memory_mapping.current_process_start.is_multiple_of(S::SIZE)
                         && memory_mapping.len.is_multiple_of(S::SIZE))
                         && memory_mapping.new_process_start.is_multiple_of(S::SIZE)
@@ -188,7 +188,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         mapped_virtual_memory
                             .insert_merge_touching_if_values_equal(
                                 interval,
-                                memory_mapping_flags.into(),
+                                UserVirtMem::Plain(memory_mapping_flags.into()),
                             )
                             .map_err(|_| ())?;
                         let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
@@ -232,7 +232,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         mapped_virtual_memory
                             .insert_merge_touching_if_values_equal(
                                 interval,
-                                memory_mapping_flags.into(),
+                                UserVirtMem::Plain(memory_mapping_flags.into()),
                             )
                             .map_err(|_| ())?;
                         let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
@@ -323,7 +323,6 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         cr3: new_cr3,
                         id: new_process_id,
                         memory: spin::RwLock::new(ProcessMemory {
-                            frame_buffer_virtual_start: None,
                             mapped_virtual_memory,
                         }),
                         mutexes: Default::default(),

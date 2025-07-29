@@ -16,8 +16,8 @@ unsafe impl RawMutex for RawBlockingLock {
     type GuardMarker = GuardNoSend;
 
     fn lock(&self) {
-        let thread_id = syscall_get_thread_id();
-        let new = u64::from(u32::from(thread_id));
+        let thread_id = syscall_get_thread_id().thread_id;
+        let new = thread_id.get().into();
         let success = Ordering::Release;
         let failure = Ordering::Acquire;
 
@@ -74,8 +74,8 @@ unsafe impl RawMutex for RawBlockingLock {
     }
 
     fn try_lock(&self) -> bool {
-        let thread_id = syscall_get_thread_id();
-        let new = u64::from(u32::from(thread_id));
+        let thread_id = syscall_get_thread_id().thread_id;
+        let new = thread_id.get().into();
         let success = Ordering::Release;
         let failure = Ordering::Acquire;
         loop {
@@ -112,7 +112,7 @@ unsafe impl RawMutex for RawBlockingLock {
         if self
             .0
             .compare_exchange(
-                u64::from(u32::from(syscall_get_thread_id())),
+                syscall_get_thread_id().thread_id.get().into(),
                 0,
                 Ordering::AcqRel,
                 Ordering::Relaxed,
