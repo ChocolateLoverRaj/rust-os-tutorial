@@ -10,7 +10,7 @@ use x86_64::{
 
 use crate::{
     VirtMemPermissions,
-    capabilities::{CAPABILITIES, CapabilityId, CapabilityType},
+    capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     memory::MEMORY,
@@ -30,9 +30,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
             let capability_id = helper.input().capability;
             let capabilities = CAPABILITIES.read();
             // FIXME: Don't panic
-            let capability = capabilities
-                .get(&CapabilityId::from(capability_id))
-                .unwrap();
+            let capability = capabilities.get(&capability_id).unwrap();
 
             let thread_id = get_local().running_thread.try_lock().unwrap().unwrap();
             let threads = THREADS.read();
@@ -47,7 +45,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
             };
             let shared_mem = SHARED_MEM.read();
             let shared_mem = shared_mem.get(&shared_mem_id).unwrap();
-            let shared_mem_len = shared_mem.size.len() * shared_mem.phys_frames.len();
+            let shared_mem_len = shared_mem.size.byte_len() * shared_mem.phys_frames.len();
 
             let mut process_mem = thread.process.memory.write();
             log::debug!(

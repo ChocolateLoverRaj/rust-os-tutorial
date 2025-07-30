@@ -1,8 +1,8 @@
-use x86_64::instructions::port::Port;
+// use x86_64::instructions::port::Port;
 
 pub fn init() {
-    let mut config_address = Port::<u32>::new(0xCF8);
-    let mut config_data = Port::<u32>::new(0xCFC);
+    // let mut config_address = Port::<u32>::new(0xCF8);
+    // let mut config_data = Port::<u32>::new(0xCFC);
 
     // let mut pci_config_read_u16 = |bus: u8, slot: u8, func: u8, offset: u8| {
     //     let address = ((bus as u32) << 16)
@@ -15,16 +15,16 @@ pub fn init() {
     //     ((data >> ((offset & 2) * 8)) & 0xFFFF) as u16
     // };
 
-    let mut pci_config_read_u32 = |bus: u8, slot: u8, func: u8, offset: u8| {
-        let address = ((bus as u32) << 16)
-            | ((slot as u32) << 11)
-            | ((func as u32) << 8)
-            | ((offset as u32) & 0xFC)
-            | 0x80000000;
-        unsafe { config_address.write(address) };
-        let data = unsafe { config_data.read() };
-        data >> ((offset & 2) * 8)
-    };
+    // let mut pci_config_read_u32 = |bus: u8, slot: u8, func: u8, offset: u8| {
+    //     let address = ((bus as u32) << 16)
+    //         | ((slot as u32) << 11)
+    //         | ((func as u32) << 8)
+    //         | ((offset as u32) & 0xFC)
+    //         | 0x80000000;
+    //     unsafe { config_address.write(address) };
+    //     let data = unsafe { config_data.read() };
+    //     data >> ((offset & 2) * 8)
+    // };
 
     // let mut pci_check_vendor = |bus: u8, slot: u8| {
     //     let vendor = pci_config_read_u16(bus, slot, 0, 0);

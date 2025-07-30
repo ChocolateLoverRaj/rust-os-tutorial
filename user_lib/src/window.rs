@@ -1,4 +1,4 @@
-use core::{convert::Infallible, mem::MaybeUninit, ptr::NonNull, slice};
+use core::{convert::Infallible, mem::MaybeUninit, num::NonZero, ptr::NonNull, slice};
 
 use atomic_enum::atomic_enum;
 use common::{
@@ -12,8 +12,9 @@ use common::{
 };
 
 use crate::{
+    EnvEntries,
     async_channel::{self, Receiver, Sender},
-    syscall_alloc,
+    syscall_alloc, syscall_clone_capability,
 };
 
 pub const ENV_KEY: u64 = 0x2994A6830F66D288;
@@ -34,15 +35,10 @@ enum ActiveSlot {
 
 #[repr(C)]
 struct WindowSharedMem {
-    request_channel_id: u64,
-    // response_channel_id: u64,
+    request_channel_id: NonZero<u64>,
     window_info: WindowInfo,
     copy_data: CopyData,
-    // The client can write to the other slot while the server reads from one slot
-    // active_slot: AtomicActiveSlot,
-    // Two copies of pixels go below this
-    // pixels: [u32],
-    // data: [u8; 0x1000 - (size_of::<u64>() + size_of::<u64>() + size_of::<WindowInfo>())],
+    pixels: [u32; 0],
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -59,8 +55,10 @@ pub struct WindowSharedMemClient {
 }
 
 impl WindowSharedMemClient {
-    pub unsafe fn new(data: u64) -> Self {
-        let ptr = data as *mut WindowSharedMem;
+    /// # Safety
+    /// This function should only be called once, because calling this function multiple times will result in multiple simultaneous mutable references.
+    pub unsafe fn new(env_entries: &EnvEntries) -> Self {
+        let ptr = *env_entries.get(&ENV_KEY).unwrap() as *mut WindowSharedMem;
         let data = unsafe { ptr.as_mut() }.unwrap();
         Self { data }
     }
@@ -122,32 +120,41 @@ pub enum DrawToFrameBufferError {
 }
 
 impl WindowSharedMemServer {
-    pub fn new(width: u64, height: u64, frame_buffer: &FrameBufferEmbeddedGraphics) -> Self {
+    pub fn new(
+        width: u64,
+        height: u64,
+        frame_buffer: &FrameBufferEmbeddedGraphics,
+    ) -> (Self, NonZero<u64>) {
         let pixel_count = (width * height) as usize;
         let total_size = ((size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count) as u64)
             .next_multiple_of(AllocPageSize::_2MiB.size_bytes());
         let shared_mem =
             syscall_alloc(total_size.try_into().unwrap(), AllocPageSize::_2MiB).unwrap();
         let (sender, receiver) = async_channel::create();
+        let sender_capability = syscall_clone_capability(sender.channel_id()).unwrap();
         {
             let mut shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
             let shared_mem = unsafe { shared_mem.as_mut() };
             shared_mem.write(WindowSharedMem {
-                request_channel_id: sender.channel_id(),
+                request_channel_id: sender_capability,
                 window_info: WindowInfo {
                     width,
                     height,
                     pixel_info: frame_buffer.info().pixel_info,
                 },
                 copy_data: Default::default(),
+                pixels: Default::default(),
             });
         }
-        Self {
-            shared_mem: shared_mem.cast(),
-            receiver,
-            width,
-            height,
-        }
+        (
+            Self {
+                shared_mem: shared_mem.cast(),
+                receiver,
+                width,
+                height,
+            },
+            sender_capability,
+        )
     }
 
     pub fn addr(&self) -> usize {
@@ -160,7 +167,7 @@ impl WindowSharedMemServer {
             .next_multiple_of(AllocPageSize::_2MiB.size_bytes() as usize)
     }
 
-    pub fn channel_id(&self) -> u64 {
+    pub fn channel_id(&self) -> NonZero<u64> {
         self.receiver.channel_id()
     }
 
@@ -172,8 +179,7 @@ impl WindowSharedMemServer {
     ) {
         let mut shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
         let shared_mem = unsafe { shared_mem_ptr.as_mut() };
-        let pixels_ptr =
-            (usize::from(self.shared_mem.addr()) + size_of::<WindowSharedMem>()) as *mut u32;
+        let pixels_ptr = shared_mem.pixels.as_mut_ptr();
         let pixel_count = (self.width * self.height) as usize;
         let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
         let copy_data = shared_mem.copy_data;

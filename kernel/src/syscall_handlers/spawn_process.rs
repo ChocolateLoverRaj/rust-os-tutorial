@@ -1,4 +1,4 @@
-use core::fmt::Debug;
+use core::{fmt::Debug, num::NonZero};
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use common::{
@@ -17,15 +17,16 @@ use x86_64::{
 use zerocopy::TryFromBytes;
 
 use crate::{
+    CAPABILITIES,
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     interrupt_vector::InterruptVector,
     memory::{MEMORY, MemoryType, PhysicalMemory},
     run_tasks::run_threads,
     task::{
-        CHANNELS, Process, ProcessId, ProcessMappedVirtMem, ProcessMemory, StartData,
-        THREAD_PRIORITIES, THREADS, Thread, ThreadId, ThreadReadyState, ThreadReadyStateInSyscall,
-        ThreadState, UserVirtMem,
+        Process, ProcessId, ProcessMappedVirtMem, ProcessMemory, StartData, THREAD_PRIORITIES,
+        THREADS, Thread, ThreadId, ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
+        UserVirtMem,
     },
 };
 
@@ -93,8 +94,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             .ok_or(())?;
 
             let interval = Interval::from(
-                input.send_senders.pointer()
-                    ..input.send_senders.pointer() + input.send_senders.len(),
+                input.send_capabilities.pointer()
+                    ..input.send_capabilities.pointer() + input.send_capabilities.len(),
             );
             if !(process_memory
                 .mapped_virtual_memory
@@ -106,28 +107,21 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             {
                 Err(())?
             }
-            let send_senders = unsafe { input.send_senders.try_to_slice::<u64>().ok_or(()) }?;
-            let send_receivers = unsafe { input.send_receivers.try_to_slice::<u64>().ok_or(()) }?;
+            let new_process_id = ProcessId::new_unique();
+            let send_capabilities =
+                unsafe { input.send_capabilities.try_to_slice::<u64>().ok_or(()) }?;
+            let mut capabilities = CAPABILITIES.write();
+            for capability in send_capabilities {
+                let capability_id = NonZero::new(*capability).ok_or(())?;
+                let capability = capabilities.get_mut(&capability_id).ok_or(())?;
+                if capability.process_id != running_thread.process.id.into() {
+                    Err(())?
+                }
+                capability.process_id = new_process_id.into();
+            }
 
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
-            let new_process_id = ProcessId::new_unique();
-            let mut channels = CHANNELS.write();
-            for send_chanel in send_senders {
-                let channel = channels.get_mut(send_chanel).ok_or(())?;
-                if channel.sender != running_thread.process.id {
-                    Err(())?
-                }
-                channel.sender = new_process_id;
-            }
-            for send_receiver in send_receivers {
-                let channel = channels.get_mut(send_receiver).ok_or(())?;
-                if channel.receiver != running_thread.process.id {
-                    Err(())?;
-                }
-                channel.receiver = new_process_id;
-            }
-
             let new_cr3 = physical_memory
                 .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(BTreeSet::from([
                     new_process_id,
@@ -149,6 +143,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                             .checked_add(memory_mapping.len)
                             .ok_or(())?,
                 );
+                #[allow(clippy::too_many_arguments)]
                 fn map_region_with_page_size<S: PageSize + Debug>(
                     memory_mapping: &SpawnProcessMemoryMapping,
                     mapped_virtual_memory: &mut ProcessMappedVirtMem,
@@ -314,7 +309,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             *running_thread.state.write() =
                 ThreadState::Ready(ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
                     saved_regs: helper.saved_regs().clone(),
-                    output: <Self::S as Syscall>::encode_output(&()),
+                    output: <Self::S as Syscall>::encode_output(&new_process_id.into()),
                 }));
             threads.insert(
                 new_thread_id,

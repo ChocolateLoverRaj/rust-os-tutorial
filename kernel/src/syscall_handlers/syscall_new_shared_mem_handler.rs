@@ -47,7 +47,7 @@ impl GenericSyscallHandler for SyscallNewSharedMemHandler {
             let thread_id = get_local().running_thread.try_lock().unwrap().unwrap();
             let thread = threads.get(&thread_id).unwrap();
             capabilities.insert(
-                capability_id,
+                capability_id.into(),
                 Capability {
                     _type: CapabilityType::SharedMem(shared_mem_id),
                     process_id: thread.process.id.into(),

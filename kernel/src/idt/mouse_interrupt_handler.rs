@@ -3,8 +3,8 @@ use core::arch::naked_asm;
 use x86_64::structures::idt::InterruptStackFrame;
 
 use crate::{
-    interrupted_context::InterruptedContext, ps2_interrupt_handler::ps2_interrupt_handler,
-    task::EventStreamSource,
+    EventStreamSource, interrupted_context::InterruptedContext,
+    ps2_interrupt_handler::ps2_interrupt_handler,
 };
 
 #[unsafe(naked)]

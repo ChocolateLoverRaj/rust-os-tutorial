@@ -1,12 +1,13 @@
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::AtomicU8;
 
 use common::{SyscallSubscribeToKeyboard, SyscallSubscribeToKeyboardError};
 
 use crate::{
+    Capability, CapabilityId, EventStream, EventStreamSource,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     event_stream_mem::EventStreamMem,
-    task::{EVENT_ID, EventStream, EventStreamSource, PS2_EVENT_STREAMS, THREADS},
+    task::THREADS,
 };
 
 use super::GenericSyscallHandler;
@@ -16,7 +17,6 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
     type S = SyscallSubscribeToKeyboard;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let output = (|| {
-            let mut event_streams = PS2_EVENT_STREAMS.write();
             let threads = THREADS.read();
             let local = get_local();
             let current_process = &threads
@@ -25,11 +25,11 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                 .process;
 
             // Check permissions
-            let capabilities = CAPABILITIES.read();
+            let mut capabilities = CAPABILITIES.write();
             let capability = capabilities
-                .get(&helper.input().capability.into())
+                .get(&helper.input().capability)
                 .ok_or(SyscallSubscribeToKeyboardError::InvalidCapability)?;
-            if !(capability._type == CapabilityType::Ps2Keyboard
+            if !(matches!(capability._type, CapabilityType::Ps2Keyboard)
                 && capability.process_id == current_process.id.into())
             {
                 Err(SyscallSubscribeToKeyboardError::InvalidCapability)?;
@@ -47,19 +47,22 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
             let slots_len = mem.slots_len;
             let slots_ptr = mem_ptr.addr() + size_of::<EventStreamMem>();
             let slots_ptr_end = slots_ptr + size_of::<AtomicU8>() * slots_len;
-            if !(slots_ptr_end <= lower_half_end) {
+            if slots_ptr_end > lower_half_end {
                 todo!()
             }
-            let event_stream_id = EVENT_ID.fetch_add(1, Ordering::Relaxed);
-            event_streams.insert(
-                event_stream_id,
-                EventStream {
-                    process: current_process.clone(),
-                    source: EventStreamSource::Ps2Keyboard,
-                    ptr: mem_ptr.addr(),
+            let capability_id = CapabilityId::new_unique();
+            capabilities.insert(
+                capability_id.into(),
+                Capability {
+                    _type: CapabilityType::EventStream(EventStream {
+                        process: current_process.clone(),
+                        source: EventStreamSource::Ps2Keyboard,
+                        ptr: mem_ptr.addr(),
+                    }),
+                    process_id: current_process.id.into(),
                 },
             );
-            Ok(event_stream_id)
+            Ok(capability_id.into())
         })();
         helper.syscall_return(&output)
     }

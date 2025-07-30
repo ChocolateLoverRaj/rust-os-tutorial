@@ -1,7 +1,7 @@
 use core::{
     mem::MaybeUninit,
-    num::NonZeroU32,
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    num::{NonZero, NonZeroU32},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use alloc::{
@@ -22,14 +22,17 @@ use crate::{
 pub struct ThreadWaitingState {
     pub saved_regs: SyscallSavedRegs,
     pub events_slice: SliceData,
-    pub events: BTreeMap<u64, bool>,
+    pub events: BTreeMap<NonZero<u64>, bool>,
 }
 
 impl ThreadWaitingState {
     /// # Safety
     /// Enters user mode according to saved registers
     pub unsafe fn sysretq(self) -> ! {
-        let events = unsafe { self.events_slice.to_slice_mut::<MaybeUninit<u64>>() };
+        let events = unsafe {
+            self.events_slice
+                .to_slice_mut::<MaybeUninit<NonZero<u64>>>()
+        };
         let mut events_count = 0;
         for event in self.events.into_iter().filter_map(
             |(event, happened)| {
@@ -43,21 +46,6 @@ impl ThreadWaitingState {
         unsafe { self.saved_regs.sysretq(output) }
     }
 }
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum EventStreamSource {
-    Ps2Keyboard,
-    Ps2Mouse,
-}
-
-#[derive(Debug)]
-pub struct EventStream {
-    pub process: Arc<Process>,
-    pub source: EventStreamSource,
-    pub ptr: usize,
-}
-
-pub static EVENT_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SharedVirtMem {
@@ -215,18 +203,6 @@ impl From<ProcessId> for NonZeroU32 {
 
 pub static THREAD_PRIORITIES: spin::RwLock<Vec<ThreadId>> = spin::RwLock::new(Vec::new());
 pub static THREADS: spin::RwLock<BTreeMap<ThreadId, Thread>> = spin::RwLock::new(BTreeMap::new());
-
-pub static PS2_EVENT_STREAMS: spin::RwLock<BTreeMap<u64, EventStream>> =
-    spin::RwLock::new(BTreeMap::new());
-
-#[derive(Debug)]
-pub struct Channel {
-    pub receiver: ProcessId,
-    pub sender: ProcessId,
-    pub pending_event: AtomicBool,
-}
-
-pub static CHANNELS: spin::RwLock<BTreeMap<u64, Channel>> = spin::RwLock::new(BTreeMap::new());
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MutexKey {

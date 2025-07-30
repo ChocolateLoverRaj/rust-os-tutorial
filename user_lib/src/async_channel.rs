@@ -1,10 +1,10 @@
-use core::task::Poll;
+use core::{num::NonZero, task::Poll};
 
 use crate::{ExecutorContext, syscall_create_channel, syscall_tx_send};
 
 #[derive(Debug)]
 pub struct Sender {
-    channel_id: u64,
+    channel_id: NonZero<u64>,
 }
 
 impl Sender {
@@ -12,19 +12,19 @@ impl Sender {
         syscall_tx_send(self.channel_id);
     }
 
-    pub fn channel_id(&self) -> u64 {
+    pub fn channel_id(&self) -> NonZero<u64> {
         self.channel_id
     }
 
     /// # Safety
     /// The channel with the id must exist, the calling process must own the Sender for it, and do not create multiple instances of [`Sender`] from the channel id.
-    pub unsafe fn from_channel_id(channel_id: u64) -> Self {
+    pub unsafe fn from_channel_id(channel_id: NonZero<u64>) -> Self {
         Self { channel_id }
     }
 }
 
 pub struct Receiver {
-    channel_id: u64,
+    channel_id: NonZero<u64>,
 }
 
 impl Receiver {
@@ -35,13 +35,13 @@ impl Receiver {
         }
     }
 
-    pub fn channel_id(&self) -> u64 {
+    pub fn channel_id(&self) -> NonZero<u64> {
         self.channel_id
     }
 
     /// # Safety
     /// The channel with the id must exist, the calling process must own the Receiver for it, and do not create multiple instances of [`Sender`] from the channel id.
-    pub unsafe fn from_channel_id(channel_id: u64) -> Self {
+    pub unsafe fn from_channel_id(channel_id: NonZero<u64>) -> Self {
         Self { channel_id }
     }
 }

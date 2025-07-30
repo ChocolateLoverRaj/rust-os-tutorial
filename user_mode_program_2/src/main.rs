@@ -15,7 +15,7 @@ use common::{
 };
 use pc_keyboard::{HandleControl, Keyboard, ScancodeSet1, layouts::Us104Key};
 use user_lib::{
-    CopyData, ENV_KEY, EnvEntries, ExecutorContext, KeyboardSharedMemClient, WindowSharedMemClient,
+    CopyData, EnvEntries, ExecutorContext, KeyboardSharedMemClient, WindowSharedMemClient,
     execute_future, logger, syscall_exit_process,
 };
 
@@ -28,8 +28,7 @@ fn main(initial_rsp: NonNull<()>) -> ! {
     let env_entries = unsafe { EnvEntries::from_initial_rsp(initial_rsp) };
     log::debug!("{env_entries:#X?}");
 
-    let ptr = *env_entries.get(&ENV_KEY).unwrap();
-    let mut window_client = unsafe { WindowSharedMemClient::new(ptr) };
+    let mut window_client = unsafe { WindowSharedMemClient::new(&env_entries) };
     let mut keyboard = unsafe { KeyboardSharedMemClient::new(&env_entries) }.unwrap();
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {

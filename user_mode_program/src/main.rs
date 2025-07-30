@@ -2,12 +2,11 @@
 #![no_main]
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_uninit_array_transpose)]
-use core::{arch::naked_asm, ops::DerefMut, ptr::NonNull};
+use core::{arch::naked_asm, num::NonZero, ops::DerefMut, ptr::NonNull};
 
 use alloc::vec::Vec;
-use async_keyboard_decoded::AsyncKeyboardDecoded;
 use common::{
-    SpawnProcessRelativePriority,
+    SpawnProcessRelativePriority, SyscallMapSharedMemError,
     embedded_graphics::{
         Drawable,
         geometry::{AnchorX, AnchorY},
@@ -20,18 +19,20 @@ use common::{
     log,
 };
 use frame_buffer::FrameBuffer;
-use futures::StreamExt;
-use pc_keyboard::{HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1, layouts::Us104Key};
+use futures::{FutureExt, StreamExt, pin_mut, select_biased};
+use pc_keyboard::{
+    HandleControl, KeyCode, KeyEvent, KeyState, Keyboard, ScancodeSet1, layouts::Us104Key,
+};
 use spawn_process::spawn_process;
 use user_lib::{
-    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufClient, KeyboardSharedMemServer,
+    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufServer, KeyboardSharedMemServer,
     WindowSharedMemServer, execute_future, logger,
 };
 
 extern crate alloc;
 
 pub mod async_keyboard_decoded;
-pub mod async_mouse_decoded;
+// pub mod async_mouse_decoded;
 pub mod frame_buffer;
 pub mod spawn_process;
 
@@ -56,10 +57,21 @@ fn main(initial_rsp: NonNull<()>) {
     execute_future(&executor_context, async {
         let mut async_keyboard = AsyncKeyboard::new(&env_entries, &executor_context, 64);
         let mut keyboard = Keyboard::new(ScancodeSet1::new(), Us104Key, HandleControl::Ignore);
+        let process_keyboard_data =
+            |keyboard: &mut Keyboard<Us104Key, ScancodeSet1>, data: u8| -> Option<KeyEvent> {
+                if let Ok(Some(key_event)) = keyboard.add_byte(data) {
+                    keyboard.process_keyevent(key_event.clone());
+                    Some(key_event)
+                } else {
+                    None
+                }
+            };
         struct Tab {
             app_index: usize,
+            process_id: NonZero<u32>,
             window: WindowSharedMemServer,
             keyboard_server: KeyboardSharedMemServer,
+            keyboard_buffers: Vec<KeyboardBufServer>,
         }
         struct State {
             tabs: Vec<Tab>,
@@ -191,7 +203,7 @@ fn main(initial_rsp: NonNull<()>) {
                     loop {
                         let key_event = loop {
                             let data = async_keyboard.next().await.unwrap();
-                            if let Ok(Some(key_event)) = keyboard.add_byte(data) {
+                            if let Some(key_event) = process_keyboard_data(&mut keyboard, data) {
                                 break key_event;
                             }
                         };
@@ -213,25 +225,30 @@ fn main(initial_rsp: NonNull<()>) {
                                     break;
                                 }
                                 KeyCode::Return => {
-                                    let width =
-                                        frame_buffer.bounding_box().size.width.try_into().unwrap();
-                                    let height =
-                                        u64::try_from(frame_buffer.bounding_box().size.height)
-                                            .unwrap()
-                                            - u64::from(top_bar_height);
-                                    let window =
+                                    let width = frame_buffer.bounding_box().size.width.into();
+                                    let height = u64::from(frame_buffer.bounding_box().size.height)
+                                        - u64::from(top_bar_height);
+                                    let mut send_capabilities = Vec::new();
+                                    let (window, window_send_capability) =
                                         WindowSharedMemServer::new(width, height, &frame_buffer);
-                                    let keyboard_server = KeyboardSharedMemServer::new().unwrap();
-                                    spawn_process(
+                                    send_capabilities.push(window_send_capability);
+                                    let (keyboard_server, keyboard_send_capabilities) =
+                                        KeyboardSharedMemServer::new().unwrap();
+                                    send_capabilities
+                                        .extend_from_slice(&keyboard_send_capabilities);
+                                    let process_id = spawn_process(
                                         *focused_index,
                                         SpawnProcessRelativePriority::Lower,
                                         &window,
                                         &keyboard_server,
+                                        &send_capabilities,
                                     );
                                     state.tabs.push(Tab {
                                         app_index: *focused_index,
+                                        process_id,
                                         window,
                                         keyboard_server,
+                                        keyboard_buffers: Default::default(),
                                     });
                                     state.focus = Focus::Tab(0);
                                     break;
@@ -266,62 +283,84 @@ fn main(initial_rsp: NonNull<()>) {
                         top_bar_height.into(),
                     );
                     loop {
-                        let mut keyboard_buf = state.tabs[*tab_index]
-                            .keyboard_server
-                            .wait_for_request(&executor_context)
-                            .await
-                            .unwrap();
-                        log::debug!("established keyboardo buf: {keyboard_buf:?}");
-                        while let Some(data) = async_keyboard.next().await {
-                            let _ = keyboard_buf.push(data);
+                        enum Event {
+                            KeyboardRequest(Result<KeyboardBufServer, SyscallMapSharedMemError>),
+                            KeyboardData(Option<u8>),
                         }
-                        let key_event = loop {
-                            let data = async_keyboard.next().await.unwrap();
-                            if let Ok(Some(key_event)) = keyboard.add_byte(data) {
-                                break key_event;
+                        let event = {
+                            let client_process_id = state.tabs[*tab_index].process_id;
+                            let keyboard_request_fut = state.tabs[*tab_index]
+                                .keyboard_server
+                                .wait_for_request(&executor_context, client_process_id)
+                                .fuse();
+                            pin_mut!(keyboard_request_fut);
+                            let mut keyboard_data_fut = async_keyboard.next();
+                            select_biased! {
+                                result = keyboard_request_fut => Event::KeyboardRequest(result),
+                                keyboard_data = keyboard_data_fut => Event::KeyboardData(keyboard_data),
                             }
                         };
-                        if let KeyState::Down | KeyState::SingleShot = key_event.state {
-                            match key_event.code {
-                                KeyCode::W | KeyCode::Escape => {
-                                    let tab_index = *tab_index;
-                                    state.tabs.remove(tab_index);
-                                    state.focus = if !state.tabs.is_empty() {
-                                        Focus::Tab(tab_index.saturating_sub(1))
-                                    } else {
-                                        Focus::NewTab(Default::default())
-                                    };
-                                    content_rect
-                                        .draw_styled(
-                                            &PrimitiveStyleBuilder::new()
-                                                .fill_color(Rgb888::BLACK)
-                                                .build(),
-                                            frame_buffer.deref_mut(),
-                                        )
-                                        .unwrap();
-                                    break;
+                        match event {
+                            Event::KeyboardRequest(result) => match result {
+                                Ok(keyboard_buf) => {
+                                    state.tabs[*tab_index].keyboard_buffers.push(keyboard_buf);
                                 }
-                                KeyCode::T => {
-                                    state.focus = Focus::NewTab(Default::default());
-                                    content_rect
-                                        .draw_styled(
-                                            &PrimitiveStyleBuilder::new()
-                                                .fill_color(Rgb888::BLACK)
-                                                .build(),
-                                            frame_buffer.deref_mut(),
-                                        )
-                                        .unwrap();
-                                    break;
+                                Err(e) => log::warn!("Error getting keyboard request: {e:#?}"),
+                            },
+                            Event::KeyboardData(data) => {
+                                let data = data.unwrap();
+                                if let Some(key_event) = process_keyboard_data(&mut keyboard, data)
+                                    && let KeyState::Down | KeyState::SingleShot = key_event.state
+                                    && {
+                                        let modifiers = keyboard.get_modifiers();
+                                        modifiers.lctrl || modifiers.rctrl
+                                    }
+                                {
+                                    match key_event.code {
+                                        KeyCode::W | KeyCode::Escape => {
+                                            let tab_index = *tab_index;
+                                            state.tabs.remove(tab_index);
+                                            state.focus = if !state.tabs.is_empty() {
+                                                Focus::Tab(tab_index.saturating_sub(1))
+                                            } else {
+                                                Focus::NewTab(Default::default())
+                                            };
+                                            content_rect
+                                                .draw_styled(
+                                                    &PrimitiveStyleBuilder::new()
+                                                        .fill_color(Rgb888::BLACK)
+                                                        .build(),
+                                                    frame_buffer.deref_mut(),
+                                                )
+                                                .unwrap();
+                                            break;
+                                        }
+                                        KeyCode::T => {
+                                            state.focus = Focus::NewTab(Default::default());
+                                            content_rect
+                                                .draw_styled(
+                                                    &PrimitiveStyleBuilder::new()
+                                                        .fill_color(Rgb888::BLACK)
+                                                        .build(),
+                                                    frame_buffer.deref_mut(),
+                                                )
+                                                .unwrap();
+                                            break;
+                                        }
+                                        KeyCode::Tab => {
+                                            *tab_index = if *tab_index + 1 < state.tabs.len() {
+                                                *tab_index + 1
+                                            } else {
+                                                0
+                                            };
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
                                 }
-                                KeyCode::Tab => {
-                                    *tab_index = if *tab_index + 1 < state.tabs.len() {
-                                        *tab_index + 1
-                                    } else {
-                                        0
-                                    };
-                                    break;
+                                for buf in &mut state.tabs[*tab_index].keyboard_buffers {
+                                    let _ = buf.push(data);
                                 }
-                                _ => {}
                             }
                         }
                     }

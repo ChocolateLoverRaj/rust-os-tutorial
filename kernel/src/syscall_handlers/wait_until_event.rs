@@ -1,14 +1,14 @@
-use core::sync::atomic::Ordering;
+use core::num::NonZero;
 
 use alloc::boxed::Box;
 use common::SyscallWaitUntilEvent;
 use nodit::interval::ie;
 
 use crate::{
+    CAPABILITIES,
     cpu_local_data::get_local,
-    event_stream_mem::EventStreamMem,
     run_tasks::run_threads,
-    task::{CHANNELS, PS2_EVENT_STREAMS, THREADS, ThreadState, ThreadWaitingState},
+    task::{THREADS, ThreadState, ThreadWaitingState},
 };
 
 use super::GenericSyscallHandler;
@@ -30,6 +30,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let local = get_local();
             let mut running_thread = local.running_thread.lock();
             let current_thread = threads.get(&running_thread.unwrap()).unwrap();
+            // log::debug!("Thread: {current_thread:?}");
             if !current_thread
                 .process
                 .memory
@@ -46,30 +47,19 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
             let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
             let input_events = events.iter().copied().collect::<Box<_>>();
             let mut events_pushed = 0;
-            let event_streams = PS2_EVENT_STREAMS.read();
-            let channels = CHANNELS.read();
+            let capabilities = CAPABILITIES.read();
             for event in &input_events {
-                // TODO: Improve what happens if the event already happened. Maybe user space can directly check which events happened by itself.
-                if let Some(event_stream) = event_streams.get(event) {
-                    if event_stream.process.id != current_thread.process.id {
+                if let Some(capability_id) = NonZero::new(*event) {
+                    let capability = capabilities.get(&capability_id).ok_or(())?;
+                    if capability.process_id != current_thread.process.id.into() {
                         Err(())?;
                     }
-                    let mem = event_stream.ptr as *const EventStreamMem;
-                    let mem = unsafe { mem.as_ref() }.unwrap();
-                    if mem.read_count.load(Ordering::Relaxed)
-                        < mem.write_count.load(Ordering::Relaxed)
-                    {
+                    if capability._type.take_pending_event().ok_or(())? {
                         events[events_pushed] = *event;
                         events_pushed += 1;
                     }
-                } else if let Some(channel) = channels.get(event) {
-                    if channel.receiver != current_thread.process.id {
-                        Err(())?;
-                    }
-                    if channel.pending_event.swap(false, Ordering::Relaxed) {
-                        events[events_pushed] = *event;
-                        events_pushed += 1;
-                    }
+                } else {
+                    Err(())?;
                 }
             }
 
@@ -81,7 +71,7 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
                     events_slice: *input,
                     events: input_events
                         .into_iter()
-                        .map(|event| (event, false))
+                        .map(|event| (event.try_into().unwrap(), false))
                         .collect(),
                 });
                 *running_thread = None;

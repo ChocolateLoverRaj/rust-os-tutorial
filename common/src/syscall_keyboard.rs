@@ -22,5 +22,5 @@ pub struct SyscallSubscribeToKeyboard;
 impl Syscall for SyscallSubscribeToKeyboard {
     const ID: u64 = 0x2EF02CFFF07EEBD0;
     type Input = SyscallSubscribeToKeyboardInput;
-    type Output = Result<u64, SyscallSubscribeToKeyboardError>;
+    type Output = Result<NonZero<u64>, SyscallSubscribeToKeyboardError>;
 }

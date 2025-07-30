@@ -1,0 +1,36 @@
+{
+    "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+    "version": "0.2",
+    "words": [
+        "uninit",
+        "spsc",
+        "syscall",
+        "syscalls",
+        "futex",
+        "scancode",
+        "rctrl",
+        "lctrl",
+        "regs",
+        "apic",
+        "repr",
+        "keyevent",
+        "sysv64",
+        "virt",
+        "sysretq",
+        "lapic",
+        "thiserror",
+        "cpuid",
+        "serde",
+        "zerocopy",
+        "bitflags",
+        "limine",
+        "nodit",
+        "uart",
+        "acpi",
+        "pixelcolor"
+    ],
+    "ignorePaths": [
+        "Cargo.lock",
+        "flake.lock"
+    ]
+}

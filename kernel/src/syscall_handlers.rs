@@ -15,9 +15,10 @@ use mouse::SyscallSubscribeToMouseHandler;
 use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc_handler::SyscallAllocHandler;
+use syscall_clone_capability_handler::SyscallCloneCapabilityHandler;
 use syscall_map_shared_mem_handler::SyscallMapSharedMemHandler;
 use syscall_new_shared_mem_handler::SyscallNewSharedMemHandler;
-use syscall_share_capability_handler::SyscallShareCapabilityHandler;
+use syscall_send_capability_handler::SyscallSendCapabilityHandler;
 use terminate_process_handler::SyscallTerminateProcessHandler;
 use wait_until_event::SyscallWaitUntilEventHandler;
 
@@ -38,9 +39,10 @@ mod mouse;
 mod spawn_process;
 mod spawn_thread;
 mod syscall_alloc_handler;
+mod syscall_clone_capability_handler;
 mod syscall_map_shared_mem_handler;
 mod syscall_new_shared_mem_handler;
-mod syscall_share_capability_handler;
+mod syscall_send_capability_handler;
 mod terminate_process_handler;
 mod wait_until_event;
 
@@ -124,7 +126,8 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallSubscribeToKeyboardHandler,
     &SyscallNewSharedMemHandler,
     &SyscallMapSharedMemHandler,
-    &SyscallShareCapabilityHandler,
+    &SyscallSendCapabilityHandler,
+    &SyscallCloneCapabilityHandler,
 ];
 pub struct SyscallHandlers {
     map: BTreeMap<u64, &'static dyn SyscallHandler>,

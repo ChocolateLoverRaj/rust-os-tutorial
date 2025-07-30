@@ -13,7 +13,7 @@ pub enum AllocPageSize {
 }
 
 impl AllocPageSize {
-    pub fn len(self) -> usize {
+    pub fn byte_len(self) -> usize {
         match self {
             AllocPageSize::_4KiB => 0x1000,
             AllocPageSize::_2MiB => 512 * 0x1000,

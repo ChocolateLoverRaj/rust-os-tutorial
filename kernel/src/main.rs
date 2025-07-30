@@ -6,6 +6,7 @@ extern crate alloc;
 
 use ::acpi::InterruptModel;
 use alloc::boxed::Box;
+pub use capabilities::*;
 use cpu_local_data::init_cpu;
 use create_normal_stack::create_normal_stack;
 use limine_requests::{
@@ -20,7 +21,7 @@ use x86_64::registers::control::Cr3;
 
 pub mod acpi;
 pub mod call_with_rsp;
-pub mod capabilities;
+mod capabilities;
 pub mod cpu_local_data;
 pub mod create_normal_stack;
 pub mod enter_user_mode;

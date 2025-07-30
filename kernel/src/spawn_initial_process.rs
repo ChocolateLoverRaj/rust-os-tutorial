@@ -242,7 +242,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 let env_entries = &[{
                     let id = CapabilityId::new_unique();
                     CAPABILITIES.write().insert(
-                        id,
+                        id.into(),
                         Capability {
                             _type: CapabilityType::Ps2Keyboard,
                             process_id: process.id.into(),

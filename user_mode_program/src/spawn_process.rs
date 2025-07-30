@@ -1,3 +1,5 @@
+use core::num::NonZero;
+
 use alloc::vec::Vec;
 use common::{
     AllocPageSize, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT, SpawnProcessMemoryFlags,
@@ -20,7 +22,8 @@ pub fn spawn_process(
     // send_rx_list: impl Iterator<Item = Sender>,
     window: &WindowSharedMemServer,
     keyboard: &KeyboardSharedMemServer,
-) {
+    send_capabilities: &[NonZero<u64>],
+) -> NonZero<u32> {
     let slice = syscall_map_module(module_id).unwrap();
     // let slice = include_bytes!("extra_module_0");
     log::debug!("Slice: {slice:p}");
@@ -125,15 +128,15 @@ pub fn spawn_process(
     // Guard page
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: usize::from(stack.addr()).try_into().unwrap(),
-        new_process_start: stack_top - stack_with_guard_len as u64,
+        new_process_start: stack_top - stack_with_guard_len,
         len: AllocPageSize::_4KiB.size_bytes(),
         flags: SpawnProcessMemoryFlags::empty().bits(),
     });
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: u64::try_from(usize::from(stack.addr())).unwrap()
             + AllocPageSize::_4KiB.size_bytes(),
-        new_process_start: stack_top - stack_len as u64,
-        len: stack_len as u64,
+        new_process_start: stack_top - stack_len,
+        len: stack_len,
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 
@@ -162,7 +165,6 @@ pub fn spawn_process(
         rip: entry_point,
         rsp: stack_top - u64::try_from(usize::from(stack.addr()) + stack.len() - env_ptr).unwrap(),
         memory_mapping: &memory_mappings,
-        send_senders: &[window.channel_id(), keyboard.request_channel_id()],
-        send_receivers: &[keyboard.response_channel_id()],
-    });
+        send_capabilities,
+    })
 }

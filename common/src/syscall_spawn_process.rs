@@ -1,3 +1,5 @@
+use core::num::NonZero;
+
 use bincode::{Decode, Encode};
 use bitflags::bitflags;
 use x86_64::structures::paging::PageTableFlags;
@@ -12,14 +14,14 @@ pub enum SpawnProcessRelativePriority {
     Lower,
 }
 
+/// Returns the process id of the new process
 #[derive(Debug, Encode, Decode, TryFromBytes, Immutable, KnownLayout)]
 pub struct SyscallSpawnProcessInput {
     pub priority: SpawnProcessRelativePriority,
     pub rip: u64,
     pub rsp: u64,
     pub memory_mappings: SliceData,
-    pub send_senders: SliceData,
-    pub send_receivers: SliceData,
+    pub send_capabilities: SliceData,
 }
 
 bitflags! {
@@ -79,5 +81,5 @@ pub struct SyscallSpawnProcess;
 impl Syscall for SyscallSpawnProcess {
     const ID: u64 = 0x5B0B4092EAC9C9CE;
     type Input = u64;
-    type Output = ();
+    type Output = NonZero<u32>;
 }

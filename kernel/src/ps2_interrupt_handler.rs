@@ -1,21 +1,18 @@
-use core::{
-    ops::{Deref, DerefMut},
-    slice,
-    sync::atomic::AtomicU8,
-};
+use core::{ops::DerefMut, slice, sync::atomic::AtomicU8};
 
 use common::{LOWER_HALF_END, QueueWriter};
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::{instructions::port::Port, registers::control::Cr3};
 
 use crate::{
+    CAPABILITIES, CapabilityType, EventStreamSource,
     cpu_local_data::get_local,
     event_stream_mem::EventStreamMem,
     interrupt_vector::InterruptVector,
     interrupted_context::InterruptedContext,
     memory::MEMORY,
     run_tasks::run_threads,
-    task::{EventStreamSource, PS2_EVENT_STREAMS, THREADS, ThreadReadyState, ThreadState},
+    task::{THREADS, ThreadReadyState, ThreadState},
 };
 
 /// # Safety
@@ -33,8 +30,11 @@ pub unsafe fn ps2_interrupt_handler(
         unsafe { local_apic.end_of_interrupt() };
 
         let threads = THREADS.read();
-        for (event_id, event_stream) in PS2_EVENT_STREAMS.read().deref() {
-            if event_stream.source == ps2_source {
+        let capabilities = CAPABILITIES.read();
+        for (capability_id, capability) in capabilities.iter() {
+            if let CapabilityType::EventStream(event_stream) = &capability._type
+                && event_stream.source == ps2_source
+            {
                 {
                     unsafe {
                         let frame = event_stream.process.cr3;
@@ -46,17 +46,17 @@ pub unsafe fn ps2_interrupt_handler(
                 let mem = unsafe { mem_ptr.as_ref() }.unwrap();
                 let slots_len = mem.slots_len;
                 let slots_ptr = (mem_ptr.addr() + size_of::<EventStreamMem>()) as *const AtomicU8;
-                if !(slots_ptr.addr() + slots_len <= LOWER_HALF_END as usize) {
+                if slots_ptr.addr() + slots_len > LOWER_HALF_END as usize {
                     todo!()
                 }
                 let slots = unsafe { slice::from_raw_parts(slots_ptr, slots_len) };
-                let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, &slots);
+                let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, slots);
                 let _ = writer.push(data);
                 for thread in threads.values() {
                     if thread.process.id == event_stream.process.id {
                         let mut state = thread.state.write();
                         if let ThreadState::WaitingForEvents(state) = state.deref_mut()
-                            && let Some(happened) = state.events.get_mut(event_id)
+                            && let Some(happened) = state.events.get_mut(capability_id)
                         {
                             *happened = true;
                         }
@@ -64,8 +64,6 @@ pub unsafe fn ps2_interrupt_handler(
                 }
             }
         }
-
-        // log::info!("Threads: {threads:#?}");
         unsafe {
             local_apic.send_ipi_all(
                 InterruptVector::CheckTasks.into(),
@@ -77,7 +75,6 @@ pub unsafe fn ps2_interrupt_handler(
             *threads.get(&running_thread_id).unwrap().state.write() =
                 ThreadState::Ready(ThreadReadyState::Interrupted(interrupted_context.clone()));
         }
-        // log::info!("Running threads: {:#?}", threads.len());
     };
     run_threads()
 }

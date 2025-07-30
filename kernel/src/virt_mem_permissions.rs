@@ -20,7 +20,7 @@ impl VirtMemPermissions {
             flags |= PageTableFlags::WRITABLE;
         }
         if !self.execute {
-            flags | PageTableFlags::NO_EXECUTE;
+            flags |= PageTableFlags::NO_EXECUTE;
         }
         flags
     }

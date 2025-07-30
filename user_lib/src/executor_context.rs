@@ -1,4 +1,4 @@
-use core::{cell::RefCell, task::Waker};
+use core::{cell::RefCell, num::NonZero, task::Waker};
 
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use futures::task::AtomicWaker;
@@ -11,11 +11,11 @@ struct Event {
 
 #[derive(Debug, Default)]
 pub struct ExecutorContext {
-    events: RefCell<BTreeMap<u64, Event>>,
+    events: RefCell<BTreeMap<NonZero<u64>, Event>>,
 }
 
 impl ExecutorContext {
-    pub fn register_waker(&self, event_id: u64, waker: &Waker) {
+    pub fn register_waker(&self, event_id: NonZero<u64>, waker: &Waker) {
         self.events
             .borrow_mut()
             .entry(event_id)
@@ -24,7 +24,7 @@ impl ExecutorContext {
             .register(waker);
     }
 
-    pub fn event_not_happened(&self) -> Box<[u64]> {
+    pub fn event_not_happened(&self) -> Box<[NonZero<u64>]> {
         self.events
             .borrow()
             .iter()
@@ -38,7 +38,7 @@ impl ExecutorContext {
             .collect()
     }
 
-    pub fn wake(&self, event_id: u64) {
+    pub fn wake(&self, event_id: NonZero<u64>) {
         let mut events = self.events.borrow_mut();
         let event = events.get_mut(&event_id).unwrap();
         event.waker.wake();
@@ -46,7 +46,7 @@ impl ExecutorContext {
     }
 
     /// Returns true if the event happened, removing the event from the map
-    pub fn take(&self, event_id: u64) -> bool {
+    pub fn take(&self, event_id: NonZero<u64>) -> bool {
         self.events
             .borrow_mut()
             .remove(&event_id)

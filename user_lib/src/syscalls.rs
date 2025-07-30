@@ -8,12 +8,14 @@ use common::{
     AllocPageSize, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
     SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
     SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
-    SyscallCreateChannel, SyscallExists, SyscallExitProcess, SyscallExitThread, SyscallGetThreadId,
-    SyscallGetThreadIdOutput, SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError,
-    SyscallMapSharedMem, SyscallMapSharedMemError, SyscallMapSharedMemInput,
-    SyscallReleaseFrameBuffer, SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread,
-    SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
-    SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent, log,
+    SyscallCloneCapability, SyscallCloneCapabilityError, SyscallCreateChannel, SyscallExists,
+    SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallGetThreadIdOutput,
+    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallMapSharedMem,
+    SyscallMapSharedMemError, SyscallMapSharedMemInput, SyscallReleaseFrameBuffer,
+    SyscallSendCapability, SyscallSendCapabilityError, SyscallSendCapabilityInput,
+    SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread, SyscallSpawnThreadInput,
+    SyscallSubscribeToMouse, SyscallTakeFrameBuffer, SyscallTakeFrameBufferOutput, SyscallTxSend,
+    SyscallWaitUntilEvent, log,
 };
 use common::{PermissionFlags, SyscallTakeFrameBufferError};
 
@@ -70,7 +72,7 @@ pub fn syscall_alloc(
     len: NonZeroU64,
     page_size: AllocPageSize,
 ) -> Result<NonNull<[u8]>, SyscallAllocError> {
-    assert!(u64::from(len).is_multiple_of(u64::from(page_size.size_bytes())));
+    assert!(u64::from(len).is_multiple_of(page_size.size_bytes()));
     let input = SyscallAllocInput { len, page_size };
     let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
     Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())
@@ -87,7 +89,7 @@ pub fn syscall_release_frame_buffer() {
     unsafe { syscall::<SyscallReleaseFrameBuffer>(&()) }
 }
 
-pub fn syscall_wait_until_event(events: &mut [u64]) -> &mut [u64] {
+pub fn syscall_wait_until_event(events: &mut [NonZero<u64>]) -> &mut [NonZero<u64>] {
     let input = events.into();
     // Safety: The input is valid
     let count = unsafe { syscall::<SyscallWaitUntilEvent>(&input) };
@@ -145,28 +147,26 @@ pub struct RustSyscallSpawnProcessInput<'a> {
     pub rip: u64,
     pub rsp: u64,
     pub memory_mapping: &'a [SpawnProcessMemoryMapping],
-    pub send_senders: &'a [u64],
-    pub send_receivers: &'a [u64],
+    pub send_capabilities: &'a [NonZero<u64>],
 }
 
-pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) {
+pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) -> NonZero<u32> {
     let input = SyscallSpawnProcessInput {
         priority: input.priority,
         rip: input.rip,
         rsp: input.rsp,
         memory_mappings: input.memory_mapping.into(),
-        send_senders: input.send_senders.into(),
-        send_receivers: input.send_receivers.into(),
+        send_capabilities: input.send_capabilities.into(),
     };
     // Safety: input ok
-    unsafe { syscall::<SyscallSpawnProcess>(&(&input as *const _ as u64)) };
+    unsafe { syscall::<SyscallSpawnProcess>(&(&input as *const _ as u64)) }
 }
 
-pub fn syscall_create_channel() -> u64 {
+pub fn syscall_create_channel() -> NonZero<u64> {
     unsafe { syscall::<SyscallCreateChannel>(&()) }
 }
 
-pub fn syscall_tx_send(channel_id: u64) {
+pub fn syscall_tx_send(channel_id: NonZero<u64>) {
     unsafe { syscall::<SyscallTxSend>(&channel_id) };
 }
 
@@ -180,4 +180,16 @@ pub fn syscall_map_shared_mem(
     };
     let slice = unsafe { syscall::<SyscallMapSharedMem>(&input) }?;
     Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())
+}
+
+pub fn syscall_clone_capability(
+    capability: NonZero<u64>,
+) -> Result<NonZero<u64>, SyscallCloneCapabilityError> {
+    unsafe { syscall::<SyscallCloneCapability>(&capability) }
+}
+
+pub fn syscall_send_capability(
+    input: SyscallSendCapabilityInput,
+) -> Result<(), SyscallSendCapabilityError> {
+    unsafe { syscall::<SyscallSendCapability>(&input) }
 }

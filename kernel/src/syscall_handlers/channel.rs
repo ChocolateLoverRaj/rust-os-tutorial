@@ -1,19 +1,15 @@
-use core::{
-    ops::DerefMut,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::{ops::DerefMut, sync::atomic::Ordering};
 
+use alloc::sync::Arc;
 use common::{Syscall, SyscallCreateChannel, SyscallTxSend};
 use x2apic::lapic::IpiAllShorthand;
 
 use crate::{
+    capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     cpu_local_data::get_local,
     interrupt_vector::InterruptVector,
     run_tasks::run_threads,
-    task::{
-        CHANNELS, Channel, EVENT_ID, THREADS, ThreadReadyState, ThreadReadyStateInSyscall,
-        ThreadState,
-    },
+    task::{THREADS, ThreadReadyState, ThreadReadyStateInSyscall, ThreadState},
 };
 
 use super::GenericSyscallHandler;
@@ -23,22 +19,21 @@ impl GenericSyscallHandler for SyscallCreateChannelHandler {
     type S = SyscallCreateChannel;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let output = {
+            let capability_id = CapabilityId::new_unique();
+            let mut capabilities = CAPABILITIES.write();
+
             let local = get_local();
             let running_thread_id = local.running_thread.try_lock().unwrap().unwrap();
             let threads = THREADS.read();
             let running_thread = threads.get(&running_thread_id).unwrap();
-            let event_id = EVENT_ID.fetch_add(1, Ordering::Relaxed);
-            let mut channels = CHANNELS.write();
-            let process_id = running_thread.process.id;
-            channels.insert(
-                event_id,
-                Channel {
-                    receiver: process_id,
-                    sender: process_id,
-                    pending_event: AtomicBool::new(false),
+            capabilities.insert(
+                capability_id.into(),
+                Capability {
+                    _type: CapabilityType::Channel(Default::default()),
+                    process_id: running_thread.process.id.into(),
                 },
             );
-            event_id
+            capability_id.into()
         };
         helper.syscall_return(&output)
     }
@@ -58,45 +53,55 @@ impl GenericSyscallHandler for SyscallTxSendHandler {
             let running_thread_id = running_thread_id_guard.unwrap();
             let threads = THREADS.read();
             let running_thread = threads.get(&running_thread_id).unwrap();
-            let channel_id = *helper.input();
-            let channels = CHANNELS.read();
-            if let Some(channel) = channels.get(&channel_id)
-                && channel.sender == running_thread.process.id
+            let capability_id = *helper.input();
+            let capabilities = CAPABILITIES.read();
+            if let Some(capability) = capabilities.get(&capability_id)
+                && capability.process_id == running_thread.process.id.into()
+                && let CapabilityType::Channel(happened) = &capability._type
             {
-                let became_pending = !channel.pending_event.swap(true, Ordering::Relaxed);
+                let became_pending = !happened.swap(true, Ordering::Relaxed);
                 if became_pending {
-                    if threads
-                        .iter()
-                        .filter(|(_thread_id, thread)| thread.process.id == channel.receiver)
-                        .any(|(_thread_id, thread)| {
-                            let mut thread_state = thread.state.write();
-                            if let ThreadState::WaitingForEvents(state) = thread_state.deref_mut() {
-                                if let Some(happened) = state.events.get_mut(&channel_id) {
-                                    *happened = true;
-                                    *running_thread_id_guard = None;
-                                    *running_thread.state.write() = ThreadState::Ready(
-                                        ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
-                                            output: <Self::S as Syscall>::encode_output(&()),
-                                            saved_regs: helper.saved_regs().clone(),
-                                        }),
-                                    );
-                                    let mut local_apic =
-                                        local.local_apic.get().unwrap().try_lock().unwrap();
-                                    unsafe {
-                                        local_apic.send_ipi_all(
-                                            InterruptVector::CheckTasks.into(),
-                                            IpiAllShorthand::AllExcludingSelf,
-                                        )
-                                    };
-                                    true
-                                } else {
-                                    false
-                                }
+                    if threads.iter().any(|(_thread_id, thread)| {
+                        let mut thread_state = thread.state.write();
+                        if let ThreadState::WaitingForEvents(state) = thread_state.deref_mut() {
+                            if let Some(happened) =
+                                state.events.iter_mut().find_map(|(capability, h)| {
+                                    match &capabilities.get(capability).unwrap()._type {
+                                        CapabilityType::Channel(arc) => {
+                                            if Arc::ptr_eq(arc, happened) {
+                                                Some(h)
+                                            } else {
+                                                None
+                                            }
+                                        }
+                                        _ => None,
+                                    }
+                                })
+                            {
+                                *happened = true;
+                                *running_thread_id_guard = None;
+                                *running_thread.state.write() = ThreadState::Ready(
+                                    ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
+                                        output: <Self::S as Syscall>::encode_output(&()),
+                                        saved_regs: helper.saved_regs().clone(),
+                                    }),
+                                );
+                                let mut local_apic =
+                                    local.local_apic.get().unwrap().try_lock().unwrap();
+                                unsafe {
+                                    local_apic.send_ipi_all(
+                                        InterruptVector::CheckTasks.into(),
+                                        IpiAllShorthand::AllExcludingSelf,
+                                    )
+                                };
+                                true
                             } else {
                                 false
                             }
-                        })
-                    {
+                        } else {
+                            false
+                        }
+                    }) {
                         Action::RunThreads
                     } else {
                         Action::Return

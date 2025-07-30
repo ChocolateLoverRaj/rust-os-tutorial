@@ -14,7 +14,7 @@ common = { version = "0.1.0", path = "../common", default-features = false, feat
     "user_mode",
 ] }
 elf = { version = "0.8.0", default-features = false }
-futures = { version = "0.3.31", default-features = false, features = ["alloc"] }
+futures = { version = "0.3.31", default-features = false, features = ["alloc", "async-await"] }
 heapless = "0.8.0"
 lock_api = "0.4.13"
 pc-keyboard = "0.8.0"
