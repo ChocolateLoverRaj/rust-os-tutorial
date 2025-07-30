@@ -47,7 +47,7 @@ fn main(initial_rsp: NonNull<()>) {
     log::info!("{env_entries:#X?}");
 
     let apps = [
-        "Test App",
+        "Keyboard Tester",
         "Non-existent app (will crash if you try to launch)",
     ];
 
@@ -336,13 +336,10 @@ fn main(initial_rsp: NonNull<()>) {
                                 let data = data.unwrap();
                                 if let Some(key_event) = process_keyboard_data(&mut keyboard, data)
                                     && let KeyState::Down | KeyState::SingleShot = key_event.state
-                                    && {
-                                        let modifiers = keyboard.get_modifiers();
-                                        modifiers.lctrl || modifiers.rctrl
-                                    }
+                                    && keyboard.get_modifiers().is_ctrl()
                                 {
                                     match key_event.code {
-                                        KeyCode::W | KeyCode::Escape => {
+                                        KeyCode::W => {
                                             let tab_index = *tab_index;
                                             state.tabs.remove(tab_index);
                                             state.focus = if !state.tabs.is_empty() {
@@ -373,10 +370,18 @@ fn main(initial_rsp: NonNull<()>) {
                                             break;
                                         }
                                         KeyCode::Tab => {
-                                            *tab_index = if *tab_index + 1 < state.tabs.len() {
-                                                *tab_index + 1
+                                            *tab_index = if keyboard.get_modifiers().is_shifted() {
+                                                if *tab_index == 0 {
+                                                    state.tabs.len() - 1
+                                                } else {
+                                                    *tab_index - 1
+                                                }
                                             } else {
-                                                0
+                                                if *tab_index + 1 < state.tabs.len() {
+                                                    *tab_index + 1
+                                                } else {
+                                                    0
+                                                }
                                             };
                                             break;
                                         }
