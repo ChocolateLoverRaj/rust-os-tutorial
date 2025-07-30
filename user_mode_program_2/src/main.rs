@@ -8,15 +8,16 @@ use core::{arch::naked_asm, ptr::NonNull};
 use common::{
     embedded_graphics::{
         pixelcolor::Rgb888,
-        prelude::{Dimensions, RgbColor},
+        prelude::Dimensions,
         primitives::{PrimitiveStyleBuilder, StyledDrawable},
     },
     log,
 };
 use pc_keyboard::{HandleControl, Keyboard, ScancodeSet1, layouts::Us104Key};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use user_lib::{
     CopyData, EnvEntries, ExecutorContext, KeyboardSharedMemClient, WindowSharedMemClient,
-    execute_future, logger, syscall_exit_process,
+    execute_future, logger, syscall_exit_process, syscall_get_thread_id,
 };
 
 #[panic_handler]
@@ -35,7 +36,14 @@ fn main(initial_rsp: NonNull<()>) -> ! {
         window_client
             .bounding_box()
             .draw_styled(
-                &PrimitiveStyleBuilder::new().fill_color(Rgb888::RED).build(),
+                &PrimitiveStyleBuilder::new()
+                    .fill_color({
+                        let mut rng = SmallRng::seed_from_u64(
+                            syscall_get_thread_id().process_id.get().into(),
+                        );
+                        Rgb888::new(rng.random(), rng.random(), rng.random())
+                    })
+                    .build(),
                 &mut window_client,
             )
             .unwrap();

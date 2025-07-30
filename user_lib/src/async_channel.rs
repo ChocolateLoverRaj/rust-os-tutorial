@@ -23,6 +23,7 @@ impl Sender {
     }
 }
 
+#[derive(Debug)]
 pub struct Receiver {
     channel_id: NonZero<u64>,
 }

@@ -25,8 +25,8 @@ use pc_keyboard::{
 };
 use spawn_process::spawn_process;
 use user_lib::{
-    AsyncKeyboard, EnvEntries, ExecutorContext, KeyboardBufServer, KeyboardSharedMemServer,
-    WindowSharedMemServer, execute_future, logger,
+    AsyncKeyboard, CopyData, EnvEntries, ExecutorContext, KeyboardBufServer,
+    KeyboardSharedMemServer, WindowSharedMemServer, execute_future, logger,
 };
 
 extern crate alloc;
@@ -87,6 +87,9 @@ fn main(initial_rsp: NonNull<()>) {
         };
         loop {
             let top_bar_height = 40;
+            let window_width = frame_buffer.bounding_box().size.width.into();
+            let window_height =
+                u64::from(frame_buffer.bounding_box().size.height) - u64::from(top_bar_height);
             let top_bar_rect = frame_buffer
                 .bounding_box()
                 .resized_height(top_bar_height, AnchorY::Top);
@@ -225,12 +228,13 @@ fn main(initial_rsp: NonNull<()>) {
                                     break;
                                 }
                                 KeyCode::Return => {
-                                    let width = frame_buffer.bounding_box().size.width.into();
-                                    let height = u64::from(frame_buffer.bounding_box().size.height)
-                                        - u64::from(top_bar_height);
                                     let mut send_capabilities = Vec::new();
                                     let (window, window_send_capability) =
-                                        WindowSharedMemServer::new(width, height, &frame_buffer);
+                                        WindowSharedMemServer::new(
+                                            window_width,
+                                            window_height,
+                                            &frame_buffer,
+                                        );
                                     send_capabilities.push(window_send_capability);
                                     let (keyboard_server, keyboard_send_capabilities) =
                                         KeyboardSharedMemServer::new().unwrap();
@@ -250,7 +254,7 @@ fn main(initial_rsp: NonNull<()>) {
                                         keyboard_server,
                                         keyboard_buffers: Default::default(),
                                     });
-                                    state.focus = Focus::Tab(0);
+                                    state.focus = Focus::Tab(state.tabs.len() - 1);
                                     break;
                                 }
                                 KeyCode::Escape | KeyCode::W => {
@@ -277,7 +281,14 @@ fn main(initial_rsp: NonNull<()>) {
                             frame_buffer.deref_mut(),
                         )
                         .unwrap();
-                    state.tabs[*tab_index].window.draw_to_frame_buffer(
+                    let window_server = &mut state.tabs[*tab_index].window;
+                    window_server.copy_to_frame_buffer(
+                        CopyData {
+                            x: 0,
+                            y: 0,
+                            width: window_width,
+                            height: window_height,
+                        },
                         &mut frame_buffer,
                         0,
                         top_bar_height.into(),
@@ -286,18 +297,32 @@ fn main(initial_rsp: NonNull<()>) {
                         enum Event {
                             KeyboardRequest(Result<KeyboardBufServer, SyscallMapSharedMemError>),
                             KeyboardData(Option<u8>),
+                            Draw,
                         }
                         let event = {
-                            let client_process_id = state.tabs[*tab_index].process_id;
-                            let keyboard_request_fut = state.tabs[*tab_index]
+                            let tab = &mut state.tabs[*tab_index];
+                            let client_process_id = tab.process_id;
+                            let keyboard_request_fut = tab
                                 .keyboard_server
                                 .wait_for_request(&executor_context, client_process_id)
                                 .fuse();
                             pin_mut!(keyboard_request_fut);
                             let mut keyboard_data_fut = async_keyboard.next();
+                            let draw_fut = tab
+                                .window
+                                .handle_draw_request(
+                                    &executor_context,
+                                    &mut frame_buffer,
+                                    0,
+                                    top_bar_height.into(),
+                                )
+                                .fuse();
+                            pin_mut!(draw_fut);
+
                             select_biased! {
                                 result = keyboard_request_fut => Event::KeyboardRequest(result),
                                 keyboard_data = keyboard_data_fut => Event::KeyboardData(keyboard_data),
+                                _ = draw_fut => Event::Draw
                             }
                         };
                         match event {
@@ -361,6 +386,9 @@ fn main(initial_rsp: NonNull<()>) {
                                 for buf in &mut state.tabs[*tab_index].keyboard_buffers {
                                     let _ = buf.push(data);
                                 }
+                            }
+                            Event::Draw => {
+                                log::debug!("Drew app rectangle to screen");
                             }
                         }
                     }

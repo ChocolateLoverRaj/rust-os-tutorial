@@ -1,4 +1,11 @@
-use core::{convert::Infallible, mem::MaybeUninit, num::NonZero, ptr::NonNull, slice};
+use core::{
+    convert::Infallible,
+    mem::MaybeUninit,
+    num::NonZero,
+    ptr::NonNull,
+    slice,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use atomic_enum::atomic_enum;
 use common::{
@@ -12,7 +19,7 @@ use common::{
 };
 
 use crate::{
-    EnvEntries,
+    EnvEntries, ExecutorContext,
     async_channel::{self, Receiver, Sender},
     syscall_alloc, syscall_clone_capability,
 };
@@ -35,6 +42,7 @@ enum ActiveSlot {
 
 #[repr(C)]
 struct WindowSharedMem {
+    pending_request: AtomicBool,
     request_channel_id: NonZero<u64>,
     window_info: WindowInfo,
     copy_data: CopyData,
@@ -72,7 +80,9 @@ impl WindowSharedMemClient {
     pub fn update_screen(&mut self, copy_data: CopyData) {
         self.data.copy_data = copy_data;
         let mut sender = unsafe { Sender::from_channel_id(self.data.request_channel_id) };
-        sender.send();
+        if !self.data.pending_request.swap(true, Ordering::Release) {
+            sender.send();
+        }
     }
 }
 
@@ -107,8 +117,9 @@ impl Dimensions for WindowSharedMemClient {
     }
 }
 
+#[derive(Debug)]
 pub struct WindowSharedMemServer {
-    shared_mem: NonNull<()>,
+    shared_mem: NonNull<[u8]>,
     receiver: Receiver,
     width: u64,
     height: u64,
@@ -136,6 +147,7 @@ impl WindowSharedMemServer {
             let mut shared_mem = shared_mem.cast::<MaybeUninit<WindowSharedMem>>();
             let shared_mem = unsafe { shared_mem.as_mut() };
             shared_mem.write(WindowSharedMem {
+                pending_request: Default::default(),
                 request_channel_id: sender_capability,
                 window_info: WindowInfo {
                     width,
@@ -148,7 +160,7 @@ impl WindowSharedMemServer {
         }
         (
             Self {
-                shared_mem: shared_mem.cast(),
+                shared_mem: shared_mem,
                 receiver,
                 width,
                 height,
@@ -171,34 +183,56 @@ impl WindowSharedMemServer {
         self.receiver.channel_id()
     }
 
-    pub fn draw_to_frame_buffer(
+    /// Copy data is not validated. You must validate it yourself.
+    pub fn copy_to_frame_buffer(
         &mut self,
-        frame_buffer: &mut FrameBufferEmbeddedGraphics,
+        copy_data: CopyData,
+        frame_buffer: &mut FrameBufferEmbeddedGraphics<'_>,
+        x: u64,
+        y: u64,
+    ) {
+        // log::debug!("S: {self:X?}, copy_data: {copy_data:?}. x: {x}. y: {y}");
+        let mut shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
+        let shared_mem = unsafe { shared_mem_ptr.as_mut() };
+        shared_mem.pending_request.store(false, Ordering::Relaxed);
+        let pixels_ptr = shared_mem.pixels.as_mut_ptr();
+        let pixel_count = (self.width * self.height) as usize;
+        let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
+        for src_y in copy_data.y as usize..(copy_data.y + copy_data.height) as usize {
+            let src_start_index = self.width as usize * src_y + copy_data.x as usize;
+            let dest_start_index = frame_buffer.info().pitch as usize / size_of::<u32>()
+                * (y as usize + src_y)
+                + x as usize
+                + copy_data.x as usize;
+            let copy_len = copy_data.width as usize;
+            frame_buffer.buffer_mut()[dest_start_index..dest_start_index + copy_len]
+                .copy_from_slice(&pixels[src_start_index..src_start_index + copy_len]);
+        }
+    }
+
+    /// # Cancel safety
+    /// This is cancel safe.
+    pub async fn handle_draw_request(
+        &mut self,
+        executor_context: &ExecutorContext,
+        frame_buffer: &mut FrameBufferEmbeddedGraphics<'_>,
         x: u64,
         y: u64,
     ) {
         let mut shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
         let shared_mem = unsafe { shared_mem_ptr.as_mut() };
-        let pixels_ptr = shared_mem.pixels.as_mut_ptr();
-        let pixel_count = (self.width * self.height) as usize;
-        let pixels = unsafe { slice::from_raw_parts_mut(pixels_ptr, pixel_count) };
-        let copy_data = shared_mem.copy_data;
-        // Restrict copy rect horizontal bounds
-        if copy_data.x <= self.width {
-            // Restrict copy rect vertical bounds
-            for src_y in
-                copy_data.y as usize..(copy_data.y + copy_data.height).min(self.height) as usize
-            {
-                let src_start_index = self.width as usize * src_y + copy_data.x as usize;
-                let dest_start_index = frame_buffer.info().pitch as usize / size_of::<u32>()
-                    * (y as usize + src_y)
-                    + x as usize
-                    + copy_data.x as usize;
-                // Restrict copy rect horizontal bounds
-                let copy_len = copy_data.width.min(self.width - copy_data.x) as usize;
-                frame_buffer.buffer_mut()[dest_start_index..dest_start_index + copy_len]
-                    .copy_from_slice(&pixels[src_start_index..src_start_index + copy_len]);
+        loop {
+            if shared_mem.pending_request.swap(false, Ordering::Acquire) {
+                break;
             }
+            // This is cancel safe because we didn't modify anything before this
+            self.receiver.receive(executor_context).await;
+        }
+        let copy_data = shared_mem.copy_data;
+        if copy_data.x + copy_data.width <= self.width
+            && copy_data.y + copy_data.height <= self.height
+        {
+            self.copy_to_frame_buffer(shared_mem.copy_data, frame_buffer, x, y);
         }
     }
 }

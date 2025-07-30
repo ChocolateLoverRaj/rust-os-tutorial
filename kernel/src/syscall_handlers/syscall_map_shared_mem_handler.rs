@@ -1,6 +1,5 @@
 use core::num::NonZero;
 
-use alloc::vec::Vec;
 use common::{LOWER_HALF_END, PermissionFlags, SliceData, SyscallMapSharedMem};
 use nodit::{InclusiveInterval, Interval};
 use x86_64::{
@@ -48,14 +47,6 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
             let shared_mem_len = shared_mem.size.byte_len() * shared_mem.phys_frames.len();
 
             let mut process_mem = thread.process.memory.write();
-            log::debug!(
-                "Mapped virt mem: {:#X?}. Gaps: {:#X?}",
-                process_mem.mapped_virtual_memory,
-                process_mem
-                    .mapped_virtual_memory
-                    .gaps_trimmed(Interval::from(NonZero::<u64>::MIN.get()..LOWER_HALF_END))
-                    .collect::<Vec<_>>()
-            );
             let interval = process_mem
                 .mapped_virtual_memory
                 .gaps_trimmed(Interval::from(NonZero::<u64>::MIN.get()..LOWER_HALF_END))
@@ -73,7 +64,6 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 })
                 // FIXME: Don't panic
                 .unwrap();
-            log::debug!("Using interval: {interval:X?}");
             let permissions = VirtMemPermissions::from(PermissionFlags::from_bits_retain(
                 helper.input().permission_flags,
             ));
