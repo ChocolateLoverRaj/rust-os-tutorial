@@ -1,11 +1,14 @@
 use core::{
-    num::NonZeroU32,
+    num::{NonZero, NonZeroU32},
     ops::Deref,
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use common::{FUTEX_WAITERS, FutexLockError, Syscall, SyscallFutexLock, SyscallFutexUnlock};
-use nodit::Interval;
+use alloc::boxed::Box;
+use common::{
+    FUTEX_WAITERS, FutexLockError, FutexUnlockError, LOWER_HALF_END, Syscall, SyscallFutexLock,
+    SyscallFutexUnlock,
+};
 use x2apic::lapic::IpiAllShorthand;
 
 use crate::{
@@ -16,6 +19,7 @@ use crate::{
         MutexKey, THREAD_PRIORITIES, THREADS, ThreadId, ThreadReadyState,
         ThreadReadyStateInSyscall, ThreadState, WaitingForMutexState,
     },
+    try_access_user_mem::try_access_user_mem,
 };
 
 use super::GenericSyscallHandler;
@@ -27,32 +31,25 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
         enum Action {
             RunThreads,
             Return(<SyscallFutexLock as Syscall>::Output),
-            Terminate,
         }
         let action = {
             let ptr_u64 = *helper.input();
-            let local = get_local();
-            let mut running_thread = local.running_thread.try_lock().unwrap();
-            let running_thread_id = running_thread.unwrap();
-            let threads = THREADS.read();
-            let current_thread = threads.get(&running_thread_id).unwrap();
-            if let Some(end) = ptr_u64.checked_add(size_of::<AtomicU64>() as u64) {
-                let interval = Interval::from(ptr_u64..=end);
-                let process_memory = current_thread.process.memory.read();
-                if process_memory
-                    .mapped_virtual_memory
-                    .contains_interval(interval)
-                    && process_memory
-                        .mapped_virtual_memory
-                        .overlapping(interval)
-                        .all(|(_, mem)| mem.permissions().write)
-                {
-                    let ptr = ptr_u64 as *mut AtomicU64;
-                    if ptr.is_aligned() {
-                        let a = unsafe { ptr.as_ref() }.unwrap();
-                        let mut mutexes = current_thread.process.mutexes.write();
-                        let lock_owner = a.fetch_or(FUTEX_WAITERS, Ordering::AcqRel);
-                        if let Some(thread_id) = NonZeroU32::new(lock_owner as u32) {
+            if ptr_u64 > 0
+                && ptr_u64 + u64::try_from(size_of::<AtomicU64>()).unwrap() <= LOWER_HALF_END
+            {
+                let ptr = ptr_u64 as *mut AtomicU64;
+                let local = get_local();
+                let mut running_thread = local.running_thread.try_lock().unwrap();
+                let running_thread_id = running_thread.unwrap();
+                let threads = THREADS.read();
+                let current_thread = threads.get(&running_thread_id).unwrap();
+                let mut mutexes = current_thread.process.mutexes.write();
+                match try_access_user_mem(|| {
+                    let ptr = unsafe { ptr.as_mut() }.unwrap();
+                    Box::new(ptr.fetch_or(FUTEX_WAITERS, Ordering::AcqRel))
+                }) {
+                    Ok(lock_owner) => {
+                        if let Some(thread_id) = NonZero::new(*lock_owner as u32) {
                             let thread_id = ThreadId::from_raw(thread_id);
                             if let Some(lock_owner) = threads.get(&thread_id) {
                                 mutexes
@@ -76,20 +73,16 @@ impl GenericSyscallHandler for SyscallFutexLockHandler {
                         } else {
                             Action::Return(Err(FutexLockError::CheckWithWaiters))
                         }
-                    } else {
-                        Action::Terminate
                     }
-                } else {
-                    Action::Terminate
+                    Err(_e) => Action::Return(Err(FutexLockError::InvalidPointer)),
                 }
             } else {
-                Action::Terminate
+                Action::Return(Err(FutexLockError::InvalidPointer))
             }
         };
         match action {
             Action::RunThreads => run_threads(),
             Action::Return(output) => helper.syscall_return(&output),
-            Action::Terminate => todo!(),
         }
     }
 }
@@ -99,103 +92,87 @@ impl GenericSyscallHandler for SyscallFutexUnlockHandler {
     type S = SyscallFutexUnlock;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
-            Terminate,
             RunThreads,
-            Return,
+            Return(<SyscallFutexUnlock as Syscall>::Output),
         }
         let action = {
             let ptr_u64 = *helper.input();
-            if let Some(end) = ptr_u64.checked_add(size_of::<AtomicU64>() as u64) {
-                let interval = Interval::from(ptr_u64..=end);
+            if ptr_u64 > 0
+                && ptr_u64 + u64::try_from(size_of::<AtomicU64>()).unwrap() <= LOWER_HALF_END
+            {
                 let local = get_local();
                 let mut running_thread = local.running_thread.try_lock().unwrap();
                 let current_thread_id = running_thread.unwrap();
                 let threads = THREADS.read();
                 let current_thread = threads.get(&current_thread_id).unwrap();
-                let process_memory = current_thread.process.memory.read();
-                if process_memory
-                    .mapped_virtual_memory
-                    .contains_interval(interval)
-                    && process_memory
-                        .mapped_virtual_memory
-                        .overlapping(interval)
-                        .all(|(_, mem)| mem.permissions().write)
-                {
-                    let ptr = ptr_u64 as *mut AtomicU64;
-                    if ptr.is_aligned() {
-                        let mut mutexes = current_thread.process.mutexes.write();
+                let mut mutexes = current_thread.process.mutexes.write();
 
-                        match mutexes.get_mut(&MutexKey {
-                            process: current_thread.process.id,
-                            virtual_address: ptr_u64,
-                        }) {
-                            Some(mutex) => {
-                                let mut waiters = mutex.waiters.lock();
-                                let thread_priorities = THREAD_PRIORITIES.read();
-                                let highest_priority_waiter = thread_priorities
-                                    .iter()
-                                    .find(|thread_id| waiters.contains(thread_id))
-                                    .unwrap();
-                                *current_thread.state.write() = ThreadState::Ready(
-                                    ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
-                                        saved_regs: helper.saved_regs().clone(),
-                                        output: Self::S::encode_output(&()),
-                                    }),
+                match mutexes.get_mut(&MutexKey {
+                    process: current_thread.process.id,
+                    virtual_address: ptr_u64,
+                }) {
+                    Some(mutex) => {
+                        let mut waiters = mutex.waiters.lock();
+                        let thread_priorities = THREAD_PRIORITIES.read();
+                        let highest_priority_waiter = thread_priorities
+                            .iter()
+                            .find(|thread_id| waiters.contains(thread_id))
+                            .unwrap();
+                        *current_thread.state.write() = ThreadState::Ready(
+                            ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
+                                saved_regs: helper.saved_regs().clone(),
+                                output: Self::S::encode_output(&Ok(())),
+                            }),
+                        );
+                        *running_thread = None;
+                        let mut new_lock_owner_state =
+                            threads.get(highest_priority_waiter).unwrap().state.write();
+                        if let ThreadState::WaitingForMutex(data) = new_lock_owner_state.deref() {
+                            let new_state = ThreadState::Ready(ThreadReadyState::InSyscall(
+                                ThreadReadyStateInSyscall {
+                                    saved_regs: data.saved_regs.clone(),
+                                    output: SyscallFutexLock::encode_output(&Ok(())),
+                                },
+                            ));
+                            *new_lock_owner_state = new_state;
+                            let mut local_apic = local.local_apic.get().unwrap().lock();
+                            waiters.remove(highest_priority_waiter);
+                            let thread_only =
+                                u64::from(u32::from(NonZeroU32::from(*highest_priority_waiter)));
+                            let ptr = ptr_u64 as *mut AtomicU64;
+                            // TODO: Maybe don't ignore errors
+                            let _ = try_access_user_mem(|| {
+                                let ptr = unsafe { ptr.as_ref() }.unwrap();
+                                ptr.store(
+                                    if waiters.is_empty() {
+                                        thread_only
+                                    } else {
+                                        thread_only | FUTEX_WAITERS
+                                    },
+                                    Ordering::Release,
                                 );
-                                *running_thread = None;
-                                let mut new_lock_owner_state =
-                                    threads.get(highest_priority_waiter).unwrap().state.write();
-                                if let ThreadState::WaitingForMutex(data) =
-                                    new_lock_owner_state.deref()
-                                {
-                                    let new_state = ThreadState::Ready(
-                                        ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
-                                            saved_regs: data.saved_regs.clone(),
-                                            output: SyscallFutexLock::encode_output(&Ok(())),
-                                        }),
-                                    );
-                                    *new_lock_owner_state = new_state;
-                                    let mut local_apic = local.local_apic.get().unwrap().lock();
-                                    waiters.remove(highest_priority_waiter);
-                                    let thread_only = u64::from(u32::from(NonZeroU32::from(
-                                        *highest_priority_waiter,
-                                    )));
-                                    let a = unsafe { ptr.as_ref() }.unwrap();
-                                    a.store(
-                                        if waiters.is_empty() {
-                                            thread_only
-                                        } else {
-                                            thread_only | FUTEX_WAITERS
-                                        },
-                                        Ordering::Release,
-                                    );
-                                    unsafe {
-                                        local_apic.send_ipi_all(
-                                            u8::from(InterruptVector::CheckTasks),
-                                            IpiAllShorthand::AllExcludingSelf,
-                                        );
-                                    }
-                                    Action::RunThreads
-                                } else {
-                                    unreachable!()
-                                }
+                                Box::new(())
+                            });
+                            unsafe {
+                                local_apic.send_ipi_all(
+                                    u8::from(InterruptVector::CheckTasks),
+                                    IpiAllShorthand::AllExcludingSelf,
+                                );
                             }
-                            None => Action::Return,
+                            Action::RunThreads
+                        } else {
+                            unreachable!()
                         }
-                    } else {
-                        Action::Terminate
                     }
-                } else {
-                    Action::Terminate
+                    None => Action::Return(Ok(())),
                 }
             } else {
-                Action::Terminate
+                Action::Return(Err(FutexUnlockError::InvalidPointer))
             }
         };
         match action {
-            Action::Terminate => todo!(),
             Action::RunThreads => run_threads(),
-            Action::Return => helper.syscall_return(&()),
+            Action::Return(output) => helper.syscall_return(&output),
         }
     }
 }

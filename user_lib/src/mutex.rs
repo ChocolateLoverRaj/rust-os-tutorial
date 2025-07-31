@@ -66,7 +66,7 @@ unsafe impl RawMutex for RawBlockingLock {
                         Err(FutexLockError::CheckWithWaiters) => {
                             action = DoAction::TryExchangeWaiters
                         }
-                        Err(FutexLockError::UnknownLockOwner) => unreachable!(),
+                        _ => unreachable!(),
                     }
                 }
             }
@@ -119,7 +119,7 @@ unsafe impl RawMutex for RawBlockingLock {
             )
             .is_err()
         {
-            unsafe { syscall::<SyscallFutexUnlock>(&(&self.0 as *const _ as u64)) };
+            unsafe { syscall::<SyscallFutexUnlock>(&(&self.0 as *const _ as u64)).unwrap() };
         }
     }
 }

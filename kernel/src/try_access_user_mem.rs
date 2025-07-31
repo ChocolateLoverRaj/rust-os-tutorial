@@ -1,6 +1,7 @@
 use core::{
     arch::naked_asm,
     mem::{MaybeUninit, offset_of},
+    ptr::NonNull,
 };
 
 use alloc::boxed::Box;
@@ -17,15 +18,18 @@ pub struct AccessUserMemError {
     pub accessed_address: VirtAddr,
 }
 
-unsafe extern "sysv64" fn call_inside_try_access_user_mem(f: *mut Box<dyn FnOnce() + '_>) {
+unsafe extern "sysv64" fn call_inside_try_access_user_mem(
+    f: *mut Box<dyn FnOnce() -> Box<()> + '_>,
+) -> *mut () {
     let f = unsafe { Box::from_raw(f) };
-    f();
+    let r = f();
+    Box::into_raw(r)
 }
 
 /// We double box the closure so that we can turn it into a single u64 pointer
 #[unsafe(naked)]
-unsafe extern "sysv64" fn _try_access_user_mem(
-    f: *mut Box<dyn FnOnce() + '_>,
+unsafe extern "sysv64" fn _try_access_user_mem<T>(
+    f: *mut Box<dyn FnOnce() -> Box<T> + '_>,
     e: &mut MaybeUninit<AccessUserMemError>,
 ) -> u64 {
     naked_asm!(
@@ -53,8 +57,7 @@ unsafe extern "sysv64" fn _try_access_user_mem(
             // This indicates that we are no longer trying to access user mem
             mov qword ptr gs:[{access_user_mem_error_pointer}], 0
 
-            // A return value of 0 means Ok(())
-            mov rax, 0
+            // Keep the rax value as what the rust fn returned
             // Return
             ret
         ",
@@ -73,23 +76,26 @@ unsafe extern "sysv64" fn _try_access_user_mem(
 /// This works as a `copy_from_user` and `copy_to_user`, except that you do the copying in your own closure!
 /// Remember that if at any point inside the closure a page fault happens, the closure will stop executing and this function will return an error.
 /// So don't own any mutexes or anything that implements `Drop` inside the closure.
-pub fn try_access_user_mem(f: impl FnOnce()) -> Result<(), AccessUserMemError> {
-    let f = Box::into_raw(Box::new(Box::new(f) as Box<dyn FnOnce()>));
+pub fn try_access_user_mem<T>(f: impl FnOnce() -> Box<T>) -> Result<Box<T>, AccessUserMemError> {
+    let f = Box::into_raw(Box::new(Box::new(f) as Box<dyn FnOnce() -> Box<T>>));
     let mut e = MaybeUninit::uninit();
     if has_smap() {
         stac();
     }
     // Safety: the pointer is a boxed closure
-    let ret_val = unsafe { _try_access_user_mem(f, &mut e) };
+    let ret_ptr = unsafe { _try_access_user_mem(f, &mut e) } as *mut T;
     if has_smap() {
         clac();
     }
-    match ret_val {
-        0 => Ok(()),
-        1 => Err({
+    if let Some(ret_ptr) = NonNull::new(ret_ptr) {
+        Ok({
+            // Safety: the return value was a raw box ptr
+            unsafe { Box::from_raw(ret_ptr.as_ptr()) }
+        })
+    } else {
+        Err({
             // Safety: The page fault handler initialized it
             unsafe { e.assume_init() }
-        }),
-        _ => unreachable!(),
+        })
     }
 }

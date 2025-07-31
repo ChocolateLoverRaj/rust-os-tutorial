@@ -79,7 +79,7 @@ pub extern "x86-interrupt" fn page_fault_handler(
                 core::arch::asm!(
                     "mov rbx, {rbx}",
                     "mov rbp, {rbp}",
-                    "mov rax, 1",
+                    "mov rax, 0",
                     "push {stack_segment}",
                     "push {new_stack_pointer}",
                     "push {rflags}",

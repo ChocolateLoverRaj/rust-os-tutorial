@@ -1,6 +1,7 @@
 use core::{cell::RefCell, fmt::Display, slice};
 
-use common::{LOWER_HALF_END, SliceData, Syscall, SyscallLog, SyscallLogError};
+use alloc::boxed::Box;
+use common::{LOWER_HALF_END, SliceData, SyscallLog, SyscallLogError};
 use console::WithoutAnsi;
 use itertools::Itertools;
 
@@ -14,10 +15,6 @@ pub struct SyscallLogHandler;
 impl GenericSyscallHandler for SyscallLogHandler {
     type S = SyscallLog;
     fn handle_decoded_syscall(input: super::SyscallHelper<Self::S>) -> ! {
-        enum Action {
-            Return(<SyscallLog as Syscall>::Output),
-            Terminate,
-        }
         let output = (|| {
             let input = input.input();
 
@@ -51,6 +48,7 @@ impl GenericSyscallHandler for SyscallLogHandler {
                         if let Err(_e) = try_access_user_mem(|| {
                             let src = unsafe { ptr.as_ref() }.unwrap();
                             buffer[buffer_used_len..buffer_used_len + len].copy_from_slice(src);
+                            Box::new(())
                         }) {
                             *self.error.borrow_mut() = Some(SyscallLogError::InvalidPointer);
                             break;
