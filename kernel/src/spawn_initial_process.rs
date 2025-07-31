@@ -155,7 +155,6 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                             .saturating_sub(page.start_address().as_u64())
                             .min(Size4KiB::SIZE);
                         let range_before_to_zero = ..bytes_to_zero_before as usize;
-                        // log::debug!("Zeroeing (before) {range_before_to_zero:X?}");
                         frame_data[range_before_to_zero].fill(0);
 
                         let copy_start = bytes_to_zero_before;
@@ -301,7 +300,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 }
             }
         }
-        // Safety: Limine gaves us a valid pointer and len
+        // Safety: Limine gives us a valid pointer and len
         let file = unsafe { slice::from_raw_parts(file.addr(), file.size() as usize) };
         match spawn_task(file) {
             Ok(_) => {
