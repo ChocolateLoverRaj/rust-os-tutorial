@@ -49,6 +49,7 @@ pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
 pub mod shared_mem;
+pub mod smep_smap;
 pub mod spawn_initial_process;
 pub mod spcr;
 pub mod syscall_handlers;
@@ -56,6 +57,7 @@ pub mod syscall_saved_regs;
 pub mod syscalls;
 pub mod task;
 pub mod translate_addr;
+mod try_access_user_mem;
 pub mod user_mode_program_path;
 pub mod virt_mem_permissions;
 pub mod writer_with_cr;
@@ -118,7 +120,7 @@ extern "sysv64" fn init_bsp() -> ! {
     unsafe { gdt::init() };
     idt::init();
     local_apic::init();
-
+    smep_smap::init();
     syscalls::init();
 
     // mouse::init();
@@ -149,7 +151,7 @@ extern "sysv64" fn init_ap() -> ! {
     unsafe { gdt::init() };
     idt::init();
     local_apic::init();
-
+    smep_smap::init();
     syscalls::init();
 
     run_threads()

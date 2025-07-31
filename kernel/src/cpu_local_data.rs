@@ -1,4 +1,8 @@
-use core::cell::SyncUnsafeCell;
+use core::{
+    cell::SyncUnsafeCell,
+    mem::MaybeUninit,
+    sync::atomic::{AtomicPtr, AtomicU64},
+};
 
 use alloc::boxed::Box;
 use force_send_sync::SendSync;
@@ -11,7 +15,9 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::{gdt::Gdt, local_apic_id::LocalApicId, task::ThreadId};
+use crate::{
+    gdt::Gdt, local_apic_id::LocalApicId, task::ThreadId, try_access_user_mem::AccessUserMemError,
+};
 
 pub struct CpuLocalData {
     pub cpu: &'static Cpu,
@@ -23,6 +29,18 @@ pub struct CpuLocalData {
     pub syscall_handler_stack_pointer: SyncUnsafeCell<u64>,
     pub user_mode_stack_pointer: SyncUnsafeCell<u64>,
     pub running_thread: spin::Mutex<Option<ThreadId>>,
+    pub copy_from_user_rbx: AtomicU64,
+    pub copy_from_user_rbp: AtomicU64,
+    pub copy_from_user_r12: AtomicU64,
+    pub copy_from_user_r13: AtomicU64,
+    pub copy_from_user_r14: AtomicU64,
+    pub copy_from_user_r15: AtomicU64,
+    /// Note that this is the `rsp` after the asm function has been called.
+    /// So it's really the pointer to the value of the return address.
+    /// Then we set the rsp to this + size_of::<u64>()
+    pub copy_from_user_rsp: AtomicU64,
+    /// Also indicates if we are in a "try" block or not
+    pub access_user_mem_error_pointer: AtomicPtr<MaybeUninit<AccessUserMemError>>,
 }
 
 static CPU_LOCAL_DATA: Once<Box<[CpuLocalData]>> = Once::new();
@@ -42,6 +60,14 @@ pub fn init(mp_response: &'static MpResponse) {
                 syscall_handler_stack_pointer: Default::default(),
                 user_mode_stack_pointer: Default::default(),
                 running_thread: Default::default(),
+                copy_from_user_rbx: Default::default(),
+                copy_from_user_rbp: Default::default(),
+                copy_from_user_r12: Default::default(),
+                copy_from_user_r13: Default::default(),
+                copy_from_user_r14: Default::default(),
+                copy_from_user_r15: Default::default(),
+                copy_from_user_rsp: Default::default(),
+                access_user_mem_error_pointer: Default::default(),
             })
             .collect()
     });

@@ -14,6 +14,8 @@ pub struct SyscallLogInput {
 pub enum SyscallLogError {
     #[error("The string is not valid UTF-8")]
     InvalidString,
+    #[error("The message was not a valid &mut [u8]")]
+    InvalidPointer,
 }
 
 pub struct SyscallLog;

@@ -21,6 +21,7 @@ use crate::{
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
+    smep_smap::{clac, has_smap, stac},
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
         ThreadReadyState, ThreadState, UserVirtMem,
@@ -259,6 +260,9 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                     / STACK_ALIGNMENT as usize
                     * STACK_ALIGNMENT as usize;
 
+                if has_smap() {
+                    stac();
+                }
                 let entries_count_ptr = env_ptr as *mut u64;
                 let entries_count = env_entries.len() as u64;
                 unsafe { entries_count_ptr.write(entries_count) };
@@ -266,6 +270,9 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 let entries_len = env_entries.len();
                 let entries = unsafe { core::slice::from_raw_parts_mut(entries_ptr, entries_len) };
                 entries.copy_from_slice(env_entries);
+                if has_smap() {
+                    clac();
+                }
 
                 log::info!("New process's Cr3: {user_l4_frame:?}");
                 let thread_id = ThreadId::new_unique();
