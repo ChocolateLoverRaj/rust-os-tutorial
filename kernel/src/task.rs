@@ -42,7 +42,7 @@ impl ThreadWaitingState {
             events[events_count].write(event);
             events_count += 1;
         }
-        let output = SyscallWaitUntilEvent::encode_output(&(events_count as u64));
+        let output = SyscallWaitUntilEvent::encode_output(&Ok(events_count.try_into().unwrap()));
         unsafe { self.saved_regs.sysretq(output) }
     }
 }

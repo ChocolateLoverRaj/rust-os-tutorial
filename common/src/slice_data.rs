@@ -1,7 +1,7 @@
 use core::slice;
 
 use bincode::{Decode, Encode};
-use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable};
 
 pub use zerocopy;
 
@@ -21,37 +21,6 @@ impl SliceData {
     /// See [`core::slice::from_raw_parts`]
     pub unsafe fn to_slice<'a, T>(&self) -> &'a [T] {
         unsafe { slice::from_raw_parts(self.pointer as *const _, self.len as usize) }
-    }
-
-    /// # Safety
-    /// See [`core::slice::from_raw_parts`], but will return `None` if not aligned instead of undefined behavior.
-    pub unsafe fn try_to_slice<'a, T: TryFromBytes + Immutable>(&self) -> Option<&'a [T]> {
-        let slice = unsafe {
-            slice::from_raw_parts(
-                self.pointer as *const u8,
-                self.len as usize * size_of::<T>(),
-            )
-        };
-        zerocopy::TryFromBytes::try_ref_from_bytes(slice).ok()
-    }
-
-    /// # Safety
-    /// See [`core::slice::from_raw_parts`]
-    pub unsafe fn try_to_slice_mut<'a, T: IntoBytes + TryFromBytes>(&self) -> Option<&'a mut [T]> {
-        let slice = unsafe {
-            slice::from_raw_parts_mut(self.pointer as *mut u8, self.len as usize * size_of::<T>())
-        };
-        zerocopy::TryFromBytes::try_mut_from_bytes(slice).ok()
-    }
-
-    /// Treats the slice as `&[T]`, but creates `&[u8]` to not assume valid alignment
-    ///
-    /// # Safety
-    /// See [`core::slice::from_raw_parts`]
-    pub unsafe fn to_slice_bytes<'a, T>(&self) -> &'a [u8] {
-        unsafe {
-            slice::from_raw_parts(self.pointer as *const _, self.len as usize * size_of::<T>())
-        }
     }
 
     /// # Safety

@@ -21,17 +21,17 @@ use common::{PermissionFlags, SyscallTakeFrameBufferError};
 
 /// # Safety
 /// The input must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
-unsafe fn raw_syscall(input_and_ouput: &mut [u64; 7]) {
+unsafe fn raw_syscall(input_and_output: &mut [u64; 7]) {
     unsafe {
         asm!(
             "syscall",
-            inlateout("rdi") input_and_ouput[0],
-            inlateout("rsi") input_and_ouput[1],
-            inlateout("rdx") input_and_ouput[2],
-            inlateout("r10") input_and_ouput[3],
-            inlateout("r8") input_and_ouput[4],
-            inlateout("r9") input_and_ouput[5],
-            inlateout("rax") input_and_ouput[6],
+            inlateout("rdi") input_and_output[0],
+            inlateout("rsi") input_and_output[1],
+            inlateout("rdx") input_and_output[2],
+            inlateout("r10") input_and_output[3],
+            inlateout("r8") input_and_output[4],
+            inlateout("r9") input_and_output[5],
+            inlateout("rax") input_and_output[6],
             lateout("rcx") _,
             lateout("r11") _,
         );
@@ -92,8 +92,8 @@ pub fn syscall_release_frame_buffer() {
 pub fn syscall_wait_until_event(events: &mut [NonZero<u64>]) -> &mut [NonZero<u64>] {
     let input = events.into();
     // Safety: The input is valid
-    let count = unsafe { syscall::<SyscallWaitUntilEvent>(&input) };
-    &mut events[..count as usize]
+    let count = unsafe { syscall::<SyscallWaitUntilEvent>(&input) }.unwrap();
+    &mut events[..count.get()]
 }
 
 pub fn syscall_subscribe_to_mouse() -> Result<u64, common::SyscallSubscribeToMouseError> {

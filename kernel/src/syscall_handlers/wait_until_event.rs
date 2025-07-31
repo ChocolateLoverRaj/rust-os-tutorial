@@ -1,14 +1,14 @@
-use core::num::NonZero;
+use core::{num::NonZero, slice};
 
 use alloc::boxed::Box;
-use common::SyscallWaitUntilEvent;
-use nodit::interval::ie;
+use common::{LOWER_HALF_END, Syscall, SyscallWaitUntilEvent, SyscallWaitUntilEventError};
 
 use crate::{
     CAPABILITIES,
     cpu_local_data::get_local,
     run_tasks::run_threads,
     task::{THREADS, ThreadState, ThreadWaitingState},
+    try_access_user_mem::try_access_user_mem,
 };
 
 use super::GenericSyscallHandler;
@@ -18,70 +18,90 @@ impl GenericSyscallHandler for SyscallWaitUntilEventHandler {
     type S = SyscallWaitUntilEvent;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         enum Action {
-            Return(u64),
+            Return(<SyscallWaitUntilEvent as Syscall>::Output),
             RunTasks,
         }
-        let get_action = || {
+        let get_action = (|| {
             let input = helper.input();
             if input.len() == 0 {
-                Err(())?;
+                return Action::Return(Err(SyscallWaitUntilEventError::Empty));
             }
+            if input.pointer() == 0
+                || input.pointer() + input.len() * (size_of::<u64>() as u64) > LOWER_HALF_END
+            {
+                return Action::Return(Err(SyscallWaitUntilEventError::InvalidEventsPtr));
+            }
+            let events_ptr = input.pointer() as *mut u64;
+            let events_len = input.len() as usize;
+            let events = match try_access_user_mem(|| {
+                let slice = unsafe { slice::from_raw_parts(events_ptr, events_len) };
+                Box::new(Box::<[u64]>::from(slice))
+            }) {
+                Ok(data) => data,
+                Err(_e) => {
+                    return Action::Return(Err(SyscallWaitUntilEventError::InvalidEventsPtr));
+                }
+            };
+
             let threads = THREADS.read();
             let local = get_local();
             let mut running_thread = local.running_thread.lock();
             let current_thread = threads.get(&running_thread.unwrap()).unwrap();
-            // log::debug!("Thread: {current_thread:?}");
-            if !current_thread
-                .process
-                .memory
-                .read()
-                .mapped_virtual_memory
-                .overlapping(ie(
-                    input.pointer(),
-                    input.pointer().saturating_add(input.len()),
-                ))
-                .all(|(_interval, permissions)| permissions.permissions().write)
-            {
-                Err(())?;
-            }
-            let events = unsafe { input.try_to_slice_mut::<u64>() }.ok_or(())?;
-            let input_events = events.iter().copied().collect::<Box<_>>();
+
             let mut events_pushed = 0;
             let capabilities = CAPABILITIES.read();
-            for event in &input_events {
+            for event in events.iter() {
                 if let Some(capability_id) = NonZero::new(*event) {
-                    let capability = capabilities.get(&capability_id).ok_or(())?;
+                    let capability = if let Some(capability) = capabilities.get(&capability_id) {
+                        capability
+                    } else {
+                        return Action::Return(Err(SyscallWaitUntilEventError::EventNotFound));
+                    };
                     if capability.process_id != current_thread.process.id.into() {
-                        Err(())?;
+                        return Action::Return(Err(SyscallWaitUntilEventError::EventNotFound));
                     }
-                    if capability._type.take_pending_event().ok_or(())? {
-                        events[events_pushed] = *event;
+                    let event_already_happened = if let Some(event_already_happened) =
+                        capability._type.take_pending_event()
+                    {
+                        event_already_happened
+                    } else {
+                        return Action::Return(Err(SyscallWaitUntilEventError::InvalidCapability));
+                    };
+                    if event_already_happened {
+                        let event_ptr = unsafe { events_ptr.add(events_pushed) };
+                        if let Err(_e) = try_access_user_mem(|| {
+                            unsafe { event_ptr.write(*event) };
+                            Box::new(())
+                        }) {
+                            return Action::Return(Err(
+                                SyscallWaitUntilEventError::InvalidEventsPtr,
+                            ));
+                        };
                         events_pushed += 1;
                     }
                 } else {
-                    Err(())?;
+                    return Action::Return(Err(SyscallWaitUntilEventError::CapabilityZero));
                 }
             }
 
-            Ok::<_, ()>(if events_pushed > 0 {
-                Action::Return(events_pushed as u64)
+            if let Some(events_pushed) = NonZero::new(events_pushed) {
+                Action::Return(Ok(events_pushed))
             } else {
                 *current_thread.state.write() = ThreadState::WaitingForEvents(ThreadWaitingState {
                     saved_regs: helper.saved_regs().clone(),
                     events_slice: *input,
-                    events: input_events
+                    events: events
                         .into_iter()
                         .map(|event| (event.try_into().unwrap(), false))
                         .collect(),
                 });
                 *running_thread = None;
                 Action::RunTasks
-            })
-        };
-        match get_action() {
-            Err(()) => todo!("terminate"),
-            Ok(Action::Return(value)) => helper.syscall_return(&value),
-            Ok(Action::RunTasks) => run_threads(),
+            }
+        })();
+        match get_action {
+            Action::Return(value) => helper.syscall_return(&value),
+            Action::RunTasks => run_threads(),
         }
     }
 }
