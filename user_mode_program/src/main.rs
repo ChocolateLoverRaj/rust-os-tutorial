@@ -370,17 +370,20 @@ fn main(initial_rsp: NonNull<()>) {
                                             break;
                                         }
                                         KeyCode::Tab => {
-                                            *tab_index = if keyboard.get_modifiers().is_shifted() {
-                                                if *tab_index == 0 {
-                                                    state.tabs.len() - 1
+                                            *tab_index = {
+                                                #[allow(clippy::collapsible_else_if)]
+                                                if keyboard.get_modifiers().is_shifted() {
+                                                    if *tab_index == 0 {
+                                                        state.tabs.len() - 1
+                                                    } else {
+                                                        *tab_index - 1
+                                                    }
                                                 } else {
-                                                    *tab_index - 1
-                                                }
-                                            } else {
-                                                if *tab_index + 1 < state.tabs.len() {
-                                                    *tab_index + 1
-                                                } else {
-                                                    0
+                                                    if *tab_index + 1 < state.tabs.len() {
+                                                        *tab_index + 1
+                                                    } else {
+                                                        0
+                                                    }
                                                 }
                                             };
                                             break;

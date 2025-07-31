@@ -160,7 +160,7 @@ impl WindowSharedMemServer {
         }
         (
             Self {
-                shared_mem: shared_mem,
+                shared_mem,
                 receiver,
                 width,
                 height,
