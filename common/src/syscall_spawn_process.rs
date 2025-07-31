@@ -69,7 +69,7 @@ impl From<SpawnProcessMemoryFlags> for PageTableFlags {
     }
 }
 
-#[derive(Debug, FromBytes, IntoBytes, Immutable, Clone)]
+#[derive(Debug, FromBytes, IntoBytes, Immutable, KnownLayout, Clone)]
 pub struct SpawnProcessMemoryMapping {
     pub current_process_start: u64,
     pub new_process_start: u64,
@@ -77,9 +77,27 @@ pub struct SpawnProcessMemoryMapping {
     pub flags: u64,
 }
 
+#[derive(Debug, Encode, Decode)]
+pub enum SyscallSpawnProcessError {
+    /// Invalid pointer to input
+    InvalidInputPtr,
+    /// Input is not valid, checked by `zerocopy`
+    InvalidInput,
+    InvalidMemoryMappingPtr,
+    // Invalid memory mapping, checked by `zerocopy`
+    InvalidMemoryMapping,
+    InvalidMemoryMappingSrc,
+    InvalidCapabilityPtr,
+    /// Got a capability id of 0
+    InvalidCapabilityId,
+    /// You tried to send a capability that you don't own or doesn't exist
+    CapabilityNotFound,
+    OutOfPhysMem,
+}
+
 pub struct SyscallSpawnProcess;
 impl Syscall for SyscallSpawnProcess {
     const ID: u64 = 0x5B0B4092EAC9C9CE;
     type Input = u64;
-    type Output = NonZero<u32>;
+    type Output = Result<NonZero<u32>, SyscallSpawnProcessError>;
 }

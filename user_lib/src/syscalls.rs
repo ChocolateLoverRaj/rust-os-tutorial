@@ -13,9 +13,9 @@ use common::{
     SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallMapSharedMem,
     SyscallMapSharedMemError, SyscallMapSharedMemInput, SyscallReleaseFrameBuffer,
     SyscallSendCapability, SyscallSendCapabilityError, SyscallSendCapabilityInput,
-    SyscallSpawnProcess, SyscallSpawnProcessInput, SyscallSpawnThread, SyscallSpawnThreadInput,
-    SyscallSubscribeToMouse, SyscallTakeFrameBuffer, SyscallTakeFrameBufferOutput, SyscallTxSend,
-    SyscallWaitUntilEvent, log,
+    SyscallSpawnProcess, SyscallSpawnProcessError, SyscallSpawnProcessInput, SyscallSpawnThread,
+    SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
+    SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent, log,
 };
 use common::{PermissionFlags, SyscallTakeFrameBufferError};
 
@@ -150,7 +150,9 @@ pub struct RustSyscallSpawnProcessInput<'a> {
     pub send_capabilities: &'a [NonZero<u64>],
 }
 
-pub fn syscall_spawn_process(input: RustSyscallSpawnProcessInput) -> NonZero<u32> {
+pub fn syscall_spawn_process(
+    input: RustSyscallSpawnProcessInput,
+) -> Result<NonZero<u32>, SyscallSpawnProcessError> {
     let input = SyscallSpawnProcessInput {
         priority: input.priority,
         rip: input.rip,

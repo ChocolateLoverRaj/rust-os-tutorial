@@ -1,9 +1,10 @@
-use core::{fmt::Debug, num::NonZero};
+use core::{fmt::Debug, num::NonZero, ops::Deref};
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use alloc::{boxed::Box, collections::btree_set::BTreeSet, sync::Arc};
 use common::{
-    SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority, Syscall,
-    SyscallSpawnProcess, SyscallSpawnProcessInput,
+    LOWER_HALF_END, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
+    SpawnProcessRelativePriority, Syscall, SyscallSpawnProcess, SyscallSpawnProcessError,
+    SyscallSpawnProcessInput,
 };
 use nodit::{Interval, NoditMap};
 use x2apic::lapic::IpiAllShorthand;
@@ -28,6 +29,7 @@ use crate::{
         THREADS, Thread, ThreadId, ThreadReadyState, ThreadReadyStateInSyscall, ThreadState,
         UserVirtMem,
     },
+    try_access_user_mem::try_access_user_mem,
 };
 
 use super::GenericSyscallHandler;
@@ -38,110 +40,93 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let result = (|| {
             let input_ptr = *helper.input();
+            if input_ptr == 0
+                || input_ptr + u64::try_from(size_of::<SyscallSpawnProcessInput>()).unwrap()
+                    > LOWER_HALF_END
+            {
+                Err(SyscallSpawnProcessError::InvalidInputPtr)?
+            }
+            let input_ptr = input_ptr as *const [u8; size_of::<SyscallSpawnProcessInput>()];
+            let input = try_access_user_mem(|| Box::new(unsafe { input_ptr.read() }))
+                .map_err(|_e| SyscallSpawnProcessError::InvalidInputPtr)?;
+            let input = SyscallSpawnProcessInput::try_ref_from_bytes(input.deref())
+                .map_err(|_| SyscallSpawnProcessError::InvalidInput)?;
+            if input.memory_mappings.pointer() == 0
+                || input.memory_mappings.pointer()
+                    + input.memory_mappings.len()
+                        * u64::try_from(size_of::<SpawnProcessMemoryMapping>()).unwrap()
+                    > LOWER_HALF_END
+            {
+                Err(SyscallSpawnProcessError::InvalidInputPtr)?
+            }
+            if input.send_capabilities.pointer() == 0
+                || input.send_capabilities.pointer()
+                    + input.send_capabilities.len()
+                        * u64::try_from(size_of::<NonZero<u64>>()).unwrap()
+                    > LOWER_HALF_END
+            {
+                Err(SyscallSpawnProcessError::InvalidInputPtr)?
+            }
+
             let local = get_local();
             let mut running_thread_lock = local.running_thread.try_lock().unwrap();
             let running_thread_id = running_thread_lock.unwrap();
             let mut threads = THREADS.write();
             let running_thread = threads.get(&running_thread_id).unwrap();
-            let mut process_memory = running_thread.process.memory.write();
 
-            let interval = Interval::from(
-                input_ptr
-                    ..input_ptr
-                        .checked_add(size_of::<SyscallSpawnProcessInput>() as u64)
-                        .ok_or(())?,
-            );
-            if !(process_memory
-                .mapped_virtual_memory
-                .contains_interval(interval)
-                && process_memory
-                    .mapped_virtual_memory
-                    .overlapping(interval)
-                    .all(|(_, mem)| mem.permissions().read))
-            {
-                Err(())?
-            }
-            let input = {
-                let data = input_ptr as *const u8;
-                let len = size_of::<SyscallSpawnProcessInput>();
-                unsafe { core::slice::from_raw_parts(data, len) }
-            };
-            let input = SyscallSpawnProcessInput::try_ref_from_bytes(input).map_err(|_| ())?;
-
-            let interval = Interval::from(
-                input.memory_mappings.pointer()
-                    ..input
-                        .memory_mappings
-                        .pointer()
-                        .checked_add(input.memory_mappings.len())
-                        .ok_or(())?,
-            );
-            if !(process_memory
-                .mapped_virtual_memory
-                .contains_interval(interval)
-                && process_memory
-                    .mapped_virtual_memory
-                    .overlapping(interval)
-                    .all(|(_, mem)| mem.permissions().read))
-            {
-                Err(())?
-            }
-            let memory_mappings = unsafe {
-                input
-                    .memory_mappings
-                    .try_to_slice::<SpawnProcessMemoryMapping>()
-            }
-            .ok_or(())?;
-
-            let interval = Interval::from(
-                input.send_capabilities.pointer()
-                    ..input.send_capabilities.pointer() + input.send_capabilities.len(),
-            );
-            if !(process_memory
-                .mapped_virtual_memory
-                .contains_interval(interval)
-                && process_memory
-                    .mapped_virtual_memory
-                    .overlapping(interval)
-                    .all(|(_, mem)| mem.permissions().read))
-            {
-                Err(())?
-            }
+            // FIXME: Clean up if errors are found
             let new_process_id = ProcessId::new_unique();
-            let send_capabilities =
-                unsafe { input.send_capabilities.try_to_slice::<u64>().ok_or(()) }?;
             let mut capabilities = CAPABILITIES.write();
-            for capability in send_capabilities {
-                let capability_id = NonZero::new(*capability).ok_or(())?;
-                let capability = capabilities.get_mut(&capability_id).ok_or(())?;
+            for i in 0..input.send_capabilities.len() as usize {
+                let capability = try_access_user_mem(|| {
+                    let capability_ptr = (input.send_capabilities.pointer() as usize
+                        + i * size_of::<u64>())
+                        as *const u64;
+                    Box::new(unsafe { capability_ptr.read() })
+                })
+                .map_err(|_e| SyscallSpawnProcessError::InvalidCapabilityPtr)?;
+                let capability_id = NonZero::new(*capability)
+                    .ok_or(SyscallSpawnProcessError::InvalidCapabilityId)?;
+                let capability = capabilities
+                    .get_mut(&capability_id)
+                    .ok_or(SyscallSpawnProcessError::CapabilityNotFound)?;
                 if capability.process_id != running_thread.process.id.into() {
-                    Err(())?
+                    Err(SyscallSpawnProcessError::CapabilityNotFound)?
                 }
                 capability.process_id = new_process_id.into();
             }
 
+            let mut process_memory = running_thread.process.memory.write();
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             let new_cr3 = physical_memory
                 .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(BTreeSet::from([
                     new_process_id,
                 ])))
-                .unwrap(); // TODO: Don't panic here
+                .ok_or(SyscallSpawnProcessError::OutOfPhysMem)?;
             let mut mapped_virtual_memory = NoditMap::default();
             let mut current_mapper = unsafe { get_page_table(running_thread.process.cr3, false) };
             let mut new_mapper = unsafe { get_page_table(new_cr3, true) };
             for i in 256..512 {
                 new_mapper.level_4_table_mut()[i].clone_from(&current_mapper.level_4_table()[i]);
             }
-            for memory_mapping in memory_mappings {
-                // Don't let another thread modify this data while we're using it
-                let memory_mapping = memory_mapping.clone();
+
+            for i in 0..input.memory_mappings.len() as usize {
+                let memory_mapping_ptr = (input.memory_mappings.pointer() as usize
+                    + i * size_of::<SpawnProcessMemoryMapping>())
+                    as *const [u8; size_of::<SpawnProcessMemoryMapping>()];
+                let memory_mapping =
+                    try_access_user_mem(|| Box::new(unsafe { memory_mapping_ptr.read() }))
+                        .map_err(|_e| SyscallSpawnProcessError::InvalidMemoryMappingPtr)?;
+                let memory_mapping =
+                    SpawnProcessMemoryMapping::try_ref_from_bytes(memory_mapping.deref())
+                        .map_err(|_e| SyscallSpawnProcessError::InvalidMemoryMapping)?;
                 let interval = Interval::from(
                     memory_mapping.current_process_start
                         ..memory_mapping
                             .current_process_start
                             .checked_add(memory_mapping.len)
-                            .ok_or(())?,
+                            .ok_or(SyscallSpawnProcessError::InvalidMemoryMappingSrc)?,
                 );
                 #[allow(clippy::too_many_arguments)]
                 fn map_region_with_page_size<S: PageSize + Debug>(
@@ -158,10 +143,6 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     if !(process_memory
                         .mapped_virtual_memory
                         .contains_interval(interval)
-                        && process_memory
-                            .mapped_virtual_memory
-                            .overlapping(interval)
-                            .all(|(_, mem)| mem.permissions().read)
                         && memory_mapping.current_process_start.is_multiple_of(S::SIZE)
                         && memory_mapping.len.is_multiple_of(S::SIZE))
                         && memory_mapping.new_process_start.is_multiple_of(S::SIZE)
@@ -276,7 +257,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         &mut process_memory,
                         running_thread,
                         interval,
-                    )?;
+                    )
+                    .unwrap();
                 } else if memory_mapping_flags.contains(SpawnProcessMemoryFlags::_2MiB_PAGE) {
                     map_region_with_page_size::<Size2MiB>(
                         &memory_mapping,
@@ -288,7 +270,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         &mut process_memory,
                         running_thread,
                         interval,
-                    )?;
+                    )
+                    .unwrap();
                 } else {
                     map_region_with_page_size::<Size4KiB>(
                         &memory_mapping,
@@ -300,7 +283,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         &mut process_memory,
                         running_thread,
                         interval,
-                    )?;
+                    )
+                    .unwrap();
                 }
             }
             let new_thread_id = ThreadId::new_unique();
@@ -309,7 +293,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             *running_thread.state.write() =
                 ThreadState::Ready(ThreadReadyState::InSyscall(ThreadReadyStateInSyscall {
                     saved_regs: helper.saved_regs().clone(),
-                    output: <Self::S as Syscall>::encode_output(&new_process_id.into()),
+                    output: <Self::S as Syscall>::encode_output(&Ok(new_process_id.into())),
                 }));
             threads.insert(
                 new_thread_id,
@@ -347,10 +331,10 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     IpiAllShorthand::AllExcludingSelf,
                 );
             }
-            Ok::<_, ()>(())
+            Ok(())
         })();
         match result {
-            Err(_) => todo!(),
+            Err(e) => helper.syscall_return(&Err(e)),
             Ok(_) => run_threads(),
         }
     }

@@ -167,4 +167,5 @@ pub fn spawn_process(
         memory_mapping: &memory_mappings,
         send_capabilities,
     })
+    .unwrap()
 }
