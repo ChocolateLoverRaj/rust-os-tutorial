@@ -69,6 +69,8 @@ pub enum UserVirtMem {
     FrameBuffer,
     /// Different processes can have different permissions for the same shared mem
     Shared(SharedVirtMem),
+    /// Mapped to Limine module (as read-only)
+    LimineModule,
 }
 
 pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, UserVirtMem>;
