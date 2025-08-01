@@ -161,7 +161,9 @@ where
                             .map_to(
                                 page,
                                 frame,
-                                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                                PageTableFlags::PRESENT
+                                    | PageTableFlags::WRITABLE
+                                    | PageTableFlags::GLOBAL,
                                 &mut frame_allocator,
                             )
                             .unwrap()

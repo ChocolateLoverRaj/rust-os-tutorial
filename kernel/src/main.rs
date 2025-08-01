@@ -22,6 +22,7 @@ pub mod acpi;
 pub mod call_with_rsp;
 mod capabilities;
 pub mod cpu_local_data;
+pub mod cr4;
 pub mod create_normal_stack;
 pub mod enter_user_mode;
 pub mod event_stream_mem;
@@ -70,6 +71,7 @@ unsafe extern "C" fn entry_point_from_limine() -> ! {
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
     logger::init_frame_buffer(frame_buffer_response, false);
 
+    cr4::init();
     let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
     // Safety: we are initializing this for the first time
     unsafe { memory::init(memory_map) };
@@ -118,7 +120,6 @@ extern "sysv64" fn init_bsp() -> ! {
     unsafe { gdt::init() };
     idt::init();
     local_apic::init();
-    smep_smap::init();
     syscalls::init();
 
     // mouse::init();
@@ -146,10 +147,10 @@ unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
 extern "sysv64" fn init_ap() -> ! {
     log::debug!("AP running");
 
+    cr4::init();
     unsafe { gdt::init() };
     idt::init();
     local_apic::init();
-    smep_smap::init();
     syscalls::init();
 
     run_threads()

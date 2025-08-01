@@ -1,5 +1,6 @@
 use core::{fmt::Debug, ops::RangeInclusive};
 
+use common::HIGHER_HALF_START;
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     VirtAddr,
@@ -26,7 +27,7 @@ impl VirtualMemory {
         let start_page = Page::<S>::from_start_address(VirtAddr::new({
             let range = self
                 .set
-                .gaps_trimmed(iu(0xffff800000000000))
+                .gaps_trimmed(iu(HIGHER_HALF_START))
                 .find_map(|gap| {
                     let aligned_start = gap.start().next_multiple_of(S::SIZE);
                     let required_end_inclusive = aligned_start + (n_pages * S::SIZE - 1);

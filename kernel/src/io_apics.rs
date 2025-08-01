@@ -41,7 +41,8 @@ pub fn init(apic: &Apic<impl Allocator>) {
             let flags = PageTableFlags::PRESENT
                 | PageTableFlags::WRITABLE
                 | PageTableFlags::NO_EXECUTE
-                | PageTableFlags::NO_CACHE;
+                | PageTableFlags::NO_CACHE
+                | PageTableFlags::GLOBAL;
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) };
             let mut io_apic = unsafe { IoApic::new(page.start_address().as_u64()) };

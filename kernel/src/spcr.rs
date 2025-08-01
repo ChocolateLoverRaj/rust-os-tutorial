@@ -71,7 +71,8 @@ where
                         PageTableFlags::PRESENT
                             | PageTableFlags::WRITABLE
                             | PageTableFlags::NO_EXECUTE
-                            | PageTableFlags::NO_CACHE,
+                            | PageTableFlags::NO_CACHE
+                            | PageTableFlags::GLOBAL,
                         &mut frame_allocator,
                     )
                 };

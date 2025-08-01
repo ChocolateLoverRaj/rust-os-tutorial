@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use alloc::collections::btree_set::BTreeSet;
-use common::{AllocPageSize, SliceData, SyscallAlloc, SyscallAllocError};
+use common::{AllocPageSize, HIGHER_HALF_START, SliceData, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ue;
 use raw_cpuid::CpuId;
 use x86_64::{
@@ -48,7 +48,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 let mut process_memory = current_process.memory.write();
                 let range = process_memory
                     .mapped_virtual_memory
-                    .gaps_trimmed(ue(0xffff800000000000))
+                    .gaps_trimmed(ue(HIGHER_HALF_START))
                     .find_map(|gap| {
                         let aligned_start = gap.start().max(1).checked_next_multiple_of(S::SIZE)?;
                         let required_end_inclusive = aligned_start + (n_pages * S::SIZE - 1);

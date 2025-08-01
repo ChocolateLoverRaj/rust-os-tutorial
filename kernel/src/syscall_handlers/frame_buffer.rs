@@ -1,6 +1,6 @@
 use common::{
-    SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer, SyscallTakeFrameBufferError,
-    SyscallTakeFrameBufferOutput,
+    HIGHER_HALF_START, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
+    SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
 };
 use nodit::interval::ue;
 use raw_cpuid::CpuId;
@@ -50,7 +50,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
             let mut process_memory = current_process.memory.write();
             let range = process_memory
                 .mapped_virtual_memory
-                .gaps_trimmed(ue(0xffff800000000000))
+                .gaps_trimmed(ue(HIGHER_HALF_START))
                 .find_map(|range| {
                     let aligned_start = range.start().next_multiple_of(Size4KiB::SIZE);
                     let needed_end_inclusive = aligned_start + (frame_buffer_len - 1);

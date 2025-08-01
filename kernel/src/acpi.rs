@@ -42,7 +42,7 @@ impl KernelAcpiHandler {
                 pages.map_to(
                     start_page + i,
                     start_frame + i,
-                    PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                    PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::GLOBAL,
                     &mut frame_allocator,
                 );
             }

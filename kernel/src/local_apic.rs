@@ -43,7 +43,8 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
                     PageTableFlags::PRESENT
                         | PageTableFlags::WRITABLE
                         | PageTableFlags::NO_CACHE
-                        | PageTableFlags::NO_EXECUTE,
+                        | PageTableFlags::NO_EXECUTE
+                        | PageTableFlags::GLOBAL,
                     &mut frame_allocator,
                 )
             };
