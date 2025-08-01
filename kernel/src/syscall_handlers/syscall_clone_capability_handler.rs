@@ -17,7 +17,6 @@ impl GenericSyscallHandler for SyscallCloneCapabilityHandler {
         let output = (|| {
             let capability_id = *helper.input();
             let mut capabilities = CAPABILITIES.write();
-            // FIXME: Don't panic if the capability is not found
             let capability = capabilities
                 .get(&capability_id)
                 .ok_or(SyscallCloneCapabilityError::InvalidCapability)?;
@@ -27,7 +26,6 @@ impl GenericSyscallHandler for SyscallCloneCapabilityHandler {
             if capability.process_id != thread.process.id.into() {
                 Err(SyscallCloneCapabilityError::InvalidCapability)?
             }
-            // FIXME: Don't panic if capability can't be cloned
             let _type = capability
                 ._type
                 .try_clone()
