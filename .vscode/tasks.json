@@ -12,7 +12,9 @@
 				"1",
 				"--no-reboot",
 				"--serial",
-				"stdio"
+				"stdio",
+				"-cpu",
+				"qemu64,+smep,+smap,+pge",
 			],
 			"problemMatcher": [
 				"$rustc",

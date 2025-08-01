@@ -18,7 +18,6 @@ use crate::{EnvEntries, ExecutorContext, syscall};
 #[derive(Debug)]
 #[repr(C)]
 struct M {
-    slots_len: usize,
     write_count: AtomicUsize,
     read_count: AtomicUsize,
     slots: [AtomicU8; 0],
@@ -36,26 +35,28 @@ pub struct AsyncKeyboard<'a> {
     executor_context: &'a ExecutorContext,
     capability: NonZero<u64>,
     b: Box<[MaybeUninit<usize>]>,
+    slots_len: usize,
 }
 
 impl<'a> AsyncKeyboard<'a> {
     /// Slots_len will be rounded up to `size_of::<usize>()`
     pub fn new(env: &EnvEntries, executor_context: &'a ExecutorContext, slots_len: usize) -> Self {
+        let slots_len = slots_len.next_multiple_of(size_of::<usize>());
         // We use usize for alignment
-        let len = M::size(slots_len).div_ceil(size_of::<usize>());
+        let len = M::size(slots_len) / size_of::<usize>();
         let mut b = Box::<[usize]>::new_uninit_slice(len);
-        let mem = b.as_mut_ptr().cast::<MaybeUninit<M>>();
+        let mem_ptr = b.as_mut_ptr().cast::<MaybeUninit<M>>();
         // Safety: The pointer is convertible to M
-        let mem = unsafe { mem.as_mut() }.unwrap();
-        let mem = mem.write(M {
-            slots_len,
+        let mem = unsafe { mem_ptr.as_mut() }.unwrap();
+        mem.write(M {
             read_count: AtomicUsize::new(0),
             write_count: AtomicUsize::new(0),
             slots: [],
         });
         let input = SyscallSubscribeToKeyboardInput {
             capability: NonZero::new(*env.get(&ENV_PS2_KEYBOARD_CAPABILITY).unwrap()).unwrap(),
-            queue_ptr: mem as *mut _ as u64,
+            queue_ptr: mem_ptr.addr(),
+            slots_len,
         };
         // Safety: The pointer points to valid memory
         let capability = unsafe { syscall::<SyscallSubscribeToKeyboard>(&input) }.unwrap();
@@ -63,6 +64,7 @@ impl<'a> AsyncKeyboard<'a> {
             executor_context,
             capability,
             b,
+            slots_len,
         }
     }
 }
@@ -87,7 +89,7 @@ impl Stream for AsyncKeyboard<'_> {
         let mem_ptr = s.b.as_mut_ptr().cast::<M>();
         let mem = unsafe { mem_ptr.as_mut() }.unwrap();
         let shared_slots_ptr = (s.b.as_ptr().addr() + size_of::<M>()) as *const AtomicU8;
-        let shared_slots = unsafe { slice::from_raw_parts(shared_slots_ptr, mem.slots_len) };
+        let shared_slots = unsafe { slice::from_raw_parts(shared_slots_ptr, s.slots_len) };
         let mut reader = QueueReader::new(&mem.write_count, &mem.read_count, shared_slots);
         if let Some(data) = reader.pop() {
             Poll::Ready(Some(data))

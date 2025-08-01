@@ -9,13 +9,13 @@ use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandl
 use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
 use get_thread_id::SyscallGetThreadIdHandler;
 use keyboard_handler::SyscallSubscribeToKeyboardHandler;
-use log::SyscallLogHandler;
 use map_module::SyscallMapModuleHandler;
 use mouse::SyscallSubscribeToMouseHandler;
 use spawn_process::SyscallSpawnProcessHandler;
 use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc_handler::SyscallAllocHandler;
 use syscall_clone_capability_handler::SyscallCloneCapabilityHandler;
+use syscall_log_handler::SyscallLogHandler;
 use syscall_map_shared_mem_handler::SyscallMapSharedMemHandler;
 use syscall_new_shared_mem_handler::SyscallNewSharedMemHandler;
 use syscall_send_capability_handler::SyscallSendCapabilityHandler;
@@ -33,13 +33,13 @@ mod frame_buffer;
 mod futex;
 mod get_thread_id;
 mod keyboard_handler;
-mod log;
 mod map_module;
 mod mouse;
 mod spawn_process;
 mod spawn_thread;
 mod syscall_alloc_handler;
 mod syscall_clone_capability_handler;
+mod syscall_log_handler;
 mod syscall_map_shared_mem_handler;
 mod syscall_new_shared_mem_handler;
 mod syscall_send_capability_handler;
@@ -164,6 +164,7 @@ impl SyscallHandlers {
         syscall_saved_regs: &mut SyscallSavedRegs,
     ) -> ! {
         let id = input0;
+        // log::debug!("Syscall: 0x{id:X}");
         let input = [input1, input2, input3, input4, input5, input6];
         match self.map.get(&id) {
             Some(handler) => handler.handle_syscall(

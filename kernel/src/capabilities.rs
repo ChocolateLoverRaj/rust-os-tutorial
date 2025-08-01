@@ -4,9 +4,11 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use alloc::{collections::btree_map::BTreeMap, sync::Arc};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
 
-use crate::{event_stream_mem::EventStreamMem, task::Process};
+use crate::{
+    event_stream_mem::EventStreamMem, task::Process, try_access_user_mem::try_access_user_mem,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CapabilityId(NonZero<u64>);
@@ -60,6 +62,7 @@ pub struct EventStream {
     pub process: Arc<Process>,
     pub source: EventStreamSource,
     pub ptr: usize,
+    pub slots_len: usize,
 }
 
 #[derive(Debug)]
@@ -99,8 +102,14 @@ impl CapabilityType {
         match self {
             Self::EventStream(event_stream) => Some({
                 let mem = NonNull::new(event_stream.ptr as *mut EventStreamMem).unwrap();
-                let mem = unsafe { mem.as_ref() };
-                mem.read_count.load(Ordering::Relaxed) < mem.write_count.load(Ordering::Relaxed)
+                try_access_user_mem(|| {
+                    let mem = unsafe { mem.as_ref() };
+                    Box::new(
+                        mem.read_count.load(Ordering::Relaxed)
+                            < mem.write_count.load(Ordering::Relaxed),
+                    )
+                })
+                .is_ok_and(|b| *b)
             }),
             CapabilityType::Channel(pending) => Some(pending.swap(false, Ordering::Relaxed)),
             _ => None,

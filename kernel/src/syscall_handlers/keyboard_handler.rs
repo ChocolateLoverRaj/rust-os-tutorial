@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicU8;
 
-use common::{SyscallSubscribeToKeyboard, SyscallSubscribeToKeyboardError};
+use common::{LOWER_HALF_END, SyscallSubscribeToKeyboard, SyscallSubscribeToKeyboardError};
 
 use crate::{
     Capability, CapabilityId, EventStream, EventStreamSource,
@@ -17,6 +17,22 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
     type S = SyscallSubscribeToKeyboard;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let output = (|| {
+            let mem_ptr = helper.input().queue_ptr;
+            let slots_ptr = mem_ptr
+                .checked_add(size_of::<EventStreamMem>())
+                .ok_or(SyscallSubscribeToKeyboardError::InvalidQueuePtr)?;
+            let slots_len = helper.input().slots_len;
+            let slots_ptr_end = slots_ptr
+                .checked_add(
+                    size_of::<AtomicU8>()
+                        .checked_mul(slots_len)
+                        .ok_or(SyscallSubscribeToKeyboardError::InvalidQueuePtr)?,
+                )
+                .ok_or(SyscallSubscribeToKeyboardError::InvalidQueuePtr)?;
+            if slots_ptr == 0 || slots_ptr_end as u64 > LOWER_HALF_END {
+                Err(SyscallSubscribeToKeyboardError::InvalidQueuePtr)?
+            }
+
             let threads = THREADS.read();
             let local = get_local();
             let current_process = &threads
@@ -35,21 +51,6 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                 Err(SyscallSubscribeToKeyboardError::InvalidCapability)?;
             }
 
-            let mem_ptr = helper.input().queue_ptr as *mut EventStreamMem;
-            let lower_half_end = 0x800000000000;
-            if !(mem_ptr.is_aligned()
-                && mem_ptr.addr() <= lower_half_end
-                && mem_ptr.addr() + size_of::<EventStreamMem>() <= lower_half_end)
-            {
-                todo!()
-            }
-            let mem = unsafe { mem_ptr.as_mut() }.unwrap();
-            let slots_len = mem.slots_len;
-            let slots_ptr = mem_ptr.addr() + size_of::<EventStreamMem>();
-            let slots_ptr_end = slots_ptr + size_of::<AtomicU8>() * slots_len;
-            if slots_ptr_end > lower_half_end {
-                todo!()
-            }
             let capability_id = CapabilityId::new_unique();
             capabilities.insert(
                 capability_id.into(),
@@ -57,7 +58,8 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                     _type: CapabilityType::EventStream(EventStream {
                         process: current_process.clone(),
                         source: EventStreamSource::Ps2Keyboard,
-                        ptr: mem_ptr.addr(),
+                        ptr: mem_ptr,
+                        slots_len,
                     }),
                     process_id: current_process.id.into(),
                 },

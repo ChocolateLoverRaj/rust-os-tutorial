@@ -1,10 +1,11 @@
 use core::{
-    mem::MaybeUninit,
     num::{NonZero, NonZeroU32},
+    ptr::NonNull,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use alloc::{
+    boxed::Box,
     collections::{btree_map::BTreeMap, btree_set::BTreeSet},
     sync::Arc,
     vec::Vec,
@@ -15,7 +16,7 @@ use x86_64::structures::paging::PhysFrame;
 
 use crate::{
     interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
-    syscall_saved_regs::SyscallSavedRegs,
+    syscall_saved_regs::SyscallSavedRegs, try_access_user_mem::try_access_user_mem,
 };
 
 #[derive(Debug, Clone)]
@@ -29,17 +30,25 @@ impl ThreadWaitingState {
     /// # Safety
     /// Enters user mode according to saved registers
     pub unsafe fn sysretq(self) -> ! {
-        let events = unsafe {
-            self.events_slice
-                .to_slice_mut::<MaybeUninit<NonZero<u64>>>()
-        };
+        // let events = unsafe {
+        //     self.events_slice
+        //         .to_slice_mut::<MaybeUninit<NonZero<u64>>>()
+        // };
         let mut events_count = 0;
         for event in self.events.into_iter().filter_map(
             |(event, happened)| {
                 if happened { Some(event) } else { None }
             },
         ) {
-            events[events_count].write(event);
+            let event_ptr = NonNull::new(
+                (self.events_slice.pointer() as usize + events_count * size_of::<NonZero<u64>>())
+                    as *mut NonZero<u64>,
+            )
+            .unwrap();
+            let _ = try_access_user_mem(|| {
+                unsafe { event_ptr.write(event) };
+                Box::new(())
+            });
             events_count += 1;
         }
         let output = SyscallWaitUntilEvent::encode_output(&Ok(events_count.try_into().unwrap()));

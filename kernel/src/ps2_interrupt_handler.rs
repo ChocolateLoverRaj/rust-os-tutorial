@@ -1,6 +1,7 @@
-use core::{ops::DerefMut, slice, sync::atomic::AtomicU8};
+use core::{ops::DerefMut, ptr::NonNull, slice};
 
-use common::{LOWER_HALF_END, QueueWriter};
+use alloc::boxed::Box;
+use common::QueueWriter;
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::{instructions::port::Port, registers::control::Cr3};
 
@@ -13,6 +14,7 @@ use crate::{
     memory::MEMORY,
     run_tasks::run_threads,
     task::{THREADS, ThreadReadyState, ThreadState},
+    try_access_user_mem::try_access_user_mem,
 };
 
 /// # Safety
@@ -42,16 +44,15 @@ pub unsafe fn ps2_interrupt_handler(
                         Cr3::write(frame, flags)
                     };
                 }
-                let mem_ptr = event_stream.ptr as *const EventStreamMem;
-                let mem = unsafe { mem_ptr.as_ref() }.unwrap();
-                let slots_len = mem.slots_len;
-                let slots_ptr = (mem_ptr.addr() + size_of::<EventStreamMem>()) as *const AtomicU8;
-                if slots_ptr.addr() + slots_len > LOWER_HALF_END as usize {
-                    todo!()
-                }
-                let slots = unsafe { slice::from_raw_parts(slots_ptr, slots_len) };
-                let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, slots);
-                let _ = writer.push(data);
+                let mut mem_ptr = NonNull::new(event_stream.ptr as *mut EventStreamMem).unwrap();
+                let _ = try_access_user_mem(|| {
+                    let mem = unsafe { mem_ptr.as_mut() };
+                    let slots_ptr = mem.slots.as_mut_ptr();
+                    let slots = unsafe { slice::from_raw_parts(slots_ptr, event_stream.slots_len) };
+                    let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, slots);
+                    let _ = writer.push(data);
+                    Box::new(())
+                });
                 for thread in threads.values() {
                     if thread.process.id == event_stream.process.id {
                         let mut state = thread.state.write();
