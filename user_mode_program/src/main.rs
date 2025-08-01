@@ -118,8 +118,9 @@ fn main(initial_rsp: NonNull<()>) {
             let mut position = new_tab_width;
             for (index, tab) in state.tabs.iter().enumerate() {
                 let font = &FONT_10X20;
-                // TODO: Get UTF-8 character count and not byte-count
                 let app_name = apps[tab.app_index];
+                // Note that we are using the number of bytes, which will overestimate the width for characters that are >1 bytes.
+                // However, the font we are using can't even display those kinds of characters so this logic is fine for now.
                 let text_width = font.character_size.width * u32::try_from(app_name.len()).unwrap()
                     + font.character_spacing * u32::try_from(app_name.len() - 1).unwrap();
                 let padding_x = 10;
