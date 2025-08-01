@@ -7,7 +7,6 @@ use x86_64::{
 };
 
 use crate::{
-    VirtMemPermissions,
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     limine_requests::MODULE_REQUEST,
@@ -58,14 +57,7 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                 .ok_or(SyscallMapModuleError::OutOfVirtualMemory)?;
             process_memory
                 .mapped_virtual_memory
-                .insert_merge_touching_if_values_equal(
-                    range.clone().into(),
-                    UserVirtMem::Plain(VirtMemPermissions {
-                        read: true,
-                        write: false,
-                        execute: false,
-                    }),
-                )
+                .insert_merge_touching_if_values_equal(range.clone().into(), UserVirtMem::Plain)
                 .unwrap();
             let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
             let start_page =

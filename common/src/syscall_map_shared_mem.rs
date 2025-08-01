@@ -2,6 +2,7 @@ use core::num::NonZero;
 
 use bincode::{Decode, Encode};
 use bitflags::bitflags;
+use x86_64::structures::paging::PageTableFlags;
 
 use crate::{SliceData, Syscall};
 
@@ -16,6 +17,22 @@ bitflags! {
         const READABLE = 1 << 2;
         // The source may set any bits
         const _ = !0;
+    }
+}
+
+impl PermissionFlags {
+    pub fn page_table_flags(&self) -> PageTableFlags {
+        let mut flags = PageTableFlags::empty();
+        if self.contains(PermissionFlags::READABLE) {
+            flags |= PageTableFlags::PRESENT;
+        }
+        if self.contains(PermissionFlags::WRITABLE) {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        if !self.contains(PermissionFlags::EXECUTABLE) {
+            flags |= PageTableFlags::NO_EXECUTE;
+        }
+        flags
     }
 }
 

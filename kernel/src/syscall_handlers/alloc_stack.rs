@@ -7,7 +7,6 @@ use x86_64::{
 };
 
 use crate::{
-    VirtMemPermissions,
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
@@ -47,25 +46,14 @@ impl GenericSyscallHandler for SyscallAllocStackHandler {
             let guard_page_range = *range.start()..=*range.start() + (Size4KiB::SIZE - 1);
             process_memory
                 .mapped_virtual_memory
-                .insert_merge_touching_if_values_equal(
-                    guard_page_range.into(),
-                    UserVirtMem::Plain(VirtMemPermissions {
-                        read: false,
-                        write: false,
-                        execute: false,
-                    }),
-                )
+                .insert_merge_touching_if_values_equal(guard_page_range.into(), UserVirtMem::Plain)
                 .unwrap();
             let usable_range = *range.start() + Size4KiB::SIZE..=*range.end();
             process_memory
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
                     usable_range.clone().into(),
-                    UserVirtMem::Plain(VirtMemPermissions {
-                        read: true,
-                        write: true,
-                        execute: false,
-                    }),
+                    UserVirtMem::Plain,
                 )
                 .unwrap();
             let mut mapper = unsafe { get_page_table(current_process.cr3, false) };

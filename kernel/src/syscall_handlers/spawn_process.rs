@@ -162,10 +162,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                                 ..memory_mapping.new_process_start + memory_mapping.len,
                         );
                         mapped_virtual_memory
-                            .insert_merge_touching_if_values_equal(
-                                interval,
-                                UserVirtMem::Plain(memory_mapping_flags.into()),
-                            )
+                            .insert_merge_touching_if_values_equal(interval, UserVirtMem::Plain)
                             .map_err(|_| ())?;
                         let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
                             memory_mapping.current_process_start,
@@ -206,10 +203,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                                 ..memory_mapping.new_process_start + memory_mapping.len,
                         );
                         mapped_virtual_memory
-                            .insert_merge_touching_if_values_equal(
-                                interval,
-                                UserVirtMem::Plain(memory_mapping_flags.into()),
-                            )
+                            .insert_merge_touching_if_values_equal(interval, UserVirtMem::Plain)
                             .map_err(|_| ())?;
                         let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
                             memory_mapping.current_process_start,

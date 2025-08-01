@@ -17,7 +17,6 @@ use x86_64::{
 };
 
 use crate::{
-    VirtMemPermissions,
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     get_page_table::get_page_table,
     memory::{MEMORY, MemoryType},
@@ -124,7 +123,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                             (start_page.start_address().as_u64()
                                 ..=(end_page.start_address() + (end_page.size() - 1)).as_u64())
                                 .into(),
-                            UserVirtMem::Plain(flags.into()),
+                            UserVirtMem::Plain,
                         )
                         .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                     for page in start_page..=end_page {
@@ -185,11 +184,7 @@ pub fn spawn_initial_process(module_response: &ModuleResponse) {
                 mapped_virtual_memory
                     .insert_merge_touching(
                         (stack_start..=stack_end_inclusive).into(),
-                        UserVirtMem::Plain(VirtMemPermissions {
-                            read: true,
-                            write: true,
-                            execute: false,
-                        }),
+                        UserVirtMem::Plain,
                     )
                     .map_err(LoadUserModeProgramError::OverlappingElfSegmentsAndStack)?;
                 let stack_start_page =

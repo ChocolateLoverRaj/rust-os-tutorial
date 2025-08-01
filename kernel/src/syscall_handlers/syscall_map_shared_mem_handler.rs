@@ -8,7 +8,6 @@ use x86_64::{
 };
 
 use crate::{
-    VirtMemPermissions,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     get_page_table::get_page_table,
@@ -64,17 +63,11 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 })
                 // FIXME: Don't panic
                 .unwrap();
-            let permissions = VirtMemPermissions::from(PermissionFlags::from_bits_retain(
-                helper.input().permission_flags,
-            ));
             process_mem
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
                     interval,
-                    UserVirtMem::Shared(SharedVirtMem {
-                        shared_mem_id,
-                        permissions,
-                    }),
+                    UserVirtMem::Shared(SharedVirtMem { shared_mem_id }),
                 )
                 .unwrap();
 
@@ -89,7 +82,8 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 let page = start_page + i as u64;
                 let flags = PageTableFlags::PRESENT
                     | PageTableFlags::USER_ACCESSIBLE
-                    | permissions.page_table_flags();
+                    | PermissionFlags::from_bits_retain(helper.input().permission_flags)
+                        .page_table_flags();
                 // FIXME: Handle out of mem errors
                 unsafe { mapper.map_to(page, *frame, flags, &mut frame_allocator) }
                     .unwrap()

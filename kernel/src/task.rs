@@ -14,7 +14,7 @@ use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
 use crate::{
-    VirtMemPermissions, interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
+    interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
     syscall_saved_regs::SyscallSavedRegs,
 };
 
@@ -50,33 +50,16 @@ impl ThreadWaitingState {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SharedVirtMem {
     pub shared_mem_id: u64,
-    pub permissions: VirtMemPermissions,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum UserVirtMem {
     /// Memory that is not shared or MMIO, just owned by the process
-    Plain(VirtMemPermissions),
+    Plain,
     /// The framebuffer is MMIO with fixed permissions and cache behavior set by the kernel
     FrameBuffer,
     /// Different processes can have different permissions for the same shared mem
     Shared(SharedVirtMem),
-}
-
-const FRAME_BUFFER_PERMISSIONS: VirtMemPermissions = VirtMemPermissions {
-    read: true,
-    write: true,
-    execute: false,
-};
-
-impl UserVirtMem {
-    pub fn permissions(&self) -> &VirtMemPermissions {
-        match self {
-            Self::Plain(permissions) => permissions,
-            Self::FrameBuffer => &FRAME_BUFFER_PERMISSIONS,
-            Self::Shared(shared) => &shared.permissions,
-        }
-    }
 }
 
 pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, UserVirtMem>;
