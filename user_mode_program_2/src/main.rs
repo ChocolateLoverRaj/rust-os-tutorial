@@ -33,7 +33,7 @@ fn main(initial_rsp: NonNull<()>) -> ! {
     let env_entries = unsafe { EnvEntries::from_initial_rsp(initial_rsp) };
     log::debug!("{env_entries:#X?}");
 
-    let mut window_client = unsafe { WindowSharedMemClient::new(&env_entries) };
+    let mut window_client = unsafe { WindowSharedMemClient::new(&env_entries) }.unwrap();
     let mut keyboard = unsafe { KeyboardSharedMemClient::new(&env_entries) }.unwrap();
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {

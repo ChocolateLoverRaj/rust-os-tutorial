@@ -30,9 +30,10 @@ bitflags! {
         const EXECUTABLE = 1 << 0;
         const WRITABLE = 1 << 1;
         const READABLE = 1 << 2;
-        /// Instead of *transferring* ownership of the memory to the new process, share the memory so both processes can access it.
-        const SHARE = 1 << 3;
+
+        /// Use 2 MiB pages for this mapping (mapping must perfectly fit 2 MiB pages)
         const _2MiB_PAGE = 1 << 4;
+        /// Use 1 GiB pages for this mapping (mapping must perfectly fit 1 GiB pages)
         const _1GiB_PAGE = 1 << 5;
 
         // The source may set any bits

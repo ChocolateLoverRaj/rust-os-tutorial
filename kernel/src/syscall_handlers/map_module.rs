@@ -60,7 +60,10 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                 .ok_or(SyscallMapModuleError::OutOfVirtualMemory)?;
             process_memory
                 .mapped_virtual_memory
-                .insert_merge_touching_if_values_equal(range.clone().into(), UserVirtMem::Plain)
+                .insert_merge_touching_if_values_equal(
+                    range.clone().into(),
+                    UserVirtMem::LimineModule,
+                )
                 .unwrap();
             let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
             let start_page =

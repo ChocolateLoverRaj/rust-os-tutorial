@@ -3,12 +3,12 @@ use core::num::NonZero;
 use alloc::vec::Vec;
 use common::{
     AllocPageSize, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT, SpawnProcessMemoryFlags,
-    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, log,
+    SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
-    ENV_KEY, KEYBOARD_ENV_KEY, KeyboardSharedMemServer, RustSyscallSpawnProcessInput,
-    WindowSharedMemServer, syscall_alloc, syscall_map_module, syscall_spawn_process,
+    ENV_KEY, KEYBOARD_ENV_KEY, RustSyscallSpawnProcessInput, syscall_alloc, syscall_map_module,
+    syscall_spawn_process,
 };
 use x86_64::{
     VirtAddr,
@@ -18,15 +18,11 @@ use x86_64::{
 pub fn spawn_process(
     module_id: usize,
     priority: SpawnProcessRelativePriority,
-    // env_entries: &[EnvEntry],
-    // send_rx_list: impl Iterator<Item = Sender>,
-    window: &WindowSharedMemServer,
-    keyboard: &KeyboardSharedMemServer,
+    window_shared_mem_capability: NonZero<u64>,
+    keyboard_shared_mem_capability: NonZero<u64>,
     send_capabilities: &[NonZero<u64>],
 ) -> NonZero<u32> {
     let slice = syscall_map_module(module_id).unwrap();
-    // let slice = include_bytes!("extra_module_0");
-    log::debug!("Slice: {slice:p}");
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
     let mut memory_mappings = Vec::<SpawnProcessMemoryMapping>::new();
@@ -98,18 +94,14 @@ pub fn spawn_process(
     )
     .unwrap();
 
-    // FIXME: make sure this doesn't conflict with other mem
-    let window_shared_mem_ptr = 0x40000000;
-    let keyboard_shared_mem_ptr = 0x80000000;
-
     let env_entries = &[
         EnvEntry {
             key: ENV_KEY,
-            value: window_shared_mem_ptr,
+            value: window_shared_mem_capability.get(),
         },
         EnvEntry {
             key: KEYBOARD_ENV_KEY,
-            value: keyboard_shared_mem_ptr,
+            value: keyboard_shared_mem_capability.get(),
         },
     ];
     let env_size = size_of_val(env_entries) + size_of::<u64>();
@@ -132,32 +124,13 @@ pub fn spawn_process(
         len: AllocPageSize::_4KiB.size_bytes(),
         flags: SpawnProcessMemoryFlags::empty().bits(),
     });
+    // Stack
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: u64::try_from(usize::from(stack.addr())).unwrap()
             + AllocPageSize::_4KiB.size_bytes(),
         new_process_start: stack_top - stack_len,
         len: stack_len,
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
-    });
-
-    memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: window.addr().try_into().unwrap(),
-        new_process_start: window_shared_mem_ptr,
-        len: window.size().try_into().unwrap(),
-        flags: (SpawnProcessMemoryFlags::READABLE
-            | SpawnProcessMemoryFlags::WRITABLE
-            | SpawnProcessMemoryFlags::SHARE
-            | SpawnProcessMemoryFlags::_2MiB_PAGE)
-            .bits(),
-    });
-    memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: keyboard.share_addr().try_into().unwrap(),
-        new_process_start: keyboard_shared_mem_ptr,
-        len: keyboard.share_len().try_into().unwrap(),
-        flags: (SpawnProcessMemoryFlags::READABLE
-            | SpawnProcessMemoryFlags::WRITABLE
-            | SpawnProcessMemoryFlags::SHARE)
-            .bits(),
     });
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {

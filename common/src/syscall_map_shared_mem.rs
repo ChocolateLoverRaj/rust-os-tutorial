@@ -45,6 +45,8 @@ pub struct SyscallMapSharedMemInput {
 #[derive(Debug, Encode, Decode)]
 pub enum SyscallMapSharedMemError {
     NoVirtMem,
+    CapabilityNotFound,
+    InvalidCapability,
 }
 
 impl Syscall for SyscallMapSharedMem {

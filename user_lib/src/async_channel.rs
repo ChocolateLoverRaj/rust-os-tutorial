@@ -51,6 +51,7 @@ pub struct ReceiveFuture<'a> {
     receiver: &'a mut Receiver,
     executor_context: &'a ExecutorContext,
 }
+
 impl Future for ReceiveFuture<'_> {
     type Output = ();
 
@@ -71,4 +72,35 @@ impl Future for ReceiveFuture<'_> {
 pub fn create() -> (Sender, Receiver) {
     let channel_id = syscall_create_channel();
     (Sender { channel_id }, Receiver { channel_id })
+}
+
+pub struct UncheckedReceiveFuture<'a> {
+    channel_id: NonZero<u64>,
+    executor_context: &'a ExecutorContext,
+}
+
+impl<'a> UncheckedReceiveFuture<'a> {
+    pub fn new(channel_id: NonZero<u64>, executor_context: &'a ExecutorContext) -> Self {
+        Self {
+            channel_id,
+            executor_context,
+        }
+    }
+}
+
+impl Future for UncheckedReceiveFuture<'_> {
+    type Output = ();
+
+    fn poll(
+        self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        if self.executor_context.take(self.channel_id) {
+            Poll::Ready(())
+        } else {
+            self.executor_context
+                .register_waker(self.channel_id, cx.waker());
+            Poll::Pending
+        }
+    }
 }

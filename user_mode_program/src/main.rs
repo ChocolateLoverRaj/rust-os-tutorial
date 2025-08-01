@@ -230,22 +230,32 @@ fn main(initial_rsp: NonNull<()>) {
                                 }
                                 KeyCode::Return => {
                                     let mut send_capabilities = Vec::new();
-                                    let (window, window_send_capability) =
-                                        WindowSharedMemServer::new(
-                                            window_width,
-                                            window_height,
-                                            &frame_buffer,
-                                        );
+                                    let (
+                                        window,
+                                        window_shared_mem_capability,
+                                        window_send_capability,
+                                    ) = WindowSharedMemServer::new(
+                                        window_width,
+                                        window_height,
+                                        &frame_buffer,
+                                    )
+                                    .unwrap();
+                                    send_capabilities.push(window_shared_mem_capability);
                                     send_capabilities.push(window_send_capability);
-                                    let (keyboard_server, keyboard_send_capabilities) =
-                                        KeyboardSharedMemServer::new().unwrap();
-                                    send_capabilities
-                                        .extend_from_slice(&keyboard_send_capabilities);
+                                    let (
+                                        keyboard_server,
+                                        keyboard_shared_mem_capability,
+                                        keyboard_send_capability0,
+                                        keyboard_send_capability1,
+                                    ) = KeyboardSharedMemServer::new().unwrap();
+                                    send_capabilities.push(keyboard_shared_mem_capability);
+                                    send_capabilities.push(keyboard_send_capability0);
+                                    send_capabilities.push(keyboard_send_capability1);
                                     let process_id = spawn_process(
                                         *focused_index,
                                         SpawnProcessRelativePriority::Lower,
-                                        &window,
-                                        &keyboard_server,
+                                        window_shared_mem_capability,
+                                        keyboard_shared_mem_capability,
                                         &send_capabilities,
                                     );
                                     state.tabs.push(Tab {

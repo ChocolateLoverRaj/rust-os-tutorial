@@ -8,16 +8,16 @@ use core::{
 
 use atomic_enum::atomic_enum;
 use common::{
-    AllocPageSize, PermissionFlags, PushError, QueueReader, QueueWriter, SyscallAllocError,
-    SyscallCloneCapability, SyscallMapSharedMemError, SyscallNewSharedMem,
+    AllocPageSize, PermissionFlags, PushError, QueueReader, QueueWriter, SyscallCloneCapability,
+    SyscallMapSharedMemError, SyscallNewShardMemError, SyscallNewSharedMem,
     SyscallNewSharedMemInput, SyscallSendCapability, SyscallSendCapabilityInput,
 };
 
 use crate::{
     EnvEntries, ExecutorContext,
-    async_channel::{self, Receiver, Sender},
-    syscall, syscall_alloc, syscall_clone_capability, syscall_get_thread_id,
-    syscall_map_shared_mem, syscall_send_capability,
+    async_channel::{self, Receiver, Sender, UncheckedReceiveFuture},
+    syscall, syscall_clone_capability, syscall_get_thread_id, syscall_map_shared_mem,
+    syscall_new_shared_mem, syscall_send_capability, syscall_tx_send,
 };
 
 pub const KEYBOARD_ENV_KEY: u64 = 0x1D099897F69410FA;
@@ -63,17 +63,28 @@ pub struct KeyboardSharedMemServer {
     keyboard_response_tx: Sender,
 }
 
+#[derive(Debug)]
+pub enum NewKeyboardServerError {
+    NewSharedMem(SyscallNewShardMemError),
+    MapSharedMem(SyscallMapSharedMemError),
+}
+
 impl KeyboardSharedMemServer {
-    pub fn new() -> Result<(Self, [NonZero<u64>; 2]), SyscallAllocError> {
+    pub fn new() -> Result<(Self, NonZero<u64>, NonZero<u64>, NonZero<u64>), NewKeyboardServerError>
+    {
         let used_len = size_of::<Self>();
         let page_size = AllocPageSize::_4KiB;
-        let mut allocated_bytes = syscall_alloc(
-            (used_len as u64)
-                .next_multiple_of(page_size.size_bytes())
-                .try_into()
-                .unwrap(),
+        let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
             page_size,
-        )?;
+            pages_len: used_len.div_ceil(page_size.byte_len()),
+        })
+        .map_err(NewKeyboardServerError::NewSharedMem)?;
+        let client_shared_mem_capability = syscall_clone_capability(shared_mem_capability).unwrap();
+        let mut allocated_bytes = syscall_map_shared_mem(
+            shared_mem_capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )
+        .map_err(NewKeyboardServerError::MapSharedMem)?;
         let allocated_bytes = unsafe { allocated_bytes.as_mut() };
         let (keyboard_shared_mem, unused_allocated_bytes) =
             allocated_bytes.split_at_mut(size_of::<KeyboardSharedMem>());
@@ -101,10 +112,9 @@ impl KeyboardSharedMemServer {
                 shared_mem: NonNull::from_mut(shared_mem),
                 unused_allocated_bytes: NonNull::from_mut(unused_allocated_bytes),
             },
-            [
-                keyboard_request_tx_capability,
-                keyboard_response_rx_capability,
-            ],
+            client_shared_mem_capability,
+            keyboard_request_tx_capability,
+            keyboard_response_rx_capability,
         ))
     }
 
@@ -176,22 +186,24 @@ impl Drop for KeyboardSharedMemServer {
 }
 
 pub struct KeyboardSharedMemClient {
-    shared_mem: &'static mut KeyboardSharedMem,
-    request_tx: Sender,
-    response_rx: Receiver,
+    shared_mem: NonNull<[u8]>,
 }
 
 impl KeyboardSharedMemClient {
     /// # Safety
     /// Only have 1 client
-    pub unsafe fn new(env: &EnvEntries) -> Option<Self> {
-        let addr = *env.get(&KEYBOARD_ENV_KEY)? as *mut KeyboardSharedMem;
-        let shared_mem = unsafe { addr.as_mut() }.unwrap();
-        Some(Self {
-            request_tx: unsafe { Sender::from_channel_id(shared_mem.keyboard_request_tx) },
-            response_rx: unsafe { Receiver::from_channel_id(shared_mem.keyboard_response_rx) },
-            shared_mem,
-        })
+    pub unsafe fn new(env: &EnvEntries) -> Result<Self, SyscallMapSharedMemError> {
+        let capability = NonZero::new(*env.get(&KEYBOARD_ENV_KEY).unwrap()).unwrap();
+        let shared_mem = syscall_map_shared_mem(
+            capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )?;
+        Ok(Self { shared_mem })
+    }
+
+    fn mem(&mut self) -> &KeyboardSharedMem {
+        let mut ptr = self.shared_mem.cast::<KeyboardSharedMem>();
+        unsafe { ptr.as_mut() }
     }
 
     pub async fn request(
@@ -214,20 +226,20 @@ impl KeyboardSharedMemClient {
                 unsafe { syscall::<SyscallCloneCapability>(&capability) }.unwrap();
             let input = SyscallSendCapabilityInput {
                 capability: server_capability,
-                process_id: self.shared_mem.server_process_id,
+                process_id: self.mem().server_process_id,
             };
             unsafe { syscall::<SyscallSendCapability>(&input) }.unwrap();
             server_capability
         };
-        self.shared_mem
+        self.mem()
             .keyboard_request
             .store(server_capability.get(), Ordering::Relaxed);
-        self.request_tx.send();
+        syscall_tx_send(self.mem().keyboard_request_tx);
         loop {
-            if self.shared_mem.keyboard_response.load(Ordering::Acquire) {
+            if self.mem().keyboard_response.load(Ordering::Acquire) {
                 break;
             };
-            self.response_rx.receive(executor_context).await;
+            UncheckedReceiveFuture::new(self.mem().keyboard_response_rx, executor_context).await;
         }
         Ok(KeyboardBufClient {
             shared_mem_capability: capability,

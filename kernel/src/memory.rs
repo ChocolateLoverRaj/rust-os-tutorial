@@ -21,6 +21,7 @@ use crate::{
     hhdm_offset::HhdmOffset,
     translate_addr::{TranslateAddr, TranslateFrame},
 };
+pub use physical_memory::PhysicalMemoryFrameAllocator;
 
 mod physical_memory;
 mod virtual_memory;

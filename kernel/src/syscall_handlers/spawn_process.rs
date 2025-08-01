@@ -11,8 +11,7 @@ use x2apic::lapic::IpiAllShorthand;
 use x86_64::{
     VirtAddr,
     structures::paging::{
-        Mapper, Page, PageSize, PageTableFlags, Size1GiB, Size2MiB, Size4KiB,
-        mapper::{TranslateError, UnmapError},
+        Mapper, Page, PageSize, PageTableFlags, Size1GiB, Size2MiB, Size4KiB, mapper::UnmapError,
     },
 };
 use zerocopy::TryFromBytes;
@@ -150,52 +149,52 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                             .new_process_start
                             .checked_add(memory_mapping.len)
                             .ok_or(())?
-                            <= 0x800000000000
+                            <= LOWER_HALF_END
                     {
                         Err(())?
                     }
                     let memory_mapping_flags =
                         SpawnProcessMemoryFlags::from_bits_retain(memory_mapping.flags);
-                    if memory_mapping_flags.contains(SpawnProcessMemoryFlags::SHARE) {
-                        let interval = Interval::from(
-                            memory_mapping.new_process_start
-                                ..memory_mapping.new_process_start + memory_mapping.len,
-                        );
-                        mapped_virtual_memory
-                            .insert_merge_touching_if_values_equal(interval, UserVirtMem::Plain)
-                            .map_err(|_| ())?;
-                        let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
-                            memory_mapping.current_process_start,
-                        ))
-                        .unwrap();
-                        let start_page_new = Page::<S>::from_start_address(VirtAddr::new(
-                            memory_mapping.new_process_start,
-                        ))
-                        .unwrap();
-                        let page_count = memory_mapping.len / S::SIZE;
-                        for i in 0..page_count {
-                            let page = start_page_current + i;
-                            let frame =
-                                current_mapper.translate_page(page).map_err(|e| match e {
-                                    TranslateError::ParentEntryHugePage => (),
-                                    e => panic!(
-                                        "Unexpected translate error: {e:?}. Page size: {:?}",
-                                        S::DEBUG_STR
-                                    ),
-                                })?;
-                            physical_memory.share_memory(frame, new_process_id);
-                            // physical_memory.
-                            let page = start_page_new + i;
-                            let flags = PageTableFlags::PRESENT
-                                | PageTableFlags::USER_ACCESSIBLE
-                                | memory_mapping_flags.into();
-                            let mut frame_allocator = physical_memory
-                                .get_user_mode_program_frame_allocator(new_process_id);
-                            // FIXME: Gracefully handle out of memory
-                            unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
-                                .unwrap()
-                                .flush();
-                        }
+                    if false {
+                        // let interval = Interval::from(
+                        //     memory_mapping.new_process_start
+                        //         ..memory_mapping.new_process_start + memory_mapping.len,
+                        // );
+                        // mapped_virtual_memory
+                        //     .insert_merge_touching_if_values_equal(interval, UserVirtMem::Plain)
+                        //     .map_err(|_| ())?;
+                        // let start_page_current = Page::<S>::from_start_address(VirtAddr::new(
+                        //     memory_mapping.current_process_start,
+                        // ))
+                        // .unwrap();
+                        // let start_page_new = Page::<S>::from_start_address(VirtAddr::new(
+                        //     memory_mapping.new_process_start,
+                        // ))
+                        // .unwrap();
+                        // let page_count = memory_mapping.len / S::SIZE;
+                        // for i in 0..page_count {
+                        //     let page = start_page_current + i;
+                        //     let frame =
+                        //         current_mapper.translate_page(page).map_err(|e| match e {
+                        //             TranslateError::ParentEntryHugePage => (),
+                        //             e => panic!(
+                        //                 "Unexpected translate error: {e:?}. Page size: {:?}",
+                        //                 S::DEBUG_STR
+                        //             ),
+                        //         })?;
+                        //     physical_memory.share_memory(frame, new_process_id);
+                        //     // physical_memory.
+                        //     let page = start_page_new + i;
+                        //     let flags = PageTableFlags::PRESENT
+                        //         | PageTableFlags::USER_ACCESSIBLE
+                        //         | memory_mapping_flags.into();
+                        //     let mut frame_allocator = physical_memory
+                        //         .get_user_mode_program_frame_allocator(new_process_id);
+                        //     // FIXME: Gracefully handle out of memory
+                        //     unsafe { new_mapper.map_to(page, frame, flags, &mut frame_allocator) }
+                        //         .unwrap()
+                        //         .flush();
+                        // }
                     } else {
                         let _ = process_memory.mapped_virtual_memory.cut(interval);
                         let interval = Interval::from(

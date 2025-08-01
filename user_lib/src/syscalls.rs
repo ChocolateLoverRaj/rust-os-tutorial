@@ -11,7 +11,8 @@ use common::{
     SyscallCloneCapability, SyscallCloneCapabilityError, SyscallCreateChannel, SyscallExists,
     SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallGetThreadIdOutput,
     SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallMapSharedMem,
-    SyscallMapSharedMemError, SyscallMapSharedMemInput, SyscallReleaseFrameBuffer,
+    SyscallMapSharedMemError, SyscallMapSharedMemInput, SyscallNewShardMemError,
+    SyscallNewSharedMem, SyscallNewSharedMemInput, SyscallReleaseFrameBuffer,
     SyscallSendCapability, SyscallSendCapabilityError, SyscallSendCapabilityInput,
     SyscallSpawnProcess, SyscallSpawnProcessError, SyscallSpawnProcessInput, SyscallSpawnThread,
     SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
@@ -194,4 +195,10 @@ pub fn syscall_send_capability(
     input: SyscallSendCapabilityInput,
 ) -> Result<(), SyscallSendCapabilityError> {
     unsafe { syscall::<SyscallSendCapability>(&input) }
+}
+
+pub fn syscall_new_shared_mem(
+    input: SyscallNewSharedMemInput,
+) -> Result<NonZero<u64>, SyscallNewShardMemError> {
+    unsafe { syscall::<SyscallNewSharedMem>(&input) }
 }

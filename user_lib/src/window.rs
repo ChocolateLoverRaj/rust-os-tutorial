@@ -9,7 +9,8 @@ use core::{
 
 use atomic_enum::atomic_enum;
 use common::{
-    AllocPageSize, FrameBufferEmbeddedGraphics, RgbPixelInfo,
+    AllocPageSize, FrameBufferEmbeddedGraphics, PermissionFlags, RgbPixelInfo,
+    SyscallMapSharedMemError, SyscallNewShardMemError, SyscallNewSharedMemInput,
     embedded_graphics::{
         Pixel,
         pixelcolor::Rgb888,
@@ -21,11 +22,12 @@ use common::{
 use crate::{
     EnvEntries, ExecutorContext,
     async_channel::{self, Receiver, Sender},
-    syscall_alloc, syscall_clone_capability,
+    syscall_clone_capability, syscall_map_shared_mem, syscall_new_shared_mem,
 };
 
 pub const ENV_KEY: u64 = 0x2994A6830F66D288;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct WindowInfo {
     pub width: u64,
@@ -40,6 +42,7 @@ enum ActiveSlot {
     Slot1,
 }
 
+#[derive(Debug)]
 #[repr(C)]
 struct WindowSharedMem {
     pending_request: AtomicBool,
@@ -58,29 +61,43 @@ pub struct CopyData {
     pub height: u64,
 }
 
+#[derive(Debug)]
 pub struct WindowSharedMemClient {
-    data: &'static mut WindowSharedMem,
+    shared_mem: NonNull<[u8]>,
 }
 
 impl WindowSharedMemClient {
     /// # Safety
     /// This function should only be called once, because calling this function multiple times will result in multiple simultaneous mutable references.
-    pub unsafe fn new(env_entries: &EnvEntries) -> Self {
-        let ptr = *env_entries.get(&ENV_KEY).unwrap() as *mut WindowSharedMem;
-        let data = unsafe { ptr.as_mut() }.unwrap();
-        Self { data }
+    pub unsafe fn new(env_entries: &EnvEntries) -> Result<Self, SyscallMapSharedMemError> {
+        let capability = NonZero::new(*env_entries.get(&ENV_KEY).unwrap()).unwrap();
+        let shared_mem = syscall_map_shared_mem(
+            capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )?;
+        Ok(Self { shared_mem })
+    }
+
+    fn mem(&self) -> &WindowSharedMem {
+        let ptr = self.shared_mem.cast::<WindowSharedMem>();
+        unsafe { ptr.as_ref() }
+    }
+
+    fn mem_mut(&mut self) -> &mut WindowSharedMem {
+        let mut ptr = self.shared_mem.cast::<WindowSharedMem>();
+        unsafe { ptr.as_mut() }
     }
 
     fn buffer(&mut self) -> &mut [u32] {
-        let len = (self.data.window_info.width * self.data.window_info.height) as usize;
-        let ptr = ((self.data as *mut _ as usize) + size_of::<WindowSharedMem>()) as *mut u32;
+        let len = (self.mem_mut().window_info.width * self.mem_mut().window_info.height) as usize;
+        let ptr = self.mem_mut().pixels.as_mut_ptr();
         unsafe { slice::from_raw_parts_mut(ptr, len) }
     }
 
     pub fn update_screen(&mut self, copy_data: CopyData) {
-        self.data.copy_data = copy_data;
-        let mut sender = unsafe { Sender::from_channel_id(self.data.request_channel_id) };
-        if !self.data.pending_request.swap(true, Ordering::Release) {
+        self.mem_mut().copy_data = copy_data;
+        let mut sender = unsafe { Sender::from_channel_id(self.mem_mut().request_channel_id) };
+        if !self.mem_mut().pending_request.swap(true, Ordering::Release) {
             sender.send();
         }
     }
@@ -94,8 +111,8 @@ impl DrawTarget for WindowSharedMemClient {
     where
         I: IntoIterator<Item = common::embedded_graphics::Pixel<Self::Color>>,
     {
-        let width = self.data.window_info.width;
-        let pixel_info = self.data.window_info.pixel_info;
+        let width = self.mem_mut().window_info.width;
+        let pixel_info = self.mem_mut().window_info.pixel_info;
         let buffer = self.buffer();
         for Pixel(point, color) in pixels {
             buffer[usize::try_from(point.y).unwrap() * usize::try_from(width).unwrap()
@@ -110,8 +127,8 @@ impl Dimensions for WindowSharedMemClient {
         Rectangle::new(
             Point::zero(),
             Size::new(
-                self.data.window_info.width.try_into().unwrap(),
-                self.data.window_info.height.try_into().unwrap(),
+                self.mem().window_info.width.try_into().unwrap(),
+                self.mem().window_info.height.try_into().unwrap(),
             ),
         )
     }
@@ -130,17 +147,32 @@ pub enum DrawToFrameBufferError {
     InvalidInput,
 }
 
+#[derive(Debug)]
+pub enum NewWindowServerError {
+    NewSharedMem(SyscallNewShardMemError),
+    MapSharedMem(SyscallMapSharedMemError),
+}
+
 impl WindowSharedMemServer {
     pub fn new(
         width: u64,
         height: u64,
         frame_buffer: &FrameBufferEmbeddedGraphics,
-    ) -> (Self, NonZero<u64>) {
+    ) -> Result<(Self, NonZero<u64>, NonZero<u64>), NewWindowServerError> {
         let pixel_count = (width * height) as usize;
-        let total_size = ((size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count) as u64)
-            .next_multiple_of(AllocPageSize::_2MiB.size_bytes());
-        let shared_mem =
-            syscall_alloc(total_size.try_into().unwrap(), AllocPageSize::_2MiB).unwrap();
+        let used_len = size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count;
+        let page_size = AllocPageSize::_2MiB;
+        let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
+            page_size,
+            pages_len: used_len.div_ceil(page_size.byte_len()),
+        })
+        .map_err(NewWindowServerError::NewSharedMem)?;
+        let client_shared_mem_capability = syscall_clone_capability(shared_mem_capability).unwrap();
+        let shared_mem = syscall_map_shared_mem(
+            shared_mem_capability,
+            PermissionFlags::READABLE | PermissionFlags::WRITABLE,
+        )
+        .map_err(NewWindowServerError::MapSharedMem)?;
         let (sender, receiver) = async_channel::create();
         let sender_capability = syscall_clone_capability(sender.channel_id()).unwrap();
         {
@@ -158,25 +190,16 @@ impl WindowSharedMemServer {
                 pixels: Default::default(),
             });
         }
-        (
+        Ok((
             Self {
                 shared_mem,
                 receiver,
                 width,
                 height,
             },
+            client_shared_mem_capability,
             sender_capability,
-        )
-    }
-
-    pub fn addr(&self) -> usize {
-        self.shared_mem.addr().into()
-    }
-
-    pub fn size(&self) -> usize {
-        let pixel_count = (self.width * self.height) as usize;
-        (size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count)
-            .next_multiple_of(AllocPageSize::_2MiB.size_bytes() as usize)
+        ))
     }
 
     pub fn channel_id(&self) -> NonZero<u64> {
@@ -191,7 +214,6 @@ impl WindowSharedMemServer {
         x: u64,
         y: u64,
     ) {
-        // log::debug!("S: {self:X?}, copy_data: {copy_data:?}. x: {x}. y: {y}");
         let mut shared_mem_ptr = self.shared_mem.cast::<WindowSharedMem>();
         let shared_mem = unsafe { shared_mem_ptr.as_mut() };
         shared_mem.pending_request.store(false, Ordering::Relaxed);
