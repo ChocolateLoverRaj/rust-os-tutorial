@@ -91,6 +91,20 @@ impl VirtualMemory {
             range: pages,
         }
     }
+
+    /// # Safety
+    /// The pages must have been allocated by [`VirtualMemory`]
+    pub unsafe fn already_allocated_2(
+        &mut self,
+        page_size: AllocPageSize,
+        range: RangeInclusive<u64>,
+    ) -> AllocatedPages2<'_> {
+        AllocatedPages2 {
+            virtual_memory: self,
+            range,
+            page_size,
+        }
+    }
 }
 
 pub struct AllocatedPages<'a, S: PageSize> {

@@ -4,12 +4,7 @@ use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use common::AllocPageSize;
 use limine::response::RsdpResponse;
 use raw_cpuid::CpuId;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{
-        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size1GiB, Size2MiB,
-    },
-};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 use crate::memory::MEMORY;
 
@@ -17,13 +12,24 @@ use crate::memory::MEMORY;
 #[derive(Debug, Clone)]
 struct KernelAcpiHandler;
 
-impl KernelAcpiHandler {
-    fn map_physical_region_with_page_size<T>(
+fn max_page_size() -> AllocPageSize {
+    if CpuId::new()
+        .get_extended_processor_and_feature_identifiers()
+        .is_some_and(|info| info.has_1gib_pages())
+    {
+        AllocPageSize::_1GiB
+    } else {
+        AllocPageSize::_2MiB
+    }
+}
+
+impl AcpiHandler for KernelAcpiHandler {
+    unsafe fn map_physical_region<T>(
         &self,
         physical_address: usize,
         size: usize,
-        page_size: AllocPageSize,
     ) -> acpi::PhysicalMapping<Self, T> {
+        let page_size = max_page_size();
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
         let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
@@ -64,56 +70,14 @@ impl KernelAcpiHandler {
         }
     }
 
-    fn unmap_physical_region_with_page_size<S: PageSize + Debug, T>(
-        region: &acpi::PhysicalMapping<Self, T>,
-    ) where
-        for<'a> OffsetPageTable<'a>: Mapper<S>,
-    {
-        let start_page =
-            Page::<S>::containing_address(VirtAddr::new(region.virtual_start().as_ptr() as u64));
-        let n_pages = region.mapped_length() as u64 / S::SIZE;
-        let mut virtual_memory = MEMORY.get().unwrap().virtual_memory.lock();
-        let pages = start_page..=start_page + (n_pages - 1);
-        // Safety: this function will only be called with regions mapped by the `map_physical_region` function
-        unsafe { virtual_memory.already_allocated(pages) }.unmap_and_deallocate();
-    }
-}
-
-impl AcpiHandler for KernelAcpiHandler {
-    unsafe fn map_physical_region<T>(
-        &self,
-        physical_address: usize,
-        size: usize,
-    ) -> acpi::PhysicalMapping<Self, T> {
-        if CpuId::new()
-            .get_extended_processor_and_feature_identifiers()
-            .unwrap()
-            .has_1gib_pages()
-        {
-            self.map_physical_region_with_page_size::<T>(
-                physical_address,
-                size,
-                AllocPageSize::_1GiB,
-            )
-        } else {
-            self.map_physical_region_with_page_size::<T>(
-                physical_address,
-                size,
-                AllocPageSize::_2MiB,
-            )
-        }
-    }
-
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {
-        if CpuId::new()
-            .get_extended_processor_and_feature_identifiers()
-            .unwrap()
-            .has_1gib_pages()
-        {
-            Self::unmap_physical_region_with_page_size::<Size1GiB, T>(region)
-        } else {
-            Self::unmap_physical_region_with_page_size::<Size2MiB, T>(region)
-        }
+        let page_size = max_page_size();
+        let start_page = (region.virtual_start().as_ptr() as u64) / page_size.byte_len_u64()
+            * page_size.byte_len_u64();
+        let mut virtual_memory = MEMORY.get().unwrap().virtual_memory.lock();
+        let range = start_page..=start_page + region.mapped_length() as u64 - 1;
+        // Safety: this function will only be called with regions mapped by the `map_physical_region` function
+        unsafe { virtual_memory.already_allocated_2(page_size, range) }.unmap_and_deallocate();
     }
 }
 
