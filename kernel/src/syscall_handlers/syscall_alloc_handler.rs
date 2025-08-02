@@ -26,7 +26,7 @@ pub struct SyscallAllocHandler;
 impl GenericSyscallHandler for SyscallAllocHandler {
     type S = SyscallAlloc;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
-        if !u64::from(helper.input().len).is_multiple_of(helper.input().page_size.size_bytes()) {
+        if !u64::from(helper.input().len).is_multiple_of(helper.input().page_size.byte_len_u64()) {
             todo!()
         }
         let get_output = || {

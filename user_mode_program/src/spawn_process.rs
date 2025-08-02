@@ -44,7 +44,7 @@ pub fn spawn_process(
             let mut frame = syscall_alloc(
                 segment
                     .p_memsz
-                    .next_multiple_of(AllocPageSize::_4KiB.size_bytes())
+                    .next_multiple_of(AllocPageSize::_4KiB.byte_len_u64())
                     .try_into()
                     .unwrap(),
                 AllocPageSize::_4KiB,
@@ -121,13 +121,13 @@ pub fn spawn_process(
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: usize::from(stack.addr()).try_into().unwrap(),
         new_process_start: stack_top - stack_with_guard_len,
-        len: AllocPageSize::_4KiB.size_bytes(),
+        len: AllocPageSize::_4KiB.byte_len_u64(),
         flags: SpawnProcessMemoryFlags::empty().bits(),
     });
     // Stack
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: u64::try_from(usize::from(stack.addr())).unwrap()
-            + AllocPageSize::_4KiB.size_bytes(),
+            + AllocPageSize::_4KiB.byte_len_u64(),
         new_process_start: stack_top - stack_len,
         len: stack_len,
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),

@@ -1,16 +1,16 @@
 use core::{fmt::Debug, ops::RangeInclusive};
 
-use common::HIGHER_HALF_START;
+use common::{AllocPageSize, HIGHER_HALF_START};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
-    VirtAddr,
+    PhysAddr, VirtAddr,
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame,
         Size4KiB,
     },
 };
 
-use crate::get_page_table::get_page_table;
+use crate::{get_page_table::get_page_table, map_page, unmap_page};
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
@@ -47,6 +47,36 @@ impl VirtualMemory {
         Some(AllocatedPages {
             virtual_memory: self,
             range: start_page..=start_page + (n_pages - 1),
+        })
+    }
+
+    /// Returns the start page of the allocated range of pages.
+    /// Pages are guaranteed not to be mapped.
+    pub fn allocate_contiguous_pages_2(
+        &mut self,
+        page_size: AllocPageSize,
+        n_pages: u64,
+    ) -> Option<AllocatedPages2> {
+        let range = self
+            .set
+            .gaps_trimmed(iu(HIGHER_HALF_START))
+            .find_map(|gap| {
+                let aligned_start = gap.start().next_multiple_of(page_size.byte_len_u64());
+                let required_end_inclusive =
+                    aligned_start + (n_pages * page_size.byte_len_u64() - 1);
+                if required_end_inclusive <= gap.end() {
+                    Some(aligned_start..=required_end_inclusive)
+                } else {
+                    None
+                }
+            })?;
+        self.set
+            .insert_merge_touching(Interval::from(range.clone()))
+            .unwrap();
+        Some(AllocatedPages2 {
+            virtual_memory: self,
+            range,
+            page_size,
         })
     }
 
@@ -116,5 +146,57 @@ impl<S: PageSize> AllocatedPages<'_, S> {
             let end_inclusive = pages.end().start_address().as_u64() + (S::SIZE - 1);
             Interval::from(start..=end_inclusive)
         });
+    }
+}
+
+pub struct AllocatedPages2<'a> {
+    virtual_memory: &'a mut VirtualMemory,
+    range: RangeInclusive<u64>,
+    page_size: AllocPageSize,
+}
+
+impl AllocatedPages2<'_> {
+    pub fn range(&self) -> &RangeInclusive<u64> {
+        &self.range
+    }
+
+    /// # Safety
+    /// See the safety for [`x86_64::structures::paging::mapper::Mapper::map_to`]
+    pub unsafe fn map_to(
+        &mut self,
+        page: VirtAddr,
+        frame: PhysAddr,
+        flags: PageTableFlags,
+        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+    ) {
+        if self.range.contains(&page.as_u64()) {
+            unsafe {
+                map_page(
+                    self.virtual_memory.cr3,
+                    self.page_size,
+                    page,
+                    frame,
+                    flags,
+                    frame_allocator,
+                )
+            }
+            .unwrap();
+        } else {
+            panic!(
+                "Tried to map page {page:?}, which is outside of allocated range {:?}",
+                self.range
+            )
+        }
+    }
+
+    /// All pages must be mapped
+    pub fn unmap_and_deallocate(self) {
+        let first_page = VirtAddr::new(*self.range.start());
+        let pages_len = (self.range.end() - self.range.start() + 1) / self.page_size.byte_len_u64();
+        for i in 0..pages_len {
+            let page = first_page + i * self.page_size.byte_len_u64();
+            unsafe { unmap_page(self.virtual_memory.cr3, self.page_size, page) }.unwrap();
+        }
+        let _ = self.virtual_memory.set.cut(Interval::from(self.range));
     }
 }

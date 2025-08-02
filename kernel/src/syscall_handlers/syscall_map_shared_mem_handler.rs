@@ -58,7 +58,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 .find_map(|interval| {
                     let aligned_start = interval
                         .start()
-                        .next_multiple_of(shared_mem.page_size.size_bytes());
+                        .next_multiple_of(shared_mem.page_size.byte_len_u64());
                     let aligned_interval =
                         Interval::from(aligned_start..aligned_start + shared_mem_len as u64);
                     if interval.contains_interval(&aligned_interval) {

@@ -15,6 +15,7 @@
         "futex",
         "hhdm",
         "inlateout",
+        "invlpg",
         "iretq",
         "itertools",
         "keyevent",

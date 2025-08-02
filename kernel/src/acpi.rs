@@ -1,12 +1,13 @@
 use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
+use common::AllocPageSize;
 use limine::response::RsdpResponse;
 use raw_cpuid::CpuId;
 use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{
-        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB,
+        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size1GiB, Size2MiB,
     },
 };
 
@@ -17,31 +18,32 @@ use crate::memory::MEMORY;
 struct KernelAcpiHandler;
 
 impl KernelAcpiHandler {
-    fn map_physical_region_with_page_size<S: PageSize + Debug, T>(
+    fn map_physical_region_with_page_size<T>(
         &self,
         physical_address: usize,
         size: usize,
-    ) -> acpi::PhysicalMapping<Self, T>
-    where
-        for<'a> OffsetPageTable<'a>: Mapper<S>,
-    {
+        page_size: AllocPageSize,
+    ) -> acpi::PhysicalMapping<Self, T> {
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
         let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
         let mut virtual_memory = memory.virtual_memory.lock();
 
-        let n_pages = ((size + physical_address) as u64).div_ceil(S::SIZE)
-            - physical_address as u64 / S::SIZE;
-        let start_frame =
-            PhysFrame::<S>::containing_address(PhysAddr::new(physical_address as u64));
-        let mut pages = virtual_memory.allocate_contiguous_pages(n_pages).unwrap();
-        let start_page = *pages.range().start();
+        let n_pages = ((size + physical_address) as u64).div_ceil(page_size.byte_len_u64())
+            - physical_address as u64 / page_size.byte_len_u64();
+        let start_frame = PhysAddr::new(
+            physical_address as u64 / page_size.byte_len_u64() * page_size.byte_len_u64(),
+        );
+        let mut pages = virtual_memory
+            .allocate_contiguous_pages_2(page_size, n_pages)
+            .unwrap();
+        let start_page = VirtAddr::new(*pages.range().start());
 
         for i in 0..n_pages {
             unsafe {
                 pages.map_to(
-                    start_page + i,
-                    start_frame + i,
+                    start_page + i * page_size.byte_len_u64(),
+                    start_frame + i * page_size.byte_len_u64(),
                     PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::GLOBAL,
                     &mut frame_allocator,
                 );
@@ -52,11 +54,11 @@ impl KernelAcpiHandler {
             PhysicalMapping::new(
                 physical_address,
                 NonNull::new(
-                    (start_page.start_address() + physical_address as u64 % S::SIZE).as_mut_ptr(),
+                    (start_page + physical_address as u64 % page_size.byte_len_u64()).as_mut_ptr(),
                 )
                 .unwrap(),
                 size,
-                (n_pages * S::SIZE) as usize,
+                n_pages as usize * page_size.byte_len(),
                 self.clone(),
             )
         }
@@ -88,9 +90,17 @@ impl AcpiHandler for KernelAcpiHandler {
             .unwrap()
             .has_1gib_pages()
         {
-            self.map_physical_region_with_page_size::<Size1GiB, T>(physical_address, size)
+            self.map_physical_region_with_page_size::<T>(
+                physical_address,
+                size,
+                AllocPageSize::_1GiB,
+            )
         } else {
-            self.map_physical_region_with_page_size::<Size2MiB, T>(physical_address, size)
+            self.map_physical_region_with_page_size::<T>(
+                physical_address,
+                size,
+                AllocPageSize::_2MiB,
+            )
         }
     }
 

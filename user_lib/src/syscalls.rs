@@ -73,7 +73,7 @@ pub fn syscall_alloc(
     len: NonZeroU64,
     page_size: AllocPageSize,
 ) -> Result<NonNull<[u8]>, SyscallAllocError> {
-    assert!(u64::from(len).is_multiple_of(page_size.size_bytes()));
+    assert!(u64::from(len).is_multiple_of(page_size.byte_len_u64()));
     let input = SyscallAllocInput { len, page_size };
     let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
     Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())

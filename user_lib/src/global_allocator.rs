@@ -35,7 +35,7 @@ impl OomHandler for MyOomHandler {
             };
             let slice = syscall_alloc(
                 (bytes_needed as u64)
-                    .next_multiple_of(AllocPageSize::_4KiB.size_bytes())
+                    .next_multiple_of(AllocPageSize::_4KiB.byte_len_u64())
                     .try_into()
                     .unwrap(),
                 AllocPageSize::_4KiB,
