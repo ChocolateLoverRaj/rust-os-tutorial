@@ -1,25 +1,22 @@
-use core::{fmt::Debug, mem::MaybeUninit, slice};
+use core::{mem::MaybeUninit, slice};
 
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use nodit::{Interval, NoditMap, NoditSet, interval::iu};
 pub use physical_memory::{KernelMemoryUsageType, MemoryType, PhysicalMemory};
-use raw_cpuid::CpuId;
 use spin::{Mutex, Once};
 use talc::{ErrOnOom, Talc, Talck};
 use virtual_memory::VirtualMemory;
 use x86_64::{
     PhysAddr,
     registers::control::{Cr3, Cr3Flags},
-    structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, PageSize, PageTableFlags, PhysFrame, Size1GiB,
-        Size2MiB, Size4KiB,
-    },
+    structures::paging::{FrameAllocator, PageTableFlags, PhysFrame, Size4KiB},
 };
 
 use crate::{
     get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
-    translate_addr::{TranslateAddr, TranslateFrame},
+    map_page, max_page_size,
+    translate_addr::{TranslateAddr, ZeroFrame},
 };
 pub use physical_memory::PhysicalMemoryFrameAllocator;
 
@@ -47,10 +44,12 @@ pub struct Memory {
 
 pub static MEMORY: Once<Memory> = Once::new();
 
-fn init_with_page_size<S: PageSize + Debug>(memory_map: &'static MemoryMapResponse)
-where
-    for<'a> OffsetPageTable<'a>: Mapper<S>,
-{
+/// Finds unused physical memory for the global allocator and initializes the global allocator
+///
+/// # Safety
+/// This function must be called exactly once, and no page tables should be modified before calling this function.
+pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
+    let page_size = max_page_size();
     let global_allocator_size = {
         // 16 MiB
         16 * 0x400 * 0x400
@@ -119,8 +118,7 @@ where
     let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
 
     let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut frame_allocator).unwrap();
-    // Safety: The allocated frame is in usable memory, which is offset mapped
-    let mut new_l4_page_table = unsafe { get_page_table(new_l4_frame, true) };
+    unsafe { new_l4_frame.zero() };
 
     // Offset map everything that is currently offset mapped
     let mut last_mapped_address = None::<PhysAddr>;
@@ -150,29 +148,31 @@ where
                 }
             };
             if let Some(range_to_map) = range_to_map {
-                let first_frame = PhysFrame::<S>::containing_address(*range_to_map.start());
-                let last_frame = PhysFrame::<S>::containing_address(*range_to_map.end());
-                let page_count = last_frame - first_frame + 1;
+                let first_frame = range_to_map.start().align_down(page_size.byte_len_u64());
+                let last_frame = range_to_map.end().align_down(page_size.byte_len_u64());
+                let pages_len = (last_frame - first_frame) / page_size.byte_len_u64() + 1;
 
-                for i in 0..page_count {
-                    let frame = first_frame + i;
-                    let page = frame.to_page();
+                for i in 0..pages_len {
+                    let frame = first_frame + i * page_size.byte_len_u64();
+                    let page = frame.to_virt();
+                    let flags = PageTableFlags::WRITABLE | PageTableFlags::GLOBAL;
                     unsafe {
-                        new_l4_page_table
-                            .map_to(
-                                page,
-                                frame,
-                                PageTableFlags::PRESENT
-                                    | PageTableFlags::WRITABLE
-                                    | PageTableFlags::GLOBAL,
-                                &mut frame_allocator,
-                            )
-                            .unwrap()
-                            // Cache will be reloaded anyways when we change Cr3
-                            .ignore()
-                    };
+                        map_page(
+                            new_l4_frame,
+                            page_size,
+                            page,
+                            frame,
+                            flags,
+                            &mut frame_allocator,
+                        )
+                    }
+                    .unwrap();
                 }
-                last_mapped_address = Some(last_frame.start_address() + (S::SIZE - 1));
+                last_mapped_address = Some(
+                    range_to_map.end().align_down(page_size.byte_len_u64())
+                        + page_size.byte_len_u64()
+                        - 1,
+                );
             }
         }
     }
@@ -181,8 +181,11 @@ where
     // We can just reuse Limine's mappings for the top 512 GiB
     let (current_l4_frame, cr3_flags) = Cr3::read();
     let current_page_table = unsafe { get_page_table(current_l4_frame, false) };
+    // Safety: The allocated frame is in usable memory, which is offset mapped
+    let mut new_l4_page_table = unsafe { get_page_table(new_l4_frame, false) };
     new_l4_page_table.level_4_table_mut()[511].clone_from(&current_page_table.level_4_table()[511]);
 
+    log::debug!("Switching Cr3");
     // Safety: Everything that needs to be mapped is mapped
     unsafe { Cr3::write(new_l4_frame, cr3_flags) };
 
@@ -201,10 +204,12 @@ where
                 ]
                 .contains(&entry.entry_type)
                 {
-                    let start = u64::from(hhdm_offset) + entry.base / S::SIZE * S::SIZE;
+                    let start = u64::from(hhdm_offset)
+                        + entry.base / page_size.byte_len_u64() * page_size.byte_len_u64();
                     let end = u64::from(hhdm_offset)
-                        + (entry.base + (entry.length - 1)) / S::SIZE * S::SIZE
-                        + (S::SIZE - 1);
+                        + (entry.base + (entry.length - 1)) / page_size.byte_len_u64()
+                            * page_size.byte_len_u64()
+                        + (page_size.byte_len_u64() - 1);
                     set.insert_merge_touching_or_overlapping((start..=end).into());
                 }
             }
@@ -221,20 +226,4 @@ where
         new_kernel_cr3: new_l4_frame,
         new_kernel_cr3_flags: cr3_flags,
     });
-}
-
-/// Finds unused physical memory for the global allocator and initializes the global allocator
-///
-/// # Safety
-/// This function must be called exactly once, and no page tables should be modified before calling this function.
-pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
-    if CpuId::new()
-        .get_extended_processor_and_feature_identifiers()
-        .unwrap()
-        .has_1gib_pages()
-    {
-        init_with_page_size::<Size1GiB>(memory_map);
-    } else {
-        init_with_page_size::<Size2MiB>(memory_map);
-    }
 }

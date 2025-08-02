@@ -15,6 +15,7 @@ use limine_requests::{
 };
 use local_apic_id::LocalApicId;
 pub use map_page::*;
+pub use max_page_size::*;
 use memory::MEMORY;
 use run_tasks::run_threads;
 use x86_64::registers::control::Cr3;
@@ -43,6 +44,7 @@ pub mod local_apic;
 pub mod local_apic_id;
 pub mod logger;
 mod map_page;
+pub mod max_page_size;
 pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;

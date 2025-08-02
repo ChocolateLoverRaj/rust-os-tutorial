@@ -54,6 +54,7 @@
         "syscalls",
         "sysretq",
         "sysv64",
+        "Talck",
         "thiserror",
         "uart",
         "uninit",

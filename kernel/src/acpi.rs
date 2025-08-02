@@ -1,27 +1,14 @@
 use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
-use common::AllocPageSize;
 use limine::response::RsdpResponse;
-use raw_cpuid::CpuId;
 use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
-use crate::memory::MEMORY;
+use crate::{max_page_size, memory::MEMORY};
 
 /// Note: this cannot be sent across CPUs because the other CPUs did not flush their cache for changes in page tables
 #[derive(Debug, Clone)]
 struct KernelAcpiHandler;
-
-fn max_page_size() -> AllocPageSize {
-    if CpuId::new()
-        .get_extended_processor_and_feature_identifiers()
-        .is_some_and(|info| info.has_1gib_pages())
-    {
-        AllocPageSize::_1GiB
-    } else {
-        AllocPageSize::_2MiB
-    }
-}
 
 impl AcpiHandler for KernelAcpiHandler {
     unsafe fn map_physical_region<T>(
