@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, collections::btree_set::BTreeSet};
+use common::AllocPageSize;
 use nodit::{Interval, NoditMap};
 use x86_64::{
     PhysAddr,
@@ -52,6 +53,32 @@ impl PhysicalMemory {
             .insert_merge_touching_if_values_equal(range.into(), memory_type)
             .unwrap();
         Some(PhysFrame::from_start_address(PhysAddr::new(aligned_start)).unwrap())
+    }
+
+    pub fn allocate_frame_with_type_2(
+        &mut self,
+        page_size: AllocPageSize,
+        memory_type: MemoryType,
+    ) -> Option<PhysAddr> {
+        let aligned_start = self.map.iter().find_map(|(interval, memory_type)| {
+            if let MemoryType::Usable = memory_type {
+                let aligned_start = interval.start().next_multiple_of(page_size.byte_len_u64());
+                let required_end = aligned_start + page_size.byte_len_u64();
+                if required_end <= interval.end() {
+                    Some(aligned_start)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })?;
+        let range = aligned_start..aligned_start + page_size.byte_len_u64();
+        let _ = self.map.cut(Interval::from(range.clone()));
+        self.map
+            .insert_merge_touching_if_values_equal(range.into(), memory_type)
+            .unwrap();
+        Some(PhysAddr::new(aligned_start))
     }
 
     pub fn get_kernel_frame_allocator(&mut self) -> PhysicalMemoryFrameAllocator<'_> {

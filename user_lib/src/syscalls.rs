@@ -1,7 +1,7 @@
 use core::{
     arch::asm,
-    num::{NonZero, NonZeroU64},
-    ptr::NonNull,
+    num::NonZero,
+    ptr::{NonNull, slice_from_raw_parts_mut},
 };
 
 use common::{
@@ -70,13 +70,19 @@ pub fn syscall_log(level: log::Level, message: &str) {
 }
 
 pub fn syscall_alloc(
-    len: NonZeroU64,
     page_size: AllocPageSize,
+    pages_len: NonZero<usize>,
+    zero: bool,
 ) -> Result<NonNull<[u8]>, SyscallAllocError> {
-    assert!(u64::from(len).is_multiple_of(page_size.byte_len_u64()));
-    let input = SyscallAllocInput { len, page_size };
-    let slice = unsafe { syscall::<SyscallAlloc>(&input) }?;
-    Ok(NonNull::new(unsafe { slice.to_slice_mut() }).unwrap())
+    let input = SyscallAllocInput {
+        page_size,
+        pages_len,
+        zero,
+    };
+    let start = unsafe { syscall::<SyscallAlloc>(&input) }?;
+    let data = start.get() as *mut u8;
+    let len = pages_len.get() * page_size.byte_len();
+    Ok(NonNull::new(slice_from_raw_parts_mut(data, len)).unwrap())
 }
 
 pub fn syscall_take_frame_buffer()

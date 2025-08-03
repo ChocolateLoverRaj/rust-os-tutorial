@@ -1,23 +1,18 @@
-use core::fmt::Debug;
+use core::num::NonZero;
 
 use alloc::collections::btree_set::BTreeSet;
-use common::{AllocPageSize, HIGHER_HALF_START, SliceData, SyscallAlloc, SyscallAllocError};
-use nodit::interval::ue;
+use common::{AllocPageSize, LOWER_HALF_END, SyscallAlloc, SyscallAllocError};
+use nodit::interval::ee;
 use raw_cpuid::CpuId;
-use x86_64::{
-    VirtAddr,
-    structures::paging::{
-        Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB,
-        Size4KiB, mapper::MapToError,
-    },
-};
+use x86_64::{VirtAddr, structures::paging::PageTableFlags};
 
 use crate::{
+    MapPageError,
     cpu_local_data::get_local,
-    get_page_table::get_page_table,
+    map_page,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
-    translate_addr::ZeroFrame,
+    translate_addr::TranslateAddr,
 };
 
 use super::GenericSyscallHandler;
@@ -26,89 +21,84 @@ pub struct SyscallAllocHandler;
 impl GenericSyscallHandler for SyscallAllocHandler {
     type S = SyscallAlloc;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
-        if !u64::from(helper.input().len).is_multiple_of(helper.input().page_size.byte_len_u64()) {
-            todo!()
-        }
-        let get_output = || {
-            let len = u64::from(helper.input().len);
-            fn map_with_page_size<S: PageSize + Debug>(
-                len: u64,
-            ) -> Result<SliceData, SyscallAllocError>
-            where
-                for<'a> OffsetPageTable<'a>: Mapper<S>,
-                PhysFrame<S>: ZeroFrame,
+        let output = (|| {
+            if let AllocPageSize::_1GiB = helper.input().page_size
+                && !CpuId::new()
+                    .get_extended_processor_and_feature_identifiers()
+                    .is_some_and(|features| features.has_1gib_pages())
             {
-                let n_pages = len.div_ceil(S::SIZE);
-                let threads = THREADS.read();
-                let local = get_local();
-                let current_process = &threads
-                    .get(&local.running_thread.lock().unwrap())
-                    .unwrap()
-                    .process;
-                let mut process_memory = current_process.memory.write();
-                let range = process_memory
-                    .mapped_virtual_memory
-                    .gaps_trimmed(ue(HIGHER_HALF_START))
-                    .find_map(|gap| {
-                        let aligned_start = gap.start().max(1).checked_next_multiple_of(S::SIZE)?;
-                        let required_end_inclusive = aligned_start + (n_pages * S::SIZE - 1);
-                        if required_end_inclusive <= gap.end() {
-                            Some(aligned_start..=required_end_inclusive)
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or(SyscallAllocError::OutOfVirtualMemory)?;
-                process_memory
-                    .mapped_virtual_memory
-                    .insert_merge_touching_if_values_equal(range.clone().into(), UserVirtMem::Plain)
-                    .unwrap();
-                let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
-                let start_page =
-                    Page::<S>::from_start_address(VirtAddr::new(*range.start())).unwrap();
-                let end_page_inclusive = Page::<S>::containing_address(VirtAddr::new(*range.end()));
-                let memory = MEMORY.get().unwrap();
-                let mut physical_memory = memory.physical_memory.lock();
-                for page in start_page..=end_page_inclusive {
-                    let frame = physical_memory
-                        .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
-                            current_process.id,
-                        ])))
-                        .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
-                    unsafe { frame.zero() }
-                    let flags = PageTableFlags::PRESENT
-                        | PageTableFlags::USER_ACCESSIBLE
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_EXECUTE;
-                    let frame_allocator = &mut physical_memory
-                        .get_user_mode_program_frame_allocator(current_process.id);
-                    unsafe { mapper.map_to(page, frame, flags, frame_allocator) }
-                        .map_err(|e| match e {
-                            MapToError::FrameAllocationFailed => {
-                                SyscallAllocError::OutOfPhysicalMemory
-                            }
-                            e => unreachable!("{:#?}", e),
-                        })?
-                        .flush();
-                }
-                // log::debug!("Allocated for user mode: {range:X?}");
-                Ok(SliceData::new(*range.start(), n_pages * S::SIZE))
+                return Err(SyscallAllocError::PageSizeNotSupported);
             }
-            match helper.input().page_size {
-                AllocPageSize::_4KiB => map_with_page_size::<Size4KiB>(len),
-                AllocPageSize::_2MiB => map_with_page_size::<Size2MiB>(len),
-                AllocPageSize::_1GiB => {
-                    if !CpuId::new()
-                        .get_extended_processor_and_feature_identifiers()
-                        .unwrap()
-                        .has_1gib_pages()
-                    {
-                        todo!("Terminate process");
+            let threads = THREADS.read();
+            let local = get_local();
+            let current_process = &threads
+                .get(&local.running_thread.lock().unwrap())
+                .unwrap()
+                .process;
+            let mut process_memory = current_process.memory.write();
+            let range = process_memory
+                .mapped_virtual_memory
+                .gaps_trimmed(ee(0, LOWER_HALF_END))
+                .find_map(|gap| {
+                    let aligned_start = gap
+                        .start()
+                        .checked_next_multiple_of(helper.input().page_size.byte_len_u64())?;
+                    let required_end = aligned_start
+                        + helper.input().pages_len.get() as u64
+                        + helper.input().page_size.byte_len_u64();
+                    if required_end <= gap.end() {
+                        Some(aligned_start..required_end)
+                    } else {
+                        None
                     }
-                    map_with_page_size::<Size1GiB>(len)
+                })
+                .ok_or(SyscallAllocError::OutOfVirtualMemory)?;
+            process_memory
+                .mapped_virtual_memory
+                .insert_merge_touching_if_values_equal(range.clone().into(), UserVirtMem::Plain)
+                .unwrap();
+            let start_page =
+                VirtAddr::new(range.start).align_down(helper.input().page_size.byte_len_u64());
+            let memory = MEMORY.get().unwrap();
+            let mut physical_memory = memory.physical_memory.lock();
+            for i in 0..helper.input().pages_len.get() as u64 {
+                let page = start_page + i * helper.input().page_size.byte_len_u64();
+                let frame = physical_memory
+                    .allocate_frame_with_type_2(
+                        helper.input().page_size,
+                        MemoryType::UsedByUserMode(BTreeSet::from([current_process.id])),
+                    )
+                    .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
+                // We could potentially improve performance by not zeroing frames and instead reusing frames released by the same process
+                unsafe {
+                    frame
+                        .to_virt()
+                        .as_mut_ptr::<u8>()
+                        .write_bytes(0, helper.input().page_size.byte_len())
+                };
+                let flags = PageTableFlags::USER_ACCESSIBLE
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::NO_EXECUTE;
+                let frame_allocator =
+                    &mut physical_memory.get_user_mode_program_frame_allocator(current_process.id);
+                unsafe {
+                    map_page(
+                        current_process.cr3,
+                        helper.input().page_size,
+                        page,
+                        frame,
+                        flags,
+                        frame_allocator,
+                    )
                 }
+                .map_err(|e| match e {
+                    MapPageError::AllocateFrame => SyscallAllocError::OutOfPhysicalMemory,
+                    e => unreachable!("{:#?}", e),
+                })?;
             }
-        };
-        helper.syscall_return(&get_output())
+            // log::debug!("Allocated for user mode: {range:X?}");
+            Ok(NonZero::new(range.start as usize).unwrap())
+        })();
+        helper.syscall_return(&output)
     }
 }

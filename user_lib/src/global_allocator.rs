@@ -34,11 +34,13 @@ impl OomHandler for MyOomHandler {
                 layout.size() + overhead_len
             };
             let slice = syscall_alloc(
-                (bytes_needed as u64)
-                    .next_multiple_of(AllocPageSize::_4KiB.byte_len_u64())
+                AllocPageSize::_4KiB,
+                bytes_needed
+                    .div_ceil(AllocPageSize::_4KiB.byte_len())
                     .try_into()
                     .unwrap(),
-                AllocPageSize::_4KiB,
+                // Talck will zero it anyways, so we don't need the kernel to also zero it
+                false,
             )?;
             let span = slice.as_ptr().into();
             unsafe { talc.claim(span) }.unwrap();

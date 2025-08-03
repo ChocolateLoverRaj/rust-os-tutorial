@@ -3,7 +3,7 @@ use core::num::NonZero;
 use alloc::vec::Vec;
 use common::{
     AllocPageSize, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT, SpawnProcessMemoryFlags,
-    SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
+    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, log,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
@@ -22,6 +22,7 @@ pub fn spawn_process(
     keyboard_shared_mem_capability: NonZero<u64>,
     send_capabilities: &[NonZero<u64>],
 ) -> NonZero<u32> {
+    log::debug!("Spawning process");
     let slice = syscall_map_module(module_id).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
@@ -42,12 +43,14 @@ pub fn spawn_process(
         ));
         for page in start_page..=end_page {
             let mut frame = syscall_alloc(
-                segment
+                AllocPageSize::_4KiB,
+                (segment
                     .p_memsz
-                    .next_multiple_of(AllocPageSize::_4KiB.byte_len_u64())
+                    .div_ceil(AllocPageSize::_4KiB.byte_len_u64()) as usize)
                     .try_into()
                     .unwrap(),
-                AllocPageSize::_4KiB,
+                // TODO: No need to zero the entire page
+                true,
             )
             .unwrap();
             memory_mappings.push(SpawnProcessMemoryMapping {
@@ -65,7 +68,6 @@ pub fn spawn_process(
                 .saturating_sub(page.start_address().as_u64())
                 .min(Size4KiB::SIZE);
             let range_before_to_zero = ..bytes_to_zero_before as usize;
-            // log::debug!("Zeroeing (before) {range_before_to_zero:X?}");
             frame_data[range_before_to_zero].fill(0);
 
             let copy_start = bytes_to_zero_before;
@@ -89,8 +91,11 @@ pub fn spawn_process(
     let stack_len = 64 * 0x400;
     let stack_with_guard_len = Size4KiB::SIZE + stack_len;
     let stack = syscall_alloc(
-        stack_with_guard_len.try_into().unwrap(),
         AllocPageSize::_4KiB,
+        (stack_with_guard_len.div_ceil(Size4KiB::SIZE) as usize)
+            .try_into()
+            .unwrap(),
+        true,
     )
     .unwrap();
 
