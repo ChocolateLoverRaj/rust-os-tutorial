@@ -22,13 +22,21 @@ impl GenericSyscallHandler for SyscallAllocHandler {
     type S = SyscallAlloc;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let output = (|| {
-            if let AllocPageSize::_1GiB = helper.input().page_size
-                && !CpuId::new()
-                    .get_extended_processor_and_feature_identifiers()
-                    .is_some_and(|features| features.has_1gib_pages())
-            {
-                return Err(SyscallAllocError::PageSizeNotSupported);
-            }
+            let page_size = match helper.input().page_size {
+                AllocPageSize::_4KiB => Ok(AllocPageSize::_4KiB),
+                AllocPageSize::_2MiB => Ok(AllocPageSize::_2MiB),
+                AllocPageSize::_1GiB => {
+                    if {
+                        CpuId::new()
+                            .get_extended_processor_and_feature_identifiers()
+                            .is_some_and(|features| features.has_1gib_pages())
+                    } {
+                        Ok(AllocPageSize::_1GiB)
+                    } else {
+                        Err(SyscallAllocError::PageSizeNotSupported)
+                    }
+                }
+            }?;
             let threads = THREADS.read();
             let local = get_local();
             let current_process = &threads
@@ -42,12 +50,13 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 .find_map(|gap| {
                     let aligned_start = gap
                         .start()
-                        .checked_next_multiple_of(helper.input().page_size.byte_len_u64())?;
-                    let required_end = aligned_start
+                        .checked_next_multiple_of(page_size.byte_len_u64())?;
+                    let required_end_inclusive = aligned_start
                         + helper.input().pages_len.get() as u64
-                        + helper.input().page_size.byte_len_u64();
-                    if required_end <= gap.end() {
-                        Some(aligned_start..required_end)
+                            * helper.input().page_size.byte_len_u64()
+                        - 1;
+                    if required_end_inclusive <= gap.end() {
+                        Some(aligned_start..required_end_inclusive)
                     } else {
                         None
                     }

@@ -2,8 +2,8 @@ use core::num::NonZero;
 
 use alloc::vec::Vec;
 use common::{
-    AllocPageSize, ElfSegmentFlags, EnvEntry, STACK_ALIGNMENT, SpawnProcessMemoryFlags,
-    SpawnProcessMemoryMapping, SpawnProcessRelativePriority, log,
+    AllocPageSize, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, STACK_ALIGNMENT,
+    SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use user_lib::{
@@ -22,7 +22,6 @@ pub fn spawn_process(
     keyboard_shared_mem_capability: NonZero<u64>,
     send_capabilities: &[NonZero<u64>],
 ) -> NonZero<u32> {
-    log::debug!("Spawning process");
     let slice = syscall_map_module(module_id).unwrap();
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
@@ -44,23 +43,20 @@ pub fn spawn_process(
         for page in start_page..=end_page {
             let mut frame = syscall_alloc(
                 AllocPageSize::_4KiB,
-                (segment
-                    .p_memsz
-                    .div_ceil(AllocPageSize::_4KiB.byte_len_u64()) as usize)
-                    .try_into()
-                    .unwrap(),
+                1.try_into().unwrap(),
                 // TODO: No need to zero the entire page
                 true,
             )
             .unwrap();
             memory_mappings.push(SpawnProcessMemoryMapping {
                 current_process_start: usize::from(frame.addr()).try_into().unwrap(),
-                new_process_start: page.start_address().as_u64(),
-                len: page.size(),
+                new_process_start: page.start_address().as_u64() as usize,
+                pages_len: 1,
                 flags: SpawnProcessMemoryFlags::from(ElfSegmentFlags::from_bits_retain(
                     segment.p_flags,
                 ))
                 .bits(),
+                _padding: Default::default(),
             });
             let frame_data = unsafe { frame.as_mut() };
             let bytes_to_zero_before = segment
@@ -87,12 +83,12 @@ pub fn spawn_process(
             frame_data[range_after_to_zero].fill(0);
         }
     }
-    let stack_top = 0x800000000000;
+    let stack_top = LOWER_HALF_END as usize;
     let stack_len = 64 * 0x400;
-    let stack_with_guard_len = Size4KiB::SIZE + stack_len;
+    let stack_with_guard_len = AllocPageSize::_4KiB.byte_len() + stack_len;
     let stack = syscall_alloc(
         AllocPageSize::_4KiB,
-        (stack_with_guard_len.div_ceil(Size4KiB::SIZE) as usize)
+        (stack_len / AllocPageSize::_4KiB.byte_len())
             .try_into()
             .unwrap(),
         true,
@@ -126,22 +122,26 @@ pub fn spawn_process(
     memory_mappings.push(SpawnProcessMemoryMapping {
         current_process_start: usize::from(stack.addr()).try_into().unwrap(),
         new_process_start: stack_top - stack_with_guard_len,
-        len: AllocPageSize::_4KiB.byte_len_u64(),
+        pages_len: 1,
         flags: SpawnProcessMemoryFlags::empty().bits(),
+        _padding: Default::default(),
     });
     // Stack
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: u64::try_from(usize::from(stack.addr())).unwrap()
-            + AllocPageSize::_4KiB.byte_len_u64(),
+        current_process_start: stack.addr().get() + AllocPageSize::_4KiB.byte_len(),
         new_process_start: stack_top - stack_len,
-        len: stack_len,
+        pages_len: stack_len / AllocPageSize::_4KiB.byte_len(),
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
+        _padding: Default::default(),
     });
+
+    common::log::info!("Memory mappings: {memory_mappings:#X?}");
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority,
         rip: entry_point,
-        rsp: stack_top - u64::try_from(usize::from(stack.addr()) + stack.len() - env_ptr).unwrap(),
+        rsp: u64::try_from(stack_top).unwrap()
+            - u64::try_from(usize::from(stack.addr()) + stack.len() - env_ptr).unwrap(),
         memory_mapping: &memory_mappings,
         send_capabilities,
     })

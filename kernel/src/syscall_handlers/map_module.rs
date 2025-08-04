@@ -1,5 +1,5 @@
 use alloc::format;
-use common::{HIGHER_HALF_START, SliceData, SyscallMapModule, SyscallMapModuleError};
+use common::{LOWER_HALF_END, SliceData, SyscallMapModule, SyscallMapModuleError};
 use nodit::interval::ee;
 use x86_64::{
     PhysAddr, VirtAddr,
@@ -47,7 +47,7 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
             let mut process_memory = current_process.memory.write();
             let range = process_memory
                 .mapped_virtual_memory
-                .gaps_trimmed(ee(0, HIGHER_HALF_START))
+                .gaps_trimmed(ee(0, LOWER_HALF_END))
                 .find_map(|gap| {
                     let aligned_start = gap.start().checked_next_multiple_of(Size4KiB::SIZE)?;
                     let required_end_inclusive = aligned_start + (n_pages * Size4KiB::SIZE - 1);

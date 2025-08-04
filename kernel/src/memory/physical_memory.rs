@@ -120,10 +120,15 @@ impl PhysicalMemory {
     }
 
     /// The frame must currently be owned by a user process
-    pub fn share_memory<S: PageSize>(&mut self, frame: PhysFrame<S>, process_id: ProcessId) {
+    pub fn share_memory(
+        &mut self,
+        page_size: AllocPageSize,
+        frame: PhysAddr,
+        process_id: ProcessId,
+    ) {
         let interval = Interval::from({
-            let start = frame.start_address().as_u64();
-            start..start + frame.size()
+            let start = frame.as_u64();
+            start..start + page_size.byte_len_u64()
         });
         let mut overlapping_mut = self.map.overlapping_mut(interval);
         let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();
@@ -137,10 +142,15 @@ impl PhysicalMemory {
     }
 
     /// Remove a process from owning physical memory. If no processes are left, the frame is marked as unused.
-    pub fn unshare_memory<S: PageSize>(&mut self, frame: PhysFrame<S>, process_id: ProcessId) {
+    pub fn unshare_memory(
+        &mut self,
+        page_size: AllocPageSize,
+        frame: PhysAddr,
+        process_id: ProcessId,
+    ) {
         let interval = Interval::from({
-            let start = frame.start_address().as_u64();
-            start..start + frame.size()
+            let start = frame.as_u64();
+            start..start + page_size.byte_len_u64()
         });
         let mut overlapping_mut = self.map.overlapping_mut(interval);
         let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();

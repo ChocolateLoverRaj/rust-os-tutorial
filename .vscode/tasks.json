@@ -15,6 +15,10 @@
 				"stdio",
 				"-cpu",
 				"qemu64,+smep,+smap,+pge",
+				"-m",
+				"1G",
+				"-d",
+				"int"
 			],
 			"problemMatcher": [
 				"$rustc",

@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use x86_64::structures::paging::PageTableFlags;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{ElfSegmentFlags, SliceData, Syscall};
+use crate::{AllocPageSize, ElfSegmentFlags, SliceData, Syscall};
 
 #[derive(Debug, Encode, Decode, TryFromBytes, Immutable)]
 #[repr(u8)]
@@ -26,7 +26,7 @@ pub struct SyscallSpawnProcessInput {
 
 bitflags! {
     #[derive(Debug, Clone, Copy)]
-    pub struct SpawnProcessMemoryFlags: u64 {
+    pub struct SpawnProcessMemoryFlags: u8 {
         const EXECUTABLE = 1 << 0;
         const WRITABLE = 1 << 1;
         const READABLE = 1 << 2;
@@ -38,6 +38,18 @@ bitflags! {
 
         // The source may set any bits
         const _ = !0;
+    }
+}
+
+impl SpawnProcessMemoryFlags {
+    pub fn page_size(&self) -> AllocPageSize {
+        if self.contains(SpawnProcessMemoryFlags::_1GiB_PAGE) {
+            AllocPageSize::_1GiB
+        } else if self.contains(SpawnProcessMemoryFlags::_2MiB_PAGE) {
+            AllocPageSize::_2MiB
+        } else {
+            AllocPageSize::_4KiB
+        }
     }
 }
 
@@ -72,10 +84,11 @@ impl From<SpawnProcessMemoryFlags> for PageTableFlags {
 
 #[derive(Debug, FromBytes, IntoBytes, Immutable, KnownLayout, Clone)]
 pub struct SpawnProcessMemoryMapping {
-    pub current_process_start: u64,
-    pub new_process_start: u64,
-    pub len: u64,
-    pub flags: u64,
+    pub current_process_start: usize,
+    pub new_process_start: usize,
+    pub pages_len: usize,
+    pub flags: u8,
+    pub _padding: [u8; 7],
 }
 
 #[derive(Debug, Encode, Decode)]

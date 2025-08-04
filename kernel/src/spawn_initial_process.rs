@@ -265,6 +265,8 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
         }
         unsafe { Cr3::write(user_l4_frame, memory.new_kernel_cr3_flags) };
 
+        log::debug!("Mapped virt mem: {mapped_virtual_memory:#X?}");
+
         let process = Arc::new(Process {
             id: process_id,
             cr3: user_l4_frame,

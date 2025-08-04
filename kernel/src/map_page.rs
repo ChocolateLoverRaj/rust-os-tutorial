@@ -25,10 +25,24 @@ fn get_page_table_mut<'a>(
     unsafe { Ok(page_table_ptr.as_mut()) }
 }
 
+fn set_addr(
+    page_table_entry: &mut PageTableEntry,
+    addr: PhysAddr,
+    flags: PageTableFlags,
+) -> Result<(), MapPageError> {
+    if page_table_entry.is_unused() {
+        page_table_entry.set_addr(addr, flags);
+        Ok(())
+    } else {
+        Err(MapPageError::AlreadyMapped)
+    }
+}
+
 #[derive(Debug)]
 pub enum MapPageError {
     AllocateFrame,
     Frame(FrameError),
+    AlreadyMapped,
 }
 
 fn get_or_create_page_table<'a>(
@@ -56,6 +70,9 @@ fn get_or_create_page_table<'a>(
     })
 }
 
+/// Maps a page to a phys frame.
+/// To avoid bugs, it is expected that the page is currently unmapped. It will error if the entry is not completely 0.
+///
 /// PRESENT and HUGE_PAGE flags are automatically added as needed.
 ///
 /// # Safety
@@ -73,22 +90,28 @@ pub unsafe fn map_page(
     let p4 = unsafe { p4_ptr.as_mut() };
     let p3 = get_or_create_page_table(&mut p4[page.p4_index()], frame_allocator)?;
     if let AllocPageSize::_1GiB = size {
-        p3[page.p3_index()].set_addr(
+        set_addr(
+            &mut p3[page.p3_index()],
             frame,
             flags | PageTableFlags::PRESENT | PageTableFlags::HUGE_PAGE,
-        );
+        )?;
         return Ok(());
     }
     let p2 = get_or_create_page_table(&mut p3[page.p3_index()], frame_allocator)?;
     if let AllocPageSize::_2MiB = size {
-        p2[page.p2_index()].set_addr(
+        set_addr(
+            &mut p2[page.p2_index()],
             frame,
             flags | PageTableFlags::PRESENT | PageTableFlags::HUGE_PAGE,
-        );
+        )?;
         return Ok(());
     }
     let p1 = get_or_create_page_table(&mut p2[page.p2_index()], frame_allocator)?;
-    p1[page.p1_index()].set_addr(frame, flags | PageTableFlags::PRESENT);
+    set_addr(
+        &mut p1[page.p1_index()],
+        frame,
+        flags | PageTableFlags::PRESENT,
+    )?;
     Ok(())
 }
 
@@ -100,38 +123,40 @@ pub enum UnmapPageError {
     IsPageTable,
 }
 
-fn unmap_entry(entry: &mut PageTableEntry, is_p1: bool) -> Result<(), UnmapPageError> {
+fn unmap_entry(entry: &mut PageTableEntry, is_p1: bool) -> Result<PageTableEntry, UnmapPageError> {
     if !entry.flags().contains(PageTableFlags::PRESENT) {
         return Err(UnmapPageError::NotMapped);
     }
     if !entry.flags().contains(PageTableFlags::HUGE_PAGE) && !is_p1 {
         return Err(UnmapPageError::IsPageTable);
     }
+    let original_entry = entry.clone();
     entry.set_unused();
-    Ok(())
+    Ok(original_entry)
 }
 
 /// Also does `invlpg` after successfully un-mapping.
+/// Returns the entry that was removed.
 pub unsafe fn unmap_page(
     p4_table: PhysFrame<Size4KiB>,
     page_size: AllocPageSize,
     page: VirtAddr,
-) -> Result<(), UnmapPageError> {
+) -> Result<PageTableEntry, UnmapPageError> {
     let mut p4_ptr =
         NonNull::new(p4_table.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
     let p4 = unsafe { p4_ptr.as_mut() };
     let p3 = get_page_table_mut(&mut p4[page.p4_index()]).map_err(UnmapPageError::Frame)?;
-    if let AllocPageSize::_1GiB = page_size {
-        unmap_entry(&mut p3[page.p3_index()], false)?;
+    let entry = if let AllocPageSize::_1GiB = page_size {
+        unmap_entry(&mut p3[page.p3_index()], false)?
     } else {
         let p2 = get_page_table_mut(&mut p3[page.p3_index()]).map_err(UnmapPageError::Frame)?;
         if let AllocPageSize::_2MiB = page_size {
-            unmap_entry(&mut p2[page.p2_index()], false)?;
+            unmap_entry(&mut p2[page.p2_index()], false)?
         } else {
             let p1 = get_page_table_mut(&mut p2[page.p2_index()]).map_err(UnmapPageError::Frame)?;
-            unmap_entry(&mut p1[page.p1_index()], true)?;
+            unmap_entry(&mut p1[page.p1_index()], true)?
         }
-    }
+    };
     flush(page);
-    Ok(())
+    Ok(entry)
 }
