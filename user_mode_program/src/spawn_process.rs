@@ -88,7 +88,7 @@ pub fn spawn_process(
     let stack_with_guard_len = AllocPageSize::_4KiB.byte_len() + stack_len;
     let stack = syscall_alloc(
         AllocPageSize::_4KiB,
-        (stack_len / AllocPageSize::_4KiB.byte_len())
+        (1 + stack_len / AllocPageSize::_4KiB.byte_len())
             .try_into()
             .unwrap(),
         true,

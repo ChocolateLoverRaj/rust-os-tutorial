@@ -258,6 +258,7 @@ fn main(initial_rsp: NonNull<()>) {
                                         keyboard_shared_mem_capability,
                                         &send_capabilities,
                                     );
+                                    log::info!("Spawned process");
                                     state.tabs.push(Tab {
                                         app_index: *focused_index,
                                         process_id,

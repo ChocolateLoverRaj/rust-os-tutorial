@@ -1,3 +1,5 @@
+use core::any::type_name;
+
 use alloc::collections::btree_map::{self, BTreeMap};
 use alloc_stack::SyscallAllocStackHandler;
 use channel::{SyscallCreateChannelHandler, SyscallTxSendHandler};
@@ -83,12 +85,16 @@ pub trait GenericSyscallHandler: Sync {
 
 trait SyscallHandler: Sync {
     fn id(&self) -> u64;
+    fn debug_str(&self) -> &'static str;
     fn handle_syscall(&self, input: [u64; 6], extra_data: ExtraData) -> !;
 }
 
 impl<T: GenericSyscallHandler> SyscallHandler for T {
     fn id(&self) -> u64 {
         T::S::ID
+    }
+    fn debug_str(&self) -> &'static str {
+        type_name::<T::S>()
     }
     fn handle_syscall(&self, input: [u64; 6], extra_data: ExtraData) -> ! {
         match T::S::try_decode_input(&input) {
@@ -164,16 +170,18 @@ impl SyscallHandlers {
         syscall_saved_regs: &mut SyscallSavedRegs,
     ) -> ! {
         let id = input0;
-        // log::debug!("Syscall: 0x{id:X}");
         let input = [input1, input2, input3, input4, input5, input6];
         match self.map.get(&id) {
-            Some(handler) => handler.handle_syscall(
-                input,
-                ExtraData {
-                    saved_regs: syscall_saved_regs,
-                    syscall_handlers: self,
-                },
-            ),
+            Some(handler) => {
+                log::trace!("Syscall: 0x{id:X} - {}", handler.debug_str());
+                handler.handle_syscall(
+                    input,
+                    ExtraData {
+                        saved_regs: syscall_saved_regs,
+                        syscall_handlers: self,
+                    },
+                )
+            }
             None => todo!("Invalid syscall id: {id}. Terminate process"),
         }
     }

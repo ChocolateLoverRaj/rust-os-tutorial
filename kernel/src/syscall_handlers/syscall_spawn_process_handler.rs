@@ -158,6 +158,9 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     let frame = unsafe { unmap_page(running_thread.process.cr3, page_size, page) }
                         .unwrap()
                         .addr();
+                    log::debug!(
+                        "Unmapped: {page:?} {page_size:?}, starting: {start_page_current:?}"
+                    );
                     physical_memory.share_memory(page_size, frame, new_process_id);
                     physical_memory.unshare_memory(page_size, frame, running_thread.process.id);
                     let page = start_page_new + i as u64 * page_size.byte_len_u64();
