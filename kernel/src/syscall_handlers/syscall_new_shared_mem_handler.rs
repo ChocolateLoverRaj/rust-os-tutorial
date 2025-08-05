@@ -33,7 +33,7 @@ impl GenericSyscallHandler for SyscallNewSharedMemHandler {
                         for _ in 0..helper.input().pages_len.get() {
                             let mem_type = MemoryType::Shared(shared_mem_id);
                             if let Some(phys_frame) =
-                                phys_mem.allocate_frame_with_type_2(page_size, mem_type)
+                                phys_mem.allocate_frame_with_type(page_size, mem_type)
                             {
                                 used.insert_merge_touching(
                                     {

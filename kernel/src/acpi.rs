@@ -28,18 +28,22 @@ impl AcpiHandler for KernelAcpiHandler {
             physical_address as u64 / page_size.byte_len_u64() * page_size.byte_len_u64(),
         );
         let mut pages = virtual_memory
-            .allocate_contiguous_pages_2(page_size, n_pages)
+            .allocate_contiguous_pages(page_size, n_pages)
             .unwrap();
         let start_page = VirtAddr::new(*pages.range().start());
 
         for i in 0..n_pages {
             unsafe {
-                pages.map_to(
-                    start_page + i * page_size.byte_len_u64(),
-                    start_frame + i * page_size.byte_len_u64(),
-                    PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::GLOBAL,
-                    &mut frame_allocator,
-                );
+                pages
+                    .map_to(
+                        start_page + i * page_size.byte_len_u64(),
+                        start_frame + i * page_size.byte_len_u64(),
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::NO_EXECUTE
+                            | PageTableFlags::GLOBAL,
+                        &mut frame_allocator,
+                    )
+                    .unwrap();
             }
         }
 
@@ -64,7 +68,7 @@ impl AcpiHandler for KernelAcpiHandler {
         let mut virtual_memory = MEMORY.get().unwrap().virtual_memory.lock();
         let range = start_page..=start_page + region.mapped_length() as u64 - 1;
         // Safety: this function will only be called with regions mapped by the `map_physical_region` function
-        unsafe { virtual_memory.already_allocated_2(page_size, range) }.unmap_and_deallocate();
+        unsafe { virtual_memory.already_allocated(page_size, range) }.unmap_and_deallocate();
     }
 }
 

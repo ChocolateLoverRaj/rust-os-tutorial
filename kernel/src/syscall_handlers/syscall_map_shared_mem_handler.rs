@@ -59,7 +59,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                         .start()
                         .next_multiple_of(shared_mem.page_size.byte_len_u64());
                     let aligned_interval =
-                        Interval::from(aligned_start..aligned_start + shared_mem_len as u64);
+                        Interval::from(aligned_start..aligned_start + shared_mem_len);
                     if interval.contains_interval(&aligned_interval) {
                         Some(aligned_interval)
                     } else {
@@ -91,7 +91,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 for i in 0..frames_len {
                     let page = start_page + pages_mapped * shared_mem.page_size.byte_len_u64();
                     let frame = start_frame + i * shared_mem.page_size.byte_len_u64();
-                    log::debug!("Mapping {page:?} to {frame:?}");
+                    log::trace!("Mapping {page:?} to {frame:?}");
                     unsafe {
                         map_page(
                             thread.process.cr3,
@@ -108,7 +108,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 }
             }
 
-            Ok(SliceData::new(interval.start(), shared_mem_len as u64))
+            Ok(SliceData::new(interval.start(), shared_mem_len))
         })();
         helper.syscall_return(&output)
     }

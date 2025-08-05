@@ -3,7 +3,6 @@ use core::any::type_name;
 use alloc::collections::btree_map::{self, BTreeMap};
 use common::Syscall;
 use syscall_alloc_handler::SyscallAllocHandler;
-use syscall_alloc_stack_handler::SyscallAllocStackHandler;
 use syscall_channel_handler::{SyscallCreateChannelHandler, SyscallTxSendHandler};
 use syscall_clone_capability_handler::SyscallCloneCapabilityHandler;
 use syscall_exists_handler::SyscallExistsHandler;
@@ -18,6 +17,7 @@ use syscall_keyboard_handler::SyscallSubscribeToKeyboardHandler;
 use syscall_log_handler::SyscallLogHandler;
 use syscall_map_module_handler::SyscallMapModuleHandler;
 use syscall_map_shared_mem_handler::SyscallMapSharedMemHandler;
+use syscall_mem_prot_handler::SyscallMemProtHandler;
 use syscall_mouse_handler::SyscallSubscribeToMouseHandler;
 use syscall_new_shared_mem_handler::SyscallNewSharedMemHandler;
 use syscall_send_capability_handler::SyscallSendCapabilityHandler;
@@ -29,7 +29,6 @@ use syscall_wait_until_event_handler::SyscallWaitUntilEventHandler;
 use crate::syscall_saved_regs::SyscallSavedRegs;
 
 mod syscall_alloc_handler;
-mod syscall_alloc_stack_handler;
 mod syscall_channel_handler;
 mod syscall_clone_capability_handler;
 mod syscall_exists_handler;
@@ -42,6 +41,7 @@ mod syscall_keyboard_handler;
 mod syscall_log_handler;
 mod syscall_map_module_handler;
 mod syscall_map_shared_mem_handler;
+mod syscall_mem_prot_handler;
 mod syscall_mouse_handler;
 mod syscall_new_shared_mem_handler;
 mod syscall_send_capability_handler;
@@ -124,7 +124,7 @@ static SYSCALL_HANDLERS: &[&dyn SyscallHandler] = &[
     &SyscallFutexLockHandler,
     &SyscallFutexUnlockHandler,
     &SyscallGetThreadIdHandler,
-    &SyscallAllocStackHandler,
+    &SyscallMemProtHandler,
     &SyscallExitThreadHandler,
     &SyscallMapModuleHandler,
     &SyscallSpawnProcessHandler,

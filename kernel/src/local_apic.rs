@@ -1,12 +1,10 @@
 use acpi::platform::interrupt::Apic;
 use alloc::alloc::Allocator;
+use common::PageSize;
 use force_send_sync::SendSync;
 use spin::Once;
 use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{PageTableFlags, PhysFrame, Size4KiB},
-};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 use crate::{cpu_local_data::get_local, interrupt_vector::InterruptVector, memory::MEMORY};
 
@@ -26,15 +24,16 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
         if cpu_has_x2apic() {
             LocalApicAccess::RegisterBased
         } else {
-            let addr = PhysAddr::new(apic.local_apic_address);
+            let frame = PhysAddr::new(apic.local_apic_address);
             // Local APIC is always exactly 4 KiB, aligned to 4 KiB
-            let frame = PhysFrame::<Size4KiB>::from_start_address(addr).unwrap();
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
-            let mut pages = virtual_memory.allocate_contiguous_pages(1).unwrap();
-            let page = *pages.range().start();
+            let mut pages = virtual_memory
+                .allocate_contiguous_pages(PageSize::_4KiB, 1)
+                .unwrap();
+            let page = pages.start_addr();
             // Safety: We map to the correct page for the Local APIC
             unsafe {
                 pages.map_to(
@@ -47,8 +46,9 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
                         | PageTableFlags::GLOBAL,
                     &mut frame_allocator,
                 )
-            };
-            LocalApicAccess::Mmio(page.start_address())
+            }
+            .unwrap();
+            LocalApicAccess::Mmio(page)
         }
     });
 }

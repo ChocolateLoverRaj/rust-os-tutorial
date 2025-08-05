@@ -2,7 +2,7 @@ use core::num::NonZero;
 
 use bincode::{Decode, Encode};
 
-use crate::{AllocPageSize, Syscall};
+use crate::{PageSize, Syscall};
 
 /// Allocates memory for multiple processes to use.
 /// Returns the capability for mapping / accessing this shared mem.
@@ -10,7 +10,7 @@ pub struct SyscallNewSharedMem;
 
 #[derive(Debug, Encode, Decode)]
 pub struct SyscallNewSharedMemInput {
-    pub page_size: AllocPageSize,
+    pub page_size: PageSize,
     pub pages_len: NonZero<usize>,
 }
 

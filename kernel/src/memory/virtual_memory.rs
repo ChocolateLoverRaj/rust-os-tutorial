@@ -1,16 +1,13 @@
-use core::{fmt::Debug, ops::RangeInclusive};
+use core::ops::RangeInclusive;
 
-use common::{AllocPageSize, HIGHER_HALF_START};
+use common::{HIGHER_HALF_START, PageSize};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     PhysAddr, VirtAddr,
-    structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, PhysFrame,
-        Size4KiB,
-    },
+    structures::paging::{FrameAllocator, PageTableFlags, PhysFrame, Size4KiB},
 };
 
-use crate::{get_page_table::get_page_table, map_page, unmap_page};
+use crate::{MapPageError, map_page, unmap_page};
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
@@ -20,43 +17,11 @@ pub struct VirtualMemory {
 impl VirtualMemory {
     /// Returns the start page of the allocated range of pages.
     /// Pages are guaranteed not to be mapped.
-    pub fn allocate_contiguous_pages<S: PageSize + Debug>(
+    pub fn allocate_contiguous_pages(
         &mut self,
+        page_size: PageSize,
         n_pages: u64,
-    ) -> Option<AllocatedPages<S>> {
-        let start_page = Page::<S>::from_start_address(VirtAddr::new({
-            let range = self
-                .set
-                .gaps_trimmed(iu(HIGHER_HALF_START))
-                .find_map(|gap| {
-                    let aligned_start = gap.start().next_multiple_of(S::SIZE);
-                    let required_end_inclusive = aligned_start + (n_pages * S::SIZE - 1);
-                    if required_end_inclusive <= gap.end() {
-                        Some(aligned_start..=required_end_inclusive)
-                    } else {
-                        None
-                    }
-                })?;
-            let start = *range.start();
-            self.set
-                .insert_merge_touching(Interval::from(range))
-                .unwrap();
-            start
-        }))
-        .unwrap();
-        Some(AllocatedPages {
-            virtual_memory: self,
-            range: start_page..=start_page + (n_pages - 1),
-        })
-    }
-
-    /// Returns the start page of the allocated range of pages.
-    /// Pages are guaranteed not to be mapped.
-    pub fn allocate_contiguous_pages_2(
-        &mut self,
-        page_size: AllocPageSize,
-        n_pages: u64,
-    ) -> Option<AllocatedPages2> {
+    ) -> Option<AllocatedPages> {
         let range = self
             .set
             .gaps_trimmed(iu(HIGHER_HALF_START))
@@ -73,7 +38,7 @@ impl VirtualMemory {
         self.set
             .insert_merge_touching(Interval::from(range.clone()))
             .unwrap();
-        Some(AllocatedPages2 {
+        Some(AllocatedPages {
             virtual_memory: self,
             range,
             page_size,
@@ -82,94 +47,34 @@ impl VirtualMemory {
 
     /// # Safety
     /// The pages must have been allocated by [`VirtualMemory`]
-    pub unsafe fn already_allocated<S: PageSize>(
+    pub unsafe fn already_allocated(
         &mut self,
-        pages: RangeInclusive<Page<S>>,
-    ) -> AllocatedPages<'_, S> {
-        AllocatedPages {
-            virtual_memory: self,
-            range: pages,
-        }
-    }
-
-    /// # Safety
-    /// The pages must have been allocated by [`VirtualMemory`]
-    pub unsafe fn already_allocated_2(
-        &mut self,
-        page_size: AllocPageSize,
+        page_size: PageSize,
         range: RangeInclusive<u64>,
-    ) -> AllocatedPages2<'_> {
-        AllocatedPages2 {
+    ) -> AllocatedPages<'_> {
+        AllocatedPages {
             virtual_memory: self,
             range,
             page_size,
         }
     }
 }
-
-pub struct AllocatedPages<'a, S: PageSize> {
-    virtual_memory: &'a mut VirtualMemory,
-    range: RangeInclusive<Page<S>>,
-}
-
-impl<S: PageSize> AllocatedPages<'_, S> {
-    pub fn range(&self) -> &RangeInclusive<Page<S>> {
-        &self.range
-    }
-
-    /// # Safety
-    /// See the safety for [`x86_64::structures::paging::mapper::Mapper::map_to`]
-    pub unsafe fn map_to(
-        &mut self,
-        page: Page<S>,
-        frame: PhysFrame<S>,
-        flags: PageTableFlags,
-        frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) where
-        S: Debug,
-        for<'a> OffsetPageTable<'a>: Mapper<S>,
-    {
-        if self.range.contains(&page) {
-            // Safety: Nothing else is accessing the page tables right now
-            let mut offset_page_table = unsafe { get_page_table(self.virtual_memory.cr3, false) };
-            // Safety: same as this function's safety, plus we ensure that the page we are mapping is allocated properly
-            unsafe { offset_page_table.map_to(page, frame, flags, frame_allocator) }
-                .unwrap()
-                .flush();
-        } else {
-            panic!(
-                "Tried to map page {page:?}, which is outside of allocated range {:?}",
-                self.range
-            )
-        }
-    }
-
-    /// All pages must be mapped
-    pub fn unmap_and_deallocate(self)
-    where
-        for<'a> OffsetPageTable<'a>: Mapper<S>,
-    {
-        let pages = self.range.clone();
-        // Safety: Nothing else is accessing the page tables right now
-        let mut offset_page_table = unsafe { get_page_table(self.virtual_memory.cr3, false) };
-        for page in pages.clone() {
-            offset_page_table.unmap(page).unwrap().2.flush();
-        }
-        let _ = self.virtual_memory.set.cut({
-            let start = pages.start().start_address().as_u64();
-            let end_inclusive = pages.end().start_address().as_u64() + (S::SIZE - 1);
-            Interval::from(start..=end_inclusive)
-        });
-    }
-}
-
-pub struct AllocatedPages2<'a> {
+pub struct AllocatedPages<'a> {
     virtual_memory: &'a mut VirtualMemory,
     range: RangeInclusive<u64>,
-    page_size: AllocPageSize,
+    page_size: PageSize,
 }
 
-impl AllocatedPages2<'_> {
+#[derive(Debug)]
+pub enum MapToError {
+    OutOfPhysMem,
+}
+
+impl AllocatedPages<'_> {
+    pub fn start_addr(&self) -> VirtAddr {
+        VirtAddr::new(*self.range.start())
+    }
+
     pub fn range(&self) -> &RangeInclusive<u64> {
         &self.range
     }
@@ -182,9 +87,9 @@ impl AllocatedPages2<'_> {
         frame: PhysAddr,
         flags: PageTableFlags,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    ) {
+    ) -> Result<(), MapToError> {
         if self.range.contains(&page.as_u64()) {
-            unsafe {
+            let result = unsafe {
                 map_page(
                     self.virtual_memory.cr3,
                     self.page_size,
@@ -193,14 +98,19 @@ impl AllocatedPages2<'_> {
                     flags,
                     frame_allocator,
                 )
+            };
+            if let Err(MapPageError::AllocateFrame) = result {
+                return Err(MapToError::OutOfPhysMem);
+            } else {
+                result.unwrap();
             }
-            .unwrap();
         } else {
             panic!(
-                "Tried to map page {page:?}, which is outside of allocated range {:?}",
+                "Tried to map page {page:?}, which is outside of allocated range {:X?}",
                 self.range
             )
         }
+        Ok(())
     }
 
     /// All pages must be mapped

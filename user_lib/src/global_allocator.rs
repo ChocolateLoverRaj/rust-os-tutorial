@@ -1,9 +1,8 @@
 use core::alloc::Layout;
 
-use common::{AllocPageSize, SyscallAllocError};
+use common::{MemProt, PageSize, SyscallAllocError};
 use spin::Once;
 use talc::{OomHandler, Talc, Talck};
-use x86_64::structures::paging::{PageSize, Size4KiB};
 
 use crate::{mutex::RawBlockingLock, syscalls::syscall_alloc};
 
@@ -19,7 +18,7 @@ struct MyOomHandler;
 
 impl OomHandler for MyOomHandler {
     fn handle_oom(talc: &mut talc::Talc<Self>, layout: core::alloc::Layout) -> Result<(), ()> {
-        assert!(layout.align() as u64 <= Size4KiB::SIZE);
+        assert!(layout.align() <= PageSize::_4KiB.byte_len());
         let result = (|| {
             let bytes_needed = {
                 let is_first_heap = talc.get_counters().heap_count == 0;
@@ -34,13 +33,14 @@ impl OomHandler for MyOomHandler {
                 layout.size() + overhead_len
             };
             let slice = syscall_alloc(
-                AllocPageSize::_4KiB,
+                PageSize::_4KiB,
                 bytes_needed
-                    .div_ceil(AllocPageSize::_4KiB.byte_len())
+                    .div_ceil(PageSize::_4KiB.byte_len())
                     .try_into()
                     .unwrap(),
                 // Talck will zero it anyways, so we don't need the kernel to also zero it
                 false,
+                MemProt::READABLE | MemProt::WRITABLE,
             )?;
             let span = slice.as_ptr().into();
             unsafe { talc.claim(span) }.unwrap();

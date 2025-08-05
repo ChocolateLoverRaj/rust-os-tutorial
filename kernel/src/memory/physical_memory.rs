@@ -1,11 +1,11 @@
 use core::mem;
 
 use alloc::boxed::Box;
-use common::AllocPageSize;
+use common::PageSize;
 use nodit::{Interval, NoditMap};
 use x86_64::{
     PhysAddr,
-    structures::paging::{FrameAllocator, PageSize, PhysFrame},
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
 use crate::task::ProcessId;
@@ -32,34 +32,9 @@ pub struct PhysicalMemory {
 }
 
 impl PhysicalMemory {
-    pub fn allocate_frame_with_type<S: PageSize>(
+    pub fn allocate_frame_with_type(
         &mut self,
-        memory_type: MemoryType,
-    ) -> Option<PhysFrame<S>> {
-        let aligned_start = self.map.iter().find_map(|(interval, memory_type)| {
-            if let MemoryType::Usable = memory_type {
-                let aligned_start = interval.start().next_multiple_of(S::SIZE);
-                let required_end_inclusive = aligned_start + (S::SIZE - 1);
-                if required_end_inclusive <= interval.end() {
-                    Some(aligned_start)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })?;
-        let range = aligned_start..=aligned_start + (S::SIZE - 1);
-        let _ = self.map.cut(Interval::from(range.clone()));
-        self.map
-            .insert_merge_touching_if_values_equal(range.into(), memory_type)
-            .unwrap();
-        Some(PhysFrame::from_start_address(PhysAddr::new(aligned_start)).unwrap())
-    }
-
-    pub fn allocate_frame_with_type_2(
-        &mut self,
-        page_size: AllocPageSize,
+        page_size: PageSize,
         memory_type: MemoryType,
     ) -> Option<PhysAddr> {
         let aligned_start = self.map.iter().find_map(|(interval, memory_type)| {
@@ -121,12 +96,7 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn change_owner(
-        &mut self,
-        page_size: AllocPageSize,
-        frame: PhysAddr,
-        new_owner: ProcessId,
-    ) {
+    pub fn change_owner(&mut self, page_size: PageSize, frame: PhysAddr, new_owner: ProcessId) {
         let interval = Interval::from({
             let start = frame.as_u64();
             start..start + page_size.byte_len_u64()
@@ -154,11 +124,11 @@ pub struct PhysicalMemoryFrameAllocator<'a> {
     memory_type: MemoryType,
 }
 
-unsafe impl<S: PageSize> FrameAllocator<S> for PhysicalMemoryFrameAllocator<'_> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+unsafe impl FrameAllocator<Size4KiB> for PhysicalMemoryFrameAllocator<'_> {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let frame = self
             .physical_memory
-            .allocate_frame_with_type(self.memory_type.clone())?;
-        Some(frame)
+            .allocate_frame_with_type(PageSize::_4KiB, self.memory_type)?;
+        Some(PhysFrame::from_start_address(frame).unwrap())
     }
 }

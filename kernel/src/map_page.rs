@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use common::AllocPageSize;
+use common::PageSize;
 use x86_64::{
     PhysAddr, VirtAddr,
     instructions::tlb::flush,
@@ -13,6 +13,12 @@ use x86_64::{
 use crate::translate_addr::TranslateToVirt;
 
 fn get_page_table_mut(page_table_entry: &mut PageTableEntry) -> Result<&mut PageTable, FrameError> {
+    if !page_table_entry
+        .flags()
+        .contains(PageTableFlags::USER_ACCESSIBLE | PageTableFlags::WRITABLE)
+    {
+        panic!()
+    }
     page_table_entry
         .frame(false)?
         .start_address()
@@ -77,7 +83,7 @@ fn get_or_create_page_table<'a>(
 /// Don't mess up page tables, don't give user mode access to things it shouldn't access, don't accidentally create multiple &mut T to the same data.
 pub unsafe fn map_page(
     p4_table: PhysFrame<Size4KiB>,
-    size: AllocPageSize,
+    size: PageSize,
     page: VirtAddr,
     frame: PhysAddr,
     flags: PageTableFlags,
@@ -87,7 +93,7 @@ pub unsafe fn map_page(
         NonNull::new(p4_table.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
     let p4 = unsafe { p4_ptr.as_mut() };
     let p3 = get_or_create_page_table(&mut p4[page.p4_index()], frame_allocator)?;
-    if let AllocPageSize::_1GiB = size {
+    if let PageSize::_1GiB = size {
         set_addr(
             &mut p3[page.p3_index()],
             frame,
@@ -96,7 +102,7 @@ pub unsafe fn map_page(
         return Ok(());
     }
     let p2 = get_or_create_page_table(&mut p3[page.p3_index()], frame_allocator)?;
-    if let AllocPageSize::_2MiB = size {
+    if let PageSize::_2MiB = size {
         set_addr(
             &mut p2[page.p2_index()],
             frame,
@@ -140,18 +146,18 @@ fn unmap_entry(entry: &mut PageTableEntry, is_p1: bool) -> Result<PageTableEntry
 /// Don't unmap the wrong thing. It can cause page faults.
 pub unsafe fn unmap_page(
     p4_table: PhysFrame<Size4KiB>,
-    page_size: AllocPageSize,
+    page_size: PageSize,
     page: VirtAddr,
 ) -> Result<PageTableEntry, UnmapPageError> {
     let mut p4_ptr =
         NonNull::new(p4_table.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
     let p4 = unsafe { p4_ptr.as_mut() };
     let p3 = get_page_table_mut(&mut p4[page.p4_index()]).map_err(UnmapPageError::Frame)?;
-    let entry = if let AllocPageSize::_1GiB = page_size {
+    let entry = if let PageSize::_1GiB = page_size {
         unmap_entry(&mut p3[page.p3_index()], false)?
     } else {
         let p2 = get_page_table_mut(&mut p3[page.p3_index()]).map_err(UnmapPageError::Frame)?;
-        if let AllocPageSize::_2MiB = page_size {
+        if let PageSize::_2MiB = page_size {
             unmap_entry(&mut p2[page.p2_index()], false)?
         } else {
             let p1 = get_page_table_mut(&mut p2[page.p2_index()]).map_err(UnmapPageError::Frame)?;
@@ -160,4 +166,65 @@ pub unsafe fn unmap_page(
     };
     flush(page);
     Ok(entry)
+}
+
+#[derive(Debug)]
+pub enum UpdateFlagsError {
+    Frame(FrameError),
+    /// You tried to set flags for an entire page table
+    IsPageTable,
+    NotMapped,
+}
+
+fn set_entry_flags(
+    entry: &mut PageTableEntry,
+    flags: PageTableFlags,
+    is_p1: bool,
+) -> Result<(), UpdateFlagsError> {
+    if !entry.flags().contains(PageTableFlags::PRESENT) {
+        return Err(UpdateFlagsError::NotMapped);
+    }
+    if !entry.flags().contains(PageTableFlags::HUGE_PAGE) && !is_p1 {
+        return Err(UpdateFlagsError::IsPageTable);
+    }
+    entry.set_flags({
+        let mut flags = PageTableFlags::PRESENT | flags;
+        if !is_p1 {
+            flags |= PageTableFlags::HUGE_PAGE;
+        }
+        flags
+    });
+    Ok(())
+}
+
+/// Updates flags to change RWX. Fails if the mapping is not present.
+/// PRESENT and HUGE_PAGE flags are automatically added as needed.
+/// Also does `invlpg` after successfully changing flags.
+///
+/// # Safety
+/// Don't mess up page tables, don't give user mode access to things it shouldn't access, don't accidentally create multiple &mut T to the same data.
+pub unsafe fn update_flags(
+    p4_table: PhysFrame<Size4KiB>,
+    page_size: PageSize,
+    page: VirtAddr,
+    flags: PageTableFlags,
+) -> Result<(), UpdateFlagsError> {
+    let mut p4_ptr =
+        NonNull::new(p4_table.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
+    let p4 = unsafe { p4_ptr.as_mut() };
+    let p3 = get_page_table_mut(&mut p4[page.p4_index()]).map_err(UpdateFlagsError::Frame)?;
+    if let PageSize::_1GiB = page_size {
+        set_entry_flags(&mut p3[page.p3_index()], flags, false)?;
+    } else {
+        let p2 = get_page_table_mut(&mut p3[page.p3_index()]).map_err(UpdateFlagsError::Frame)?;
+        if let PageSize::_2MiB = page_size {
+            set_entry_flags(&mut p2[page.p2_index()], flags, false)?
+        } else {
+            let p1 =
+                get_page_table_mut(&mut p2[page.p2_index()]).map_err(UpdateFlagsError::Frame)?;
+            set_entry_flags(&mut p1[page.p1_index()], flags, true)?
+        }
+    };
+    flush(page);
+    Ok(())
 }

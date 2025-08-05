@@ -15,7 +15,7 @@ use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
 use crate::{
-    interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
+    CapabilityId, interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
     syscall_saved_regs::SyscallSavedRegs, try_access_user_mem::try_access_user_mem,
 };
 
@@ -71,6 +71,8 @@ pub enum UserVirtMem {
     Shared(SharedVirtMem),
     /// Mapped to Limine module (as read-only)
     LimineModule,
+    /// Shared between the process and the kernel.
+    EventStream(CapabilityId),
 }
 
 pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, UserVirtMem>;

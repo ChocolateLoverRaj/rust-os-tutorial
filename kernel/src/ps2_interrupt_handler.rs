@@ -1,20 +1,16 @@
 use core::{ops::DerefMut, ptr::NonNull, slice};
 
-use alloc::boxed::Box;
-use common::QueueWriter;
+use common::{EventStreamMem, QueueWriter};
 use x2apic::lapic::IpiAllShorthand;
-use x86_64::{instructions::port::Port, registers::control::Cr3};
+use x86_64::instructions::port::Port;
 
 use crate::{
     CAPABILITIES, CapabilityType, EventStreamSource,
     cpu_local_data::get_local,
-    event_stream_mem::EventStreamMem,
     interrupt_vector::InterruptVector,
     interrupted_context::InterruptedContext,
-    memory::MEMORY,
     run_tasks::run_threads,
     task::{THREADS, ThreadReadyState, ThreadState},
-    try_access_user_mem::try_access_user_mem,
 };
 
 /// # Safety
@@ -37,22 +33,13 @@ pub unsafe fn ps2_interrupt_handler(
             if let CapabilityType::EventStream(event_stream) = &capability._type
                 && event_stream.source == ps2_source
             {
-                {
-                    unsafe {
-                        let frame = event_stream.process.cr3;
-                        let flags = MEMORY.get().unwrap().new_kernel_cr3_flags;
-                        Cr3::write(frame, flags)
-                    };
-                }
-                let mut mem_ptr = NonNull::new(event_stream.ptr as *mut EventStreamMem).unwrap();
-                let _ = try_access_user_mem(|| {
-                    let mem = unsafe { mem_ptr.as_mut() };
-                    let slots_ptr = mem.slots.as_mut_ptr();
-                    let slots = unsafe { slice::from_raw_parts(slots_ptr, event_stream.slots_len) };
-                    let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, slots);
-                    let _ = writer.push(data);
-                    Box::new(())
-                });
+                let mut mem_ptr =
+                    NonNull::new(event_stream.ptr.get() as *mut EventStreamMem).unwrap();
+                let mem = unsafe { mem_ptr.as_mut() };
+                let slots_ptr = mem.slots.as_mut_ptr();
+                let slots = unsafe { slice::from_raw_parts(slots_ptr, event_stream.slots_len) };
+                let mut writer = QueueWriter::new(&mem.write_count, &mem.read_count, slots);
+                let _ = writer.push(data);
                 for thread in threads.values() {
                     if thread.process.id == event_stream.process.id {
                         let mut state = thread.state.write();

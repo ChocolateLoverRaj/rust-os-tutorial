@@ -55,7 +55,8 @@ fn main(initial_rsp: NonNull<()>) {
 
     let executor_context = ExecutorContext::default();
     execute_future(&executor_context, async {
-        let mut async_keyboard = AsyncKeyboard::new(&env_entries, &executor_context, 64);
+        let mut async_keyboard =
+            AsyncKeyboard::new(&env_entries, &executor_context, NonZero::new(64).unwrap());
         let mut keyboard = Keyboard::new(ScancodeSet1::new(), Us104Key, HandleControl::Ignore);
         let process_keyboard_data =
             |keyboard: &mut Keyboard<Us104Key, ScancodeSet1>, data: u8| -> Option<KeyEvent> {

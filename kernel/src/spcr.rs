@@ -1,29 +1,21 @@
-use core::fmt::Debug;
-
 use acpi::{
     AcpiHandler, AcpiTables,
     address::AddressSpace,
     spcr::{Spcr, SpcrInterfaceType},
 };
 use alloc::boxed::Box;
-use raw_cpuid::CpuId;
 use uart::{address::MmioAddress, writer::UartWriter};
-use x86_64::{
-    PhysAddr,
-    structures::paging::{
-        Mapper, OffsetPageTable, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB,
-    },
-};
+use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 
 use crate::{
     logger::{self, AnyWriter},
+    max_page_size,
     memory::MEMORY,
 };
 
-fn init_with_page_size<S: PageSize + Debug>(acpi_tables: &AcpiTables<impl AcpiHandler>)
-where
-    for<'a> OffsetPageTable<'a>: Mapper<S>,
-{
+/// Checks for SPCR, and sets logger to log through SPCR instead of COM1 accordingly
+pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
+    let page_size = max_page_size();
     if let Some(uart) = acpi_tables
         .find_table::<Spcr>()
         // The table might not exist
@@ -50,19 +42,21 @@ where
             let stride_bytes = base_address.bit_width / 8;
             let memory = MEMORY.get().unwrap();
             let phys_start_address = base_address.address;
-            let phys_end_address_inclusive = phys_start_address + (u64::from(stride_bytes) * 8 - 1);
-            let start_frame = PhysFrame::<S>::containing_address(PhysAddr::new(phys_start_address));
-            let end_frame =
-                PhysFrame::containing_address(PhysAddr::new(phys_end_address_inclusive));
+            let len = u64::from(stride_bytes) * 8;
+            let start_frame =
+                PhysAddr::new(phys_start_address).align_down(page_size.byte_len_u64());
+            let n_pages = (phys_start_address + len).div_ceil(page_size.byte_len_u64())
+                - phys_start_address.div_ceil(page_size.byte_len_u64());
             let mut physical_memory = memory.physical_memory.lock();
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
-            let n_pages = start_frame - end_frame + 1;
-            let mut allocated_pages = virtual_memory.allocate_contiguous_pages(n_pages).unwrap();
-            let start_page = *allocated_pages.range().start();
+            let mut allocated_pages = virtual_memory
+                .allocate_contiguous_pages(page_size, n_pages)
+                .unwrap();
+            let start_page = allocated_pages.start_addr();
             for i in 0..n_pages {
-                let frame = start_frame + i;
-                let page = start_page + i;
+                let page = start_page + i * page_size.byte_len_u64();
+                let frame = start_frame + i * page_size.byte_len_u64();
                 // Safety: the memory we are going to access is defined to be valid
                 unsafe {
                     allocated_pages.map_to(
@@ -75,26 +69,14 @@ where
                             | PageTableFlags::GLOBAL,
                         &mut frame_allocator,
                     )
-                };
+                }
+                .unwrap();
             }
             let base_pointer =
-                (start_page.start_address() + phys_start_address % S::SIZE).as_mut_ptr();
+                (start_page + phys_start_address % page_size.byte_len_u64()).as_mut_ptr();
             unsafe { UartWriter::new(MmioAddress::new(base_pointer, stride_bytes as usize), false) }
         })
     {
         logger::replace_serial_logger(Some(AnyWriter::Boxed(Box::new(uart))));
-    }
-}
-
-/// Checks for SPCR, and sets logger to log through SPCR instead of COM1 accordingly
-pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
-    if CpuId::new()
-        .get_extended_processor_and_feature_identifiers()
-        .unwrap()
-        .has_1gib_pages()
-    {
-        init_with_page_size::<Size1GiB>(acpi_tables)
-    } else {
-        init_with_page_size::<Size2MiB>(acpi_tables)
     }
 }

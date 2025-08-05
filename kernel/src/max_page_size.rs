@@ -1,13 +1,13 @@
-use common::AllocPageSize;
+use common::PageSize;
 use raw_cpuid::CpuId;
 
-pub fn max_page_size() -> AllocPageSize {
+pub fn max_page_size() -> PageSize {
     if CpuId::new()
         .get_extended_processor_and_feature_identifiers()
         .is_some_and(|info| info.has_1gib_pages())
     {
-        AllocPageSize::_1GiB
+        PageSize::_1GiB
     } else {
-        AllocPageSize::_2MiB
+        PageSize::_2MiB
     }
 }

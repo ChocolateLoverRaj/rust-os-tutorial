@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use x86_64::structures::paging::PageTableFlags;
 use zerocopy::{FromBytes, Immutable, KnownLayout, TryFromBytes};
 
-use crate::{AllocPageSize, ElfSegmentFlags, Syscall, slice_data::SliceData2};
+use crate::{ElfSegmentFlags, PageSize, Syscall, slice_data::SliceData2};
 
 #[derive(Debug, Encode, Decode, TryFromBytes, Immutable, KnownLayout)]
 #[repr(u8)]
@@ -37,13 +37,13 @@ bitflags! {
 }
 
 impl SpawnProcessMemoryFlags {
-    pub fn page_size(&self) -> AllocPageSize {
+    pub fn page_size(&self) -> PageSize {
         if self.contains(SpawnProcessMemoryFlags::_1GiB_PAGE) {
-            AllocPageSize::_1GiB
+            PageSize::_1GiB
         } else if self.contains(SpawnProcessMemoryFlags::_2MiB_PAGE) {
-            AllocPageSize::_2MiB
+            PageSize::_2MiB
         } else {
-            AllocPageSize::_4KiB
+            PageSize::_4KiB
         }
     }
 }

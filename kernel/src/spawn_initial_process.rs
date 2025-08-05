@@ -2,7 +2,8 @@ use core::{num::NonZero, slice};
 
 use alloc::sync::Arc;
 use common::{
-    ENV_PS2_KEYBOARD_CAPABILITY, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, STACK_ALIGNMENT,
+    ENV_PS2_KEYBOARD_CAPABILITY, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, PageSize,
+    STACK_ALIGNMENT,
 };
 use elf::{ElfBytes, endian::NativeEndian};
 use limine::{file::File, response::ModuleResponse};
@@ -10,26 +11,24 @@ use nodit::{Interval, NoditMap, OverlapError};
 use spin::RwLock;
 use thiserror::Error;
 use x86_64::{
-    PhysAddr, VirtAddr,
+    VirtAddr,
     addr::VirtAddrNotValid,
     registers::control::Cr3,
-    structures::paging::{
-        FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB,
-        mapper::MapToError,
-    },
+    structures::paging::{FrameAllocator, PageTableFlags, Size4KiB},
 };
 
 use crate::{
+    MapPageError,
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     get_page_table::get_page_table,
-    hhdm_offset::HhdmOffset,
+    map_page,
     memory::{MEMORY, MemoryType},
     smep_smap::{clac, has_smap, stac},
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
         ThreadReadyState, ThreadState, UserVirtMem,
     },
-    translate_addr::{GetFrameSlice, ZeroFrame},
+    translate_addr::{TranslateToPhys, TranslateToVirt},
     user_mode_program_path::USER_MODE_PROGRAM_PATH,
 };
 
@@ -50,7 +49,7 @@ enum LoadUserModeProgramError {
     #[error("ELF has overlapping loadable segments")]
     OverlappingElfSegments(OverlapError<UserVirtMem>),
     #[error("Error creating a page table mapping")]
-    MapToError(MapToError<Size4KiB>),
+    MapPageError(MapPageError),
     #[error("ELF tried to use higher half virtual memory")]
     OutOfBoundsMemory,
     #[error("The ELF specified an invalid virtual address")]
@@ -99,38 +98,45 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                 assert_eq!(segment.p_memsz, segment.p_filesz);
                 mapped_virtual_memory
                     .insert_merge_touching_if_values_equal(
-                        (segment.p_vaddr / Size4KiB::SIZE * Size4KiB::SIZE
-                            ..(segment.p_vaddr + segment.p_memsz).next_multiple_of(Size4KiB::SIZE))
+                        (segment.p_vaddr / PageSize::_4KiB.byte_len_u64()
+                            * PageSize::_4KiB.byte_len_u64()
+                            ..(segment.p_vaddr + segment.p_memsz)
+                                .next_multiple_of(PageSize::_4KiB.byte_len_u64()))
                             .into(),
                         UserVirtMem::LimineModule,
                     )
                     .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
-                let start_page = Page::<Size4KiB>::containing_address(
-                    VirtAddr::try_new(segment.p_vaddr)
-                        .map_err(LoadUserModeProgramError::InvalidVirtAddr)?,
-                );
-                let page_count = (segment.p_vaddr + segment.p_memsz).div_ceil(Size4KiB::SIZE)
-                    - segment.p_vaddr / Size4KiB::SIZE;
-                let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
-                    file.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
-                ))
-                .unwrap()
-                    + segment.p_offset / Size4KiB::SIZE;
+                let start_page = VirtAddr::try_new(segment.p_vaddr)
+                    .map_err(LoadUserModeProgramError::InvalidVirtAddr)?
+                    .align_down(PageSize::_4KiB.byte_len_u64());
+                let page_count = (segment.p_vaddr + segment.p_memsz)
+                    .div_ceil(PageSize::_4KiB.byte_len_u64())
+                    - segment.p_vaddr / PageSize::_4KiB.byte_len_u64();
+                let first_frame = (VirtAddr::from_ptr(file.addr()) + segment.p_offset)
+                    .align_down(PageSize::_4KiB.byte_len_u64())
+                    .to_phys_offset_mapped();
                 log::debug!("Saving {page_count} frames by zerocopy ELF");
                 for i in 0..page_count {
-                    let page = start_page + i;
-                    let frame = first_frame + i;
-                    let flags = PageTableFlags::PRESENT
-                        | PageTableFlags::USER_ACCESSIBLE
-                        | flags.to_page_table_flags();
+                    let page = start_page + i * PageSize::_4KiB.byte_len_u64();
+                    let frame = first_frame + i * PageSize::_4KiB.byte_len_u64();
+                    let flags = PageTableFlags::USER_ACCESSIBLE | flags.to_page_table_flags();
                     let mut frame_allocator =
                         physical_memory.get_user_mode_program_frame_allocator(process_id);
-                    unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator) }
-                        .unwrap()
-                        .ignore();
+                    unsafe {
+                        map_page(
+                            user_l4_frame,
+                            PageSize::_4KiB,
+                            page,
+                            frame,
+                            flags,
+                            &mut frame_allocator,
+                        )
+                    }
+                    .unwrap();
                 }
-                let mapped_last_frame = (segment.p_offset + segment.p_filesz) / Size4KiB::SIZE
-                    == elf_bytes.len() as u64 / Size4KiB::SIZE;
+                let mapped_last_frame = (segment.p_offset + segment.p_filesz)
+                    / PageSize::_4KiB.byte_len_u64()
+                    == elf_bytes.len() as u64 / PageSize::_4KiB.byte_len_u64();
                 if mapped_last_frame {
                     todo!("Need to make sure unused bytes in the frame are zeroed")
                 }
@@ -138,71 +144,70 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                 let segment_data = elf
                     .segment_data(&segment)
                     .map_err(LoadUserModeProgramError::ElfParseError)?;
-                let start_page = Page::<Size4KiB>::containing_address(
-                    VirtAddr::try_new(segment.p_vaddr)
-                        .map_err(LoadUserModeProgramError::InvalidVirtAddr)?,
-                );
-                let end_page = Page::<Size4KiB>::containing_address(
-                    VirtAddr::try_new({
-                        let end_addr_inclusive =
-                            segment
-                                .p_vaddr
-                                .checked_add(segment.p_memsz - 1)
-                                .ok_or(LoadUserModeProgramError::OutOfBoundsMemory)?;
-                        if end_addr_inclusive >= LOWER_HALF_END {
-                            Err(LoadUserModeProgramError::OutOfBoundsMemory)?;
-                        }
-                        end_addr_inclusive
-                    })
-                    .map_err(LoadUserModeProgramError::InvalidVirtAddr)?,
-                );
-                log::debug!(
-                    "Using {} frames for writable segment",
-                    end_page - start_page + 1
-                );
+                let start_page = VirtAddr::try_new(segment.p_vaddr)
+                    .map_err(LoadUserModeProgramError::InvalidVirtAddr)?
+                    .align_down(PageSize::_4KiB.byte_len_u64());
+                let end_addr = segment
+                    .p_vaddr
+                    .checked_add(segment.p_memsz)
+                    .ok_or(LoadUserModeProgramError::OutOfBoundsMemory)?;
+                if end_addr > LOWER_HALF_END {
+                    Err(LoadUserModeProgramError::OutOfBoundsMemory)?;
+                }
+                let pages_len = end_addr.div_ceil(PageSize::_4KiB.byte_len_u64())
+                    - segment.p_vaddr / PageSize::_4KiB.byte_len_u64();
+
                 mapped_virtual_memory
                     .insert_merge_touching_if_values_equal(
-                        (start_page.start_address().as_u64()
-                            ..=(end_page.start_address() + (end_page.size() - 1)).as_u64())
+                        (segment.p_vaddr / PageSize::_4KiB.byte_len_u64()
+                            * PageSize::_4KiB.byte_len_u64()
+                            ..end_addr.next_multiple_of(PageSize::_4KiB.byte_len_u64()))
                             .into(),
                         UserVirtMem::Plain,
                     )
                     .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
-                for page in start_page..=end_page {
+                for i in 0..pages_len {
+                    let page = start_page + i * PageSize::_4KiB.byte_len_u64();
                     let frame = physical_memory
-                        .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
+                        .allocate_frame_with_type(
+                            PageSize::_4KiB,
+                            MemoryType::UsedByUserMode(process_id),
+                        )
                         .ok_or(LoadUserModeProgramError::OutOfMemory)?;
-                    let flags = PageTableFlags::PRESENT
-                        | PageTableFlags::USER_ACCESSIBLE
-                        | flags.to_page_table_flags();
-                    // log::info!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
+                    let flags = PageTableFlags::USER_ACCESSIBLE | flags.to_page_table_flags();
+                    log::trace!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
+                    let mut frame_allocator =
+                        physical_memory.get_user_mode_program_frame_allocator(process_id);
                     unsafe {
-                        mapper.map_to(
+                        map_page(
+                            user_l4_frame,
+                            PageSize::_4KiB,
                             page,
                             frame,
                             flags,
-                            &mut physical_memory.get_user_mode_program_frame_allocator(process_id),
+                            &mut frame_allocator,
                         )
                     }
-                    .map_err(LoadUserModeProgramError::MapToError)?
-                    // The Cr3 has not been loaded with this page table yet
-                    .ignore();
-                    let frame_data = unsafe { frame.get_slice_mut() };
+                    .map_err(LoadUserModeProgramError::MapPageError)?;
+                    let frame_data = {
+                        let ptr = frame.to_virt().as_mut_ptr::<u8>();
+                        let len = PageSize::_4KiB.byte_len();
+                        unsafe { slice::from_raw_parts_mut(ptr, len) }
+                    };
                     let bytes_to_zero_before = segment
                         .p_vaddr
-                        .saturating_sub(page.start_address().as_u64())
-                        .min(Size4KiB::SIZE);
+                        .saturating_sub(page.as_u64())
+                        .min(PageSize::_4KiB.byte_len_u64());
                     let range_before_to_zero = ..bytes_to_zero_before as usize;
                     frame_data[range_before_to_zero].fill(0);
 
                     let copy_start = bytes_to_zero_before;
                     let already_copied = page
-                        .start_address()
                         .as_u64()
                         .saturating_sub(segment.p_vaddr)
                         .min(segment.p_filesz);
-                    let copy_end =
-                        (copy_start + (segment.p_filesz - already_copied)).min(Size4KiB::SIZE);
+                    let copy_end = (copy_start + (segment.p_filesz - already_copied))
+                        .min(PageSize::_4KiB.byte_len_u64());
                     let copy_len = copy_end - copy_start;
                     let range_to_copy = copy_start as usize..copy_end as usize;
                     // log::debug!("Copying {range_to_copy:X?}");
@@ -221,36 +226,42 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
         let stack_size = 64 * 0x400;
         let stack_end_inclusive = INITIAL_RSP - 1;
         let stack_start = INITIAL_RSP - stack_size;
+        // Guard page
         mapped_virtual_memory
             .insert_merge_touching(
                 (stack_start..=stack_end_inclusive).into(),
                 UserVirtMem::Plain,
             )
             .map_err(LoadUserModeProgramError::OverlappingElfSegmentsAndStack)?;
-        let stack_start_page =
-            Page::<Size4KiB>::from_start_address(VirtAddr::new(stack_start)).unwrap();
-        let stack_end_page_inclusive =
-            Page::<Size4KiB>::containing_address(VirtAddr::new(stack_end_inclusive));
-        for page in stack_start_page..=stack_end_page_inclusive {
+        let stack_start_page = VirtAddr::new(stack_start);
+        let pages_len = stack_size / PageSize::_4KiB.byte_len_u64();
+        for i in 0..pages_len {
+            let page = stack_start_page + i * PageSize::_4KiB.byte_len_u64();
             let frame = physical_memory
-                .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
+                .allocate_frame_with_type(PageSize::_4KiB, MemoryType::UsedByUserMode(process_id))
                 .ok_or(LoadUserModeProgramError::OutOfMemory)?;
-            // Safety: We just claimed this frame
-            unsafe { frame.zero() };
+            {
+                let ptr = frame.to_virt().as_mut_ptr::<u8>();
+                // Safety: We just claimed this frame
+                unsafe { ptr.write_bytes(Default::default(), PageSize::_4KiB.byte_len()) };
+            };
             let flags = PageTableFlags::PRESENT
                 | PageTableFlags::USER_ACCESSIBLE
                 | PageTableFlags::WRITABLE
                 | PageTableFlags::NO_EXECUTE;
+            let mut frame_allocator =
+                physical_memory.get_user_mode_program_frame_allocator(process_id);
             unsafe {
-                mapper.map_to(
+                map_page(
+                    user_l4_frame,
+                    PageSize::_4KiB,
                     page,
                     frame,
                     flags,
-                    &mut physical_memory.get_user_mode_program_frame_allocator(process_id),
+                    &mut frame_allocator,
                 )
             }
-            .unwrap()
-            .ignore();
+            .unwrap();
         }
 
         // Safety: phys mem is valid and offset mapped
@@ -263,7 +274,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
         }
         unsafe { Cr3::write(user_l4_frame, memory.new_kernel_cr3_flags) };
 
-        log::debug!("Mapped virt mem: {mapped_virtual_memory:#X?}");
+        log::trace!("Mapped virt mem: {mapped_virtual_memory:#X?}");
 
         let process = Arc::new(Process {
             id: process_id,
@@ -308,7 +319,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
             clac();
         }
 
-        log::info!("New process's Cr3: {user_l4_frame:?}");
+        log::trace!("New process's Cr3: {user_l4_frame:?}");
         let thread_id = ThreadId::new_unique();
         THREADS.write().insert(
             thread_id,

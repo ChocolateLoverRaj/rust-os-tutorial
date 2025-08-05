@@ -27,7 +27,6 @@ pub mod cpu_local_data;
 pub mod cr4;
 pub mod create_normal_stack;
 pub mod enter_user_mode;
-pub mod event_stream_mem;
 pub mod gdt;
 pub mod get_page_table;
 pub mod guarded_stack;

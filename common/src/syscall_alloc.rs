@@ -5,22 +5,22 @@ use bincode::{Decode, Encode};
 use crate::Syscall;
 
 #[derive(Debug, Encode, Decode, Clone, Copy)]
-pub enum AllocPageSize {
+pub enum PageSize {
     _4KiB,
     _2MiB,
     _1GiB,
 }
 
-impl AllocPageSize {
-    pub fn byte_len(self) -> usize {
-        self.byte_len_u64().try_into().unwrap()
+impl PageSize {
+    pub const fn byte_len(self) -> usize {
+        self.byte_len_u64() as usize
     }
 
-    pub fn byte_len_u64(self) -> u64 {
+    pub const fn byte_len_u64(self) -> u64 {
         match self {
-            AllocPageSize::_4KiB => 0x1000,
-            AllocPageSize::_2MiB => 512 * 0x1000,
-            AllocPageSize::_1GiB => 512 * 512 * 0x1000,
+            PageSize::_4KiB => 0x1000,
+            PageSize::_2MiB => 512 * 0x1000,
+            PageSize::_1GiB => 512 * 512 * 0x1000,
         }
     }
 }
@@ -29,9 +29,10 @@ impl AllocPageSize {
 #[derive(Debug, Encode, Decode)]
 pub struct SyscallAllocInput {
     pub pages_len: NonZeroUsize,
-    pub page_size: AllocPageSize,
+    pub page_size: PageSize,
     /// If this is `true`, then the allocated pages will be zeroed. If not, then they might not be zeroed.
     pub zero: bool,
+    pub mem_prot: u8,
 }
 
 #[derive(Debug, Encode, Decode)]

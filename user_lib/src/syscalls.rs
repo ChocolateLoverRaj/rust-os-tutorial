@@ -5,18 +5,18 @@ use core::{
 };
 
 use common::{
-    AllocPageSize, MapModule, SliceData2, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
-    SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
-    SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
-    SyscallCloneCapability, SyscallCloneCapabilityError, SyscallCreateChannel, SyscallExists,
-    SyscallExitProcess, SyscallExitThread, SyscallGetThreadId, SyscallGetThreadIdOutput,
-    SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError, SyscallMapSharedMem,
-    SyscallMapSharedMemError, SyscallMapSharedMemInput, SyscallNewShardMemError,
-    SyscallNewSharedMem, SyscallNewSharedMemInput, SyscallReleaseFrameBuffer,
-    SyscallSendCapability, SyscallSendCapabilityError, SyscallSendCapabilityInput,
-    SyscallSpawnProcess, SyscallSpawnProcessError, SyscallSpawnProcessInput, SyscallSpawnThread,
-    SyscallSpawnThreadInput, SyscallSubscribeToMouse, SyscallTakeFrameBuffer,
-    SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent, log,
+    MapModule, MemProt, PageSize, SliceData2, SpawnProcessMemoryMapping,
+    SpawnProcessRelativePriority, SpawnThreadRelativePriority, Syscall, SyscallAlloc,
+    SyscallAllocError, SyscallAllocInput, SyscallCloneCapability, SyscallCloneCapabilityError,
+    SyscallCreateChannel, SyscallExists, SyscallExitProcess, SyscallExitThread, SyscallGetThreadId,
+    SyscallGetThreadIdOutput, SyscallLog, SyscallLogInput, SyscallMapModule, SyscallMapModuleError,
+    SyscallMapSharedMem, SyscallMapSharedMemError, SyscallMapSharedMemInput,
+    SyscallNewShardMemError, SyscallNewSharedMem, SyscallNewSharedMemInput,
+    SyscallReleaseFrameBuffer, SyscallSendCapability, SyscallSendCapabilityError,
+    SyscallSendCapabilityInput, SyscallSpawnProcess, SyscallSpawnProcessError,
+    SyscallSpawnProcessInput, SyscallSpawnThread, SyscallSpawnThreadInput, SyscallSubscribeToMouse,
+    SyscallTakeFrameBuffer, SyscallTakeFrameBufferOutput, SyscallTxSend, SyscallWaitUntilEvent,
+    log,
 };
 use common::{PermissionFlags, SyscallTakeFrameBufferError};
 
@@ -70,14 +70,16 @@ pub fn syscall_log(level: log::Level, message: &str) {
 }
 
 pub fn syscall_alloc(
-    page_size: AllocPageSize,
+    page_size: PageSize,
     pages_len: NonZero<usize>,
     zero: bool,
+    prot: MemProt,
 ) -> Result<NonNull<[u8]>, SyscallAllocError> {
     let input = SyscallAllocInput {
         page_size,
         pages_len,
         zero,
+        mem_prot: prot.bits(),
     };
     let start = unsafe { syscall::<SyscallAlloc>(&input) }?;
     let data = start.get() as *mut u8;
@@ -126,11 +128,6 @@ pub unsafe fn syscall_spawn_thread(
 /// Get this thread's id
 pub fn syscall_get_thread_id() -> SyscallGetThreadIdOutput {
     unsafe { syscall::<SyscallGetThreadId>(&()) }
-}
-
-pub fn syscall_alloc_stack(len: usize) -> Result<SyscallAllocStackOutput, SyscallAllocStackError> {
-    let input = SyscallAllocStackInput { len: len as u64 };
-    unsafe { syscall::<SyscallAllocStack>(&input) }
 }
 
 pub fn syscall_exit_thread() -> ! {

@@ -9,7 +9,7 @@ use core::{
 
 use atomic_enum::atomic_enum;
 use common::{
-    AllocPageSize, FrameBufferEmbeddedGraphics, PermissionFlags, RgbPixelInfo,
+    PageSize, FrameBufferEmbeddedGraphics, PermissionFlags, RgbPixelInfo,
     SyscallMapSharedMemError, SyscallNewShardMemError, SyscallNewSharedMemInput,
     embedded_graphics::{
         Pixel,
@@ -161,7 +161,7 @@ impl WindowSharedMemServer {
     ) -> Result<(Self, NonZero<u64>, NonZero<u64>), NewWindowServerError> {
         let pixel_count = (width * height) as usize;
         let used_len = size_of::<WindowSharedMem>() + size_of::<u32>() * pixel_count;
-        let page_size = AllocPageSize::_2MiB;
+        let page_size = PageSize::_2MiB;
         let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
             page_size,
             pages_len: NonZero::new(used_len.div_ceil(page_size.byte_len())).unwrap(),

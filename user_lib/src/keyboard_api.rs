@@ -8,7 +8,7 @@ use core::{
 
 use atomic_enum::atomic_enum;
 use common::{
-    AllocPageSize, PermissionFlags, PushError, QueueReader, QueueWriter, SyscallCloneCapability,
+    PageSize, PermissionFlags, PushError, QueueReader, QueueWriter, SyscallCloneCapability,
     SyscallMapSharedMemError, SyscallNewShardMemError, SyscallNewSharedMem,
     SyscallNewSharedMemInput, SyscallSendCapability, SyscallSendCapabilityInput,
 };
@@ -73,7 +73,7 @@ impl KeyboardSharedMemServer {
     pub fn new() -> Result<(Self, NonZero<u64>, NonZero<u64>, NonZero<u64>), NewKeyboardServerError>
     {
         let used_len = size_of::<Self>();
-        let page_size = AllocPageSize::_4KiB;
+        let page_size = PageSize::_4KiB;
         let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
             page_size,
             pages_len: NonZero::new(used_len.div_ceil(page_size.byte_len())).unwrap(),
@@ -213,8 +213,8 @@ impl KeyboardSharedMemClient {
     ) -> Result<KeyboardBufClient, SyscallMapSharedMemError> {
         let len = size_of::<KeyboardBufSharedMem>() + size_of::<AtomicU8>() * slots_len;
         let input = SyscallNewSharedMemInput {
-            page_size: AllocPageSize::_4KiB,
-            pages_len: NonZero::new(len.div_ceil(AllocPageSize::_4KiB.byte_len())).unwrap(),
+            page_size: PageSize::_4KiB,
+            pages_len: NonZero::new(len.div_ceil(PageSize::_4KiB.byte_len())).unwrap(),
         };
         let capability = unsafe { syscall::<SyscallNewSharedMem>(&input) }.unwrap();
         let shared_mem = syscall_map_shared_mem(

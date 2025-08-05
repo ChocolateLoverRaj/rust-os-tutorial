@@ -4,11 +4,10 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc};
+use common::EventStreamMem;
 
-use crate::{
-    event_stream_mem::EventStreamMem, task::Process, try_access_user_mem::try_access_user_mem,
-};
+use crate::task::Process;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CapabilityId(NonZero<u64>);
@@ -61,7 +60,7 @@ pub enum EventStreamSource {
 pub struct EventStream {
     pub process: Arc<Process>,
     pub source: EventStreamSource,
-    pub ptr: usize,
+    pub ptr: NonZero<usize>,
     pub slots_len: usize,
 }
 
@@ -101,15 +100,9 @@ impl CapabilityType {
     pub fn take_pending_event(&self) -> Option<bool> {
         match self {
             Self::EventStream(event_stream) => Some({
-                let mem = NonNull::new(event_stream.ptr as *mut EventStreamMem).unwrap();
-                try_access_user_mem(|| {
-                    let mem = unsafe { mem.as_ref() };
-                    Box::new(
-                        mem.read_count.load(Ordering::Relaxed)
-                            < mem.write_count.load(Ordering::Relaxed),
-                    )
-                })
-                .is_ok_and(|b| *b)
+                let mem = NonNull::new(event_stream.ptr.get() as *mut EventStreamMem).unwrap();
+                let mem = unsafe { mem.as_ref() };
+                mem.read_count.load(Ordering::Relaxed) < mem.write_count.load(Ordering::Relaxed)
             }),
             CapabilityType::Channel(pending) => Some(pending.swap(false, Ordering::Relaxed)),
             _ => None,

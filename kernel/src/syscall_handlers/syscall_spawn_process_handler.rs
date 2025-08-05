@@ -2,7 +2,7 @@ use core::{num::NonZero, ops::Deref, ptr::NonNull};
 
 use alloc::{boxed::Box, format, sync::Arc};
 use common::{
-    AllocPageSize, LOWER_HALF_END, MapModule, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
+    PageSize, LOWER_HALF_END, MapModule, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority, Syscall, SyscallSpawnProcess, SyscallSpawnProcessError,
     SyscallSpawnProcessInput,
 };
@@ -140,7 +140,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                             == Ok(&format!("/extra_module_{}", map_module.module_id))
                     })
                     .ok_or(SyscallSpawnProcessError::ModuleNotFound)?;
-                let file_frames = file.size().div_ceil(AllocPageSize::_4KiB.byte_len_u64());
+                let file_frames = file.size().div_ceil(PageSize::_4KiB.byte_len_u64());
                 if (map_module.start_page_offset as u64)
                     .checked_add(map_module.pages_len.get() as u64)
                     .ok_or(SyscallSpawnProcessError::InvalidModuleRange)?
@@ -150,7 +150,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 }
                 if !map_module
                     .new_process_start
-                    .is_multiple_of(AllocPageSize::_4KiB.byte_len())
+                    .is_multiple_of(PageSize::_4KiB.byte_len())
                 {
                     return Err(SyscallSpawnProcessError::ModuleUnalignedDest);
                 }
@@ -161,7 +161,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                             let end = start
                                 .checked_add(
                                     map_module.pages_len.get() as u64
-                                        * AllocPageSize::_4KiB.byte_len_u64(),
+                                        * PageSize::_4KiB.byte_len_u64(),
                                 )
                                 .ok_or(SyscallSpawnProcessError::InvalidModuleDest)?;
                             if end > LOWER_HALF_END {
@@ -175,12 +175,12 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     .map_err(|_e| SyscallSpawnProcessError::DestMemOverlap)?;
                 let start_page = VirtAddr::new(map_module.new_process_start as u64);
                 let start_frame = VirtAddr::from_ptr(file.addr()).to_phys_offset_mapped()
-                    + map_module.start_page_offset as u64 * AllocPageSize::_4KiB.byte_len_u64();
+                    + map_module.start_page_offset as u64 * PageSize::_4KiB.byte_len_u64();
                 let mut frame_allocator = physical_memory
                     .get_user_mode_program_frame_allocator(running_thread.process.id);
                 for i in 0..map_module.pages_len.get() {
-                    let page = start_page + i as u64 * AllocPageSize::_4KiB.byte_len_u64();
-                    let frame = start_frame + i as u64 * AllocPageSize::_4KiB.byte_len_u64();
+                    let page = start_page + i as u64 * PageSize::_4KiB.byte_len_u64();
+                    let frame = start_frame + i as u64 * PageSize::_4KiB.byte_len_u64();
                     let flags = {
                         let mut flags = PageTableFlags::USER_ACCESSIBLE;
                         if !map_module.executable {
@@ -191,7 +191,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     let result = unsafe {
                         map_page(
                             new_cr3,
-                            AllocPageSize::_4KiB,
+                            PageSize::_4KiB,
                             page,
                             frame,
                             flags,
@@ -210,12 +210,12 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 let last_frame_mapped = map_module.start_page_offset + map_module.pages_len.get()
                     == file_frames as usize;
                 if last_frame_mapped {
-                    let rem = file.size() as usize & AllocPageSize::_4KiB.byte_len();
+                    let rem = file.size() as usize & PageSize::_4KiB.byte_len();
                     if rem != 0 {
                         // Zero unused bytes of last frame
                         // If this module gets mapped multiple times, we don't need to zero the bytes the 2nd+ times
                         // But to keep things simple we can just zero every time
-                        let bytes_to_copy = AllocPageSize::_4KiB.byte_len() - rem;
+                        let bytes_to_copy = PageSize::_4KiB.byte_len() - rem;
                         let copy_start = file.size() as usize - bytes_to_copy;
                         unsafe {
                             file.addr()

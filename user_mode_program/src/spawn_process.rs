@@ -2,7 +2,7 @@ use core::num::NonZero;
 
 use alloc::vec::Vec;
 use common::{
-    AllocPageSize, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, MapModule, STACK_ALIGNMENT,
+    ElfSegmentFlags, EnvEntry, LOWER_HALF_END, MapModule, MemProt, PageSize, STACK_ALIGNMENT,
     SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
@@ -12,7 +12,7 @@ use user_lib::{
 };
 use x86_64::{
     VirtAddr,
-    structures::paging::{Page, PageSize, Size4KiB},
+    structures::paging::{Page, Size4KiB},
 };
 
 pub fn spawn_process(
@@ -45,10 +45,11 @@ pub fn spawn_process(
             ));
             for page in start_page..=end_page {
                 let mut frame = syscall_alloc(
-                    AllocPageSize::_4KiB,
+                    PageSize::_4KiB,
                     1.try_into().unwrap(),
                     // TODO: No need to zero the entire page
                     true,
+                    MemProt::READABLE | MemProt::WRITABLE,
                 )
                 .unwrap();
                 memory_mappings.push(SpawnProcessMemoryMapping {
@@ -61,7 +62,7 @@ pub fn spawn_process(
                 let bytes_to_zero_before = segment
                     .p_vaddr
                     .saturating_sub(page.start_address().as_u64())
-                    .min(Size4KiB::SIZE);
+                    .min(PageSize::_4KiB.byte_len_u64());
                 let range_before_to_zero = ..bytes_to_zero_before as usize;
                 frame_data[range_before_to_zero].fill(0);
 
@@ -71,8 +72,8 @@ pub fn spawn_process(
                     .as_u64()
                     .saturating_sub(segment.p_vaddr)
                     .min(segment.p_filesz);
-                let copy_end =
-                    (copy_start + (segment.p_filesz - already_copied)).min(Size4KiB::SIZE);
+                let copy_end = (copy_start + (segment.p_filesz - already_copied))
+                    .min(PageSize::_4KiB.byte_len_u64());
                 let copy_len = copy_end - copy_start;
                 let range_to_copy = copy_start as usize..copy_end as usize;
                 frame_data[range_to_copy].copy_from_slice(
@@ -85,27 +86,28 @@ pub fn spawn_process(
         } else {
             map_modules.push(MapModule {
                 module_id,
-                start_page_offset: segment.p_offset as usize / AllocPageSize::_4KiB.byte_len(),
+                start_page_offset: segment.p_offset as usize / PageSize::_4KiB.byte_len(),
                 pages_len: ((segment.p_offset as usize + segment.p_filesz as usize)
-                    .div_ceil(AllocPageSize::_4KiB.byte_len())
-                    - (segment.p_offset as usize) / AllocPageSize::_4KiB.byte_len())
+                    .div_ceil(PageSize::_4KiB.byte_len())
+                    - (segment.p_offset as usize) / PageSize::_4KiB.byte_len())
                 .try_into()
                 .unwrap(),
-                new_process_start: segment.p_vaddr as usize / AllocPageSize::_4KiB.byte_len()
-                    * AllocPageSize::_4KiB.byte_len(),
+                new_process_start: segment.p_vaddr as usize / PageSize::_4KiB.byte_len()
+                    * PageSize::_4KiB.byte_len(),
                 executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
             });
         }
     }
     let stack_top = LOWER_HALF_END as usize;
     let stack_len = 64 * 0x400;
-    let stack_with_guard_len = AllocPageSize::_4KiB.byte_len() + stack_len;
+    let stack_with_guard_len = PageSize::_4KiB.byte_len() + stack_len;
     let stack = syscall_alloc(
-        AllocPageSize::_4KiB,
-        (1 + stack_len / AllocPageSize::_4KiB.byte_len())
+        PageSize::_4KiB,
+        (1 + stack_len / PageSize::_4KiB.byte_len())
             .try_into()
             .unwrap(),
         true,
+        MemProt::READABLE | MemProt::WRITABLE,
     )
     .unwrap();
 
@@ -141,9 +143,9 @@ pub fn spawn_process(
     });
     // Stack
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: stack.addr().get() + AllocPageSize::_4KiB.byte_len(),
+        current_process_start: stack.addr().get() + PageSize::_4KiB.byte_len(),
         new_process_start: stack_top - stack_len,
-        pages_len: stack_len / AllocPageSize::_4KiB.byte_len(),
+        pages_len: stack_len / PageSize::_4KiB.byte_len(),
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
     });
 

@@ -7,3 +7,9 @@ pub struct EventStreamMem {
     pub read_count: AtomicUsize,
     pub slots: [AtomicU8; 0],
 }
+
+impl EventStreamMem {
+    pub fn size(slots_len: usize) -> usize {
+        size_of::<Self>() + size_of::<AtomicU8>() * slots_len
+    }
+}
