@@ -1,6 +1,5 @@
 use core::num::NonZero;
 
-use alloc::collections::btree_set::BTreeSet;
 use common::{AllocPageSize, LOWER_HALF_END, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ee;
 use raw_cpuid::CpuId;
@@ -12,7 +11,7 @@ use crate::{
     map_page,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
-    translate_addr::TranslateAddr,
+    translate_addr::TranslateToVirt,
 };
 
 use super::GenericSyscallHandler;
@@ -26,11 +25,10 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 AllocPageSize::_4KiB => Ok(AllocPageSize::_4KiB),
                 AllocPageSize::_2MiB => Ok(AllocPageSize::_2MiB),
                 AllocPageSize::_1GiB => {
-                    if {
-                        CpuId::new()
-                            .get_extended_processor_and_feature_identifiers()
-                            .is_some_and(|features| features.has_1gib_pages())
-                    } {
+                    if CpuId::new()
+                        .get_extended_processor_and_feature_identifiers()
+                        .is_some_and(|features| features.has_1gib_pages())
+                    {
                         Ok(AllocPageSize::_1GiB)
                     } else {
                         Err(SyscallAllocError::PageSizeNotSupported)
@@ -56,7 +54,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             * helper.input().page_size.byte_len_u64()
                         - 1;
                     if required_end_inclusive <= gap.end() {
-                        Some(aligned_start..required_end_inclusive)
+                        Some(aligned_start..=required_end_inclusive)
                     } else {
                         None
                     }
@@ -67,7 +65,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 .insert_merge_touching_if_values_equal(range.clone().into(), UserVirtMem::Plain)
                 .unwrap();
             let start_page =
-                VirtAddr::new(range.start).align_down(helper.input().page_size.byte_len_u64());
+                VirtAddr::new(*range.start()).align_down(helper.input().page_size.byte_len_u64());
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             for i in 0..helper.input().pages_len.get() as u64 {
@@ -75,7 +73,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                 let frame = physical_memory
                     .allocate_frame_with_type_2(
                         helper.input().page_size,
-                        MemoryType::UsedByUserMode(BTreeSet::from([current_process.id])),
+                        MemoryType::UsedByUserMode(current_process.id),
                     )
                     .ok_or(SyscallAllocError::OutOfPhysicalMemory)?;
                 // We could potentially improve performance by not zeroing frames and instead reusing frames released by the same process
@@ -105,8 +103,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     e => unreachable!("{:#?}", e),
                 })?;
             }
-            // log::debug!("Allocated for user mode: {range:X?}");
-            Ok(NonZero::new(range.start as usize).unwrap())
+            Ok(NonZero::new(*range.start() as usize).unwrap())
         })();
         helper.syscall_return(&output)
     }

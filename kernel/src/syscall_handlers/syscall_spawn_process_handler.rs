@@ -1,70 +1,90 @@
-use core::{num::NonZero, ops::Deref};
+use core::{num::NonZero, ops::Deref, ptr::NonNull};
 
-use alloc::{boxed::Box, collections::btree_set::BTreeSet, sync::Arc};
+use alloc::{boxed::Box, format, sync::Arc};
 use common::{
-    LOWER_HALF_END, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
+    AllocPageSize, LOWER_HALF_END, MapModule, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority, Syscall, SyscallSpawnProcess, SyscallSpawnProcessError,
     SyscallSpawnProcessInput,
 };
-use nodit::{Interval, NoditMap};
+use itertools::Itertools;
+use nodit::{InclusiveInterval, Interval, NoditMap};
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::{
     VirtAddr,
-    structures::paging::{PageTableFlags, Size4KiB},
+    structures::paging::{FrameAllocator, PageTableFlags},
 };
 use zerocopy::TryFromBytes;
 
 use crate::{
-    CAPABILITIES,
+    CAPABILITIES, MapPageError,
     cpu_local_data::get_local,
     get_page_table::get_page_table,
     interrupt_vector::InterruptVector,
+    limine_requests::MODULE_REQUEST,
     map_page,
-    memory::{MEMORY, MemoryType},
+    memory::MEMORY,
     run_tasks::run_threads,
     task::{
         Process, ProcessId, ProcessMemory, StartData, THREAD_PRIORITIES, THREADS, Thread, ThreadId,
         ThreadReadyState, ThreadReadyStateInSyscall, ThreadState, UserVirtMem,
     },
+    translate_addr::TranslateToPhys,
     try_access_user_mem::try_access_user_mem,
     unmap_page,
 };
 
 use super::GenericSyscallHandler;
 
+#[derive(Debug)]
+enum CheckPointerError {
+    AboveLowerHalf,
+}
+
+/// Checks that the pointer is not null and the pointer lies entirely in the lower half.
+/// If you are just checking `T` and not `[T]` then use `1` as the slice len.
+fn check_pointer<T>(
+    ptr: NonZero<usize>,
+    slice_len: usize,
+) -> Result<NonNull<T>, CheckPointerError> {
+    let data_len = size_of::<T>()
+        .checked_mul(slice_len)
+        .ok_or(CheckPointerError::AboveLowerHalf)?;
+    let data_end_ptr = ptr
+        .checked_add(data_len)
+        .ok_or(CheckPointerError::AboveLowerHalf)?;
+    if data_end_ptr.get() as u64 > LOWER_HALF_END {
+        return Err(CheckPointerError::AboveLowerHalf);
+    }
+    Ok(NonNull::new(ptr.get() as *mut T).unwrap())
+}
+
 pub struct SyscallSpawnProcessHandler;
 impl GenericSyscallHandler for SyscallSpawnProcessHandler {
     type S = SyscallSpawnProcess;
     fn handle_decoded_syscall(helper: super::SyscallHelper<Self::S>) -> ! {
         let result = (|| {
-            let input_ptr = *helper.input();
-            if input_ptr == 0
-                || input_ptr + u64::try_from(size_of::<SyscallSpawnProcessInput>()).unwrap()
-                    > LOWER_HALF_END
-            {
-                Err(SyscallSpawnProcessError::InvalidInputPtr)?
-            }
-            let input_ptr = input_ptr as *const [u8; size_of::<SyscallSpawnProcessInput>()];
+            let input_ptr =
+                check_pointer::<[u8; size_of::<SyscallSpawnProcessInput>()]>(*helper.input(), 1)
+                    .map_err(|_| SyscallSpawnProcessError::InvalidInputPtr)?;
             let input = try_access_user_mem(|| Box::new(unsafe { input_ptr.read() }))
                 .map_err(|_e| SyscallSpawnProcessError::InvalidInputPtr)?;
             let input = SyscallSpawnProcessInput::try_ref_from_bytes(input.deref())
                 .map_err(|_| SyscallSpawnProcessError::InvalidInput)?;
-            if input.memory_mappings.pointer() == 0
-                || input.memory_mappings.pointer()
-                    + input.memory_mappings.len()
-                        * u64::try_from(size_of::<SpawnProcessMemoryMapping>()).unwrap()
-                    > LOWER_HALF_END
-            {
-                Err(SyscallSpawnProcessError::InvalidInputPtr)?
-            }
-            if input.send_capabilities.pointer() == 0
-                || input.send_capabilities.pointer()
-                    + input.send_capabilities.len()
-                        * u64::try_from(size_of::<NonZero<u64>>()).unwrap()
-                    > LOWER_HALF_END
-            {
-                Err(SyscallSpawnProcessError::InvalidInputPtr)?
-            }
+
+            let memory_mappings_ptr =
+                check_pointer::<[u8; size_of::<SpawnProcessMemoryMapping>()]>(
+                    input.send_memory.ptr,
+                    input.send_memory.len,
+                )
+                .map_err(|_| SyscallSpawnProcessError::InvalidMemoryMappingPtr)?;
+            let send_capabilities_ptr =
+                check_pointer::<u64>(input.send_capabilities.ptr, input.send_capabilities.len)
+                    .map_err(|_| SyscallSpawnProcessError::InvalidCapabilityPtr)?;
+            let map_modules_ptr = check_pointer::<[u8; size_of::<MapModule>()]>(
+                input.map_modules.ptr,
+                input.map_modules.len,
+            )
+            .map_err(|_| SyscallSpawnProcessError::InvalidMapModulesPtr)?;
 
             let local = get_local();
             let mut running_thread_lock = local.running_thread.try_lock().unwrap();
@@ -75,16 +95,12 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             // FIXME: Clean up if errors are found
             let new_process_id = ProcessId::new_unique();
             let mut capabilities = CAPABILITIES.write();
-            for i in 0..input.send_capabilities.len() as usize {
-                let capability = try_access_user_mem(|| {
-                    let capability_ptr = (input.send_capabilities.pointer() as usize
-                        + i * size_of::<u64>())
-                        as *const u64;
-                    Box::new(unsafe { capability_ptr.read() })
-                })
-                .map_err(|_e| SyscallSpawnProcessError::InvalidCapabilityPtr)?;
-                let capability_id = NonZero::new(*capability)
-                    .ok_or(SyscallSpawnProcessError::InvalidCapabilityId)?;
+            for i in 0..input.send_capabilities.len {
+                let capability_ptr = unsafe { send_capabilities_ptr.add(i) };
+                let capability = try_access_user_mem(|| Box::new(unsafe { capability_ptr.read() }))
+                    .map_err(|_e| SyscallSpawnProcessError::InvalidCapabilityPtr)?;
+                let capability_id =
+                    NonZero::new(*capability).ok_or(SyscallSpawnProcessError::CapabilityIdZero)?;
                 let capability = capabilities
                     .get_mut(&capability_id)
                     .ok_or(SyscallSpawnProcessError::CapabilityNotFound)?;
@@ -98,9 +114,8 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
             let new_cr3 = physical_memory
-                .allocate_frame_with_type::<Size4KiB>(MemoryType::UsedByUserMode(BTreeSet::from([
-                    new_process_id,
-                ])))
+                .get_user_mode_program_frame_allocator(new_process_id)
+                .allocate_frame()
                 .ok_or(SyscallSpawnProcessError::OutOfPhysMem)?;
             let mut new_virt_mem = NoditMap::default();
             let current_mapper = unsafe { get_page_table(running_thread.process.cr3, false) };
@@ -109,10 +124,110 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 new_mapper.level_4_table_mut()[i].clone_from(&current_mapper.level_4_table()[i]);
             }
 
-            for i in 0..input.memory_mappings.len() as usize {
-                let memory_mapping_ptr = (input.memory_mappings.pointer() as usize
-                    + i * size_of::<SpawnProcessMemoryMapping>())
-                    as *const [u8; size_of::<SpawnProcessMemoryMapping>()];
+            for i in 0..input.map_modules.len {
+                let map_module_ptr = unsafe { map_modules_ptr.add(i) };
+                let map_module = try_access_user_mem(|| Box::new(unsafe { map_module_ptr.read() }))
+                    .map_err(|_e| SyscallSpawnProcessError::InvalidMapModulesPtr)?;
+                let map_module = MapModule::try_ref_from_bytes(map_module.deref())
+                    .map_err(|_| SyscallSpawnProcessError::InvalidMapModule)?;
+                let file = MODULE_REQUEST
+                    .get_response()
+                    .unwrap()
+                    .modules()
+                    .iter()
+                    .find(|file| {
+                        file.path().to_str()
+                            == Ok(&format!("/extra_module_{}", map_module.module_id))
+                    })
+                    .ok_or(SyscallSpawnProcessError::ModuleNotFound)?;
+                let file_frames = file.size().div_ceil(AllocPageSize::_4KiB.byte_len_u64());
+                if (map_module.start_page_offset as u64)
+                    .checked_add(map_module.pages_len.get() as u64)
+                    .ok_or(SyscallSpawnProcessError::InvalidModuleRange)?
+                    > file_frames
+                {
+                    return Err(SyscallSpawnProcessError::OutOfModuleRange);
+                }
+                if !map_module
+                    .new_process_start
+                    .is_multiple_of(AllocPageSize::_4KiB.byte_len())
+                {
+                    return Err(SyscallSpawnProcessError::ModuleUnalignedDest);
+                }
+                new_virt_mem
+                    .insert_merge_touching_if_values_equal(
+                        {
+                            let start = map_module.new_process_start as u64;
+                            let end = start
+                                .checked_add(
+                                    map_module.pages_len.get() as u64
+                                        * AllocPageSize::_4KiB.byte_len_u64(),
+                                )
+                                .ok_or(SyscallSpawnProcessError::InvalidModuleDest)?;
+                            if end > LOWER_HALF_END {
+                                return Err(SyscallSpawnProcessError::InvalidSendMemDestInterval);
+                            }
+                            start..end
+                        }
+                        .into(),
+                        UserVirtMem::LimineModule,
+                    )
+                    .map_err(|_e| SyscallSpawnProcessError::DestMemOverlap)?;
+                let start_page = VirtAddr::new(map_module.new_process_start as u64);
+                let start_frame = VirtAddr::from_ptr(file.addr()).to_phys_offset_mapped()
+                    + map_module.start_page_offset as u64 * AllocPageSize::_4KiB.byte_len_u64();
+                let mut frame_allocator = physical_memory
+                    .get_user_mode_program_frame_allocator(running_thread.process.id);
+                for i in 0..map_module.pages_len.get() {
+                    let page = start_page + i as u64 * AllocPageSize::_4KiB.byte_len_u64();
+                    let frame = start_frame + i as u64 * AllocPageSize::_4KiB.byte_len_u64();
+                    let flags = {
+                        let mut flags = PageTableFlags::USER_ACCESSIBLE;
+                        if !map_module.executable {
+                            flags |= PageTableFlags::NO_EXECUTE;
+                        }
+                        flags
+                    };
+                    let result = unsafe {
+                        map_page(
+                            new_cr3,
+                            AllocPageSize::_4KiB,
+                            page,
+                            frame,
+                            flags,
+                            &mut frame_allocator,
+                        )
+                    };
+                    if let Err(e) = &result {
+                        match e {
+                            MapPageError::AllocateFrame => {
+                                return Err(SyscallSpawnProcessError::OutOfPhysMem);
+                            }
+                            _ => result.unwrap(),
+                        }
+                    }
+                }
+                let last_frame_mapped = map_module.start_page_offset + map_module.pages_len.get()
+                    == file_frames as usize;
+                if last_frame_mapped {
+                    let rem = file.size() as usize & AllocPageSize::_4KiB.byte_len();
+                    if rem != 0 {
+                        // Zero unused bytes of last frame
+                        // If this module gets mapped multiple times, we don't need to zero the bytes the 2nd+ times
+                        // But to keep things simple we can just zero every time
+                        let bytes_to_copy = AllocPageSize::_4KiB.byte_len() - rem;
+                        let copy_start = file.size() as usize - bytes_to_copy;
+                        unsafe {
+                            file.addr()
+                                .add(copy_start)
+                                .write_bytes(Default::default(), bytes_to_copy);
+                        }
+                    }
+                }
+            }
+
+            for i in 0..input.send_memory.len {
+                let memory_mapping_ptr = unsafe { memory_mappings_ptr.add(i) };
                 let memory_mapping =
                     try_access_user_mem(|| Box::new(unsafe { memory_mapping_ptr.read() }))
                         .map_err(|_e| SyscallSpawnProcessError::InvalidMemoryMappingPtr)?;
@@ -122,18 +237,34 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 let memory_mapping_flags =
                     SpawnProcessMemoryFlags::from_bits_retain(memory_mapping.flags);
                 let page_size = memory_mapping_flags.page_size();
-                let _ = process_memory.mapped_virtual_memory.cut({
-                    let start = u64::try_from(memory_mapping.current_process_start).unwrap();
-                    Interval::from(
-                        start
-                            ..start
-                                .checked_add(
-                                    u64::try_from(memory_mapping.pages_len).unwrap()
-                                        * page_size.byte_len_u64(),
-                                )
-                                .ok_or(SyscallSpawnProcessError::InvalidMemoryMappingSrc)?,
-                    )
-                });
+                // Check that it's valid
+                {
+                    let interval = {
+                        let start = u64::try_from(memory_mapping.current_process_start).unwrap();
+                        Interval::from(
+                            start
+                                ..start
+                                    .checked_add(
+                                        u64::try_from(memory_mapping.pages_len).unwrap()
+                                            * page_size.byte_len_u64(),
+                                    )
+                                    .ok_or(SyscallSpawnProcessError::InvalidSendMemSrcInterval)?,
+                        )
+                    };
+                    let (overlapping_interval, mem) = process_memory
+                        .mapped_virtual_memory
+                        .overlapping(interval)
+                        .exactly_one()
+                        .map_err(|_| SyscallSpawnProcessError::SendMemSrcMix)?;
+                    if !overlapping_interval.contains_interval(&interval) {
+                        return Err(SyscallSpawnProcessError::SendMemSrcPartial);
+                    }
+                    if let UserVirtMem::Plain = mem {
+                    } else {
+                        return Err(SyscallSpawnProcessError::SendMemNotPlain);
+                    }
+                    let _ = process_memory.mapped_virtual_memory.cut(interval);
+                }
                 new_virt_mem
                     .insert_merge_touching_if_values_equal(
                         {
@@ -145,12 +276,14 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                                             u64::try_from(memory_mapping.pages_len).unwrap()
                                                 * page_size.byte_len_u64(),
                                         )
-                                        .ok_or(SyscallSpawnProcessError::InvalidMemoryMappingSrc)?,
+                                        .ok_or(
+                                            SyscallSpawnProcessError::InvalidSendMemDestInterval,
+                                        )?,
                             )
                         },
                         UserVirtMem::Plain,
                     )
-                    .unwrap();
+                    .map_err(|_e| SyscallSpawnProcessError::DestMemOverlap)?;
                 let start_page_current = VirtAddr::new(memory_mapping.current_process_start as u64);
                 let start_page_new = VirtAddr::new(memory_mapping.new_process_start as u64);
                 for i in 0..memory_mapping.pages_len {
@@ -158,22 +291,24 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     let frame = unsafe { unmap_page(running_thread.process.cr3, page_size, page) }
                         .unwrap()
                         .addr();
-                    log::debug!(
-                        "Unmapped: {page:?} {page_size:?}, starting: {start_page_current:?}"
-                    );
-                    physical_memory.share_memory(page_size, frame, new_process_id);
-                    physical_memory.unshare_memory(page_size, frame, running_thread.process.id);
+                    physical_memory.change_owner(page_size, frame, new_process_id);
                     let page = start_page_new + i as u64 * page_size.byte_len_u64();
                     let flags = PageTableFlags::PRESENT
                         | PageTableFlags::USER_ACCESSIBLE
                         | memory_mapping_flags.into();
                     let mut frame_allocator =
                         physical_memory.get_user_mode_program_frame_allocator(new_process_id);
-                    // FIXME: Gracefully handle out of memory
-                    unsafe {
+                    match unsafe {
                         map_page(new_cr3, page_size, page, frame, flags, &mut frame_allocator)
+                    } {
+                        Ok(_) => {}
+                        Err(e) => match e {
+                            MapPageError::AllocateFrame => {
+                                return Err(SyscallSpawnProcessError::OutOfPhysMem);
+                            }
+                            e => unreachable!("{e:?}"),
+                        },
                     }
-                    .unwrap();
                 }
             }
             let new_thread_id = ThreadId::new_unique();

@@ -6,13 +6,24 @@ use x86_64::{
 
 use crate::hhdm_offset::HhdmOffset;
 
-pub trait TranslateAddr {
+pub trait TranslateToVirt {
     fn to_virt(self) -> VirtAddr;
 }
 
-impl TranslateAddr for PhysAddr {
+impl TranslateToVirt for PhysAddr {
     fn to_virt(self) -> VirtAddr {
         VirtAddr::new(self.as_u64() + u64::from(HhdmOffset::get_from_response()))
+    }
+}
+
+pub trait TranslateToPhys {
+    /// Remember that not all virt addresses are offset mapped. Make sure your virt address is offset mapped.
+    fn to_phys_offset_mapped(self) -> PhysAddr;
+}
+
+impl TranslateToPhys for VirtAddr {
+    fn to_phys_offset_mapped(self) -> PhysAddr {
+        PhysAddr::new(self.as_u64() - u64::from(HhdmOffset::get_from_response()))
     }
 }
 

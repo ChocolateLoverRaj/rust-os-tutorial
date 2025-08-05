@@ -10,11 +10,9 @@ use x86_64::{
     },
 };
 
-use crate::translate_addr::TranslateAddr;
+use crate::translate_addr::TranslateToVirt;
 
-fn get_page_table_mut<'a>(
-    page_table_entry: &'a mut PageTableEntry,
-) -> Result<&'a mut PageTable, FrameError> {
+fn get_page_table_mut(page_table_entry: &mut PageTableEntry) -> Result<&mut PageTable, FrameError> {
     page_table_entry
         .frame(false)?
         .start_address()
@@ -137,6 +135,9 @@ fn unmap_entry(entry: &mut PageTableEntry, is_p1: bool) -> Result<PageTableEntry
 
 /// Also does `invlpg` after successfully un-mapping.
 /// Returns the entry that was removed.
+///
+/// # Safety
+/// Don't unmap the wrong thing. It can cause page faults.
 pub unsafe fn unmap_page(
     p4_table: PhysFrame<Size4KiB>,
     page_size: AllocPageSize,

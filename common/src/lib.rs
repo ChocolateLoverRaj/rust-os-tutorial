@@ -40,7 +40,7 @@ pub use frame_buffer_embedded_graphics::*;
 pub use frame_buffer_info::*;
 pub use ps2_keyboard_capability::*;
 pub use rgb_pixel_info::*;
-pub use slice_data::SliceData;
+pub use slice_data::*;
 pub use spsc_queue::*;
 pub use syscall::*;
 pub use syscall_alloc::*;

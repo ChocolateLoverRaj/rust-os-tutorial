@@ -2,7 +2,7 @@ use core::mem::MaybeUninit;
 
 use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame};
 
-use crate::{hhdm_offset::HhdmOffset, translate_addr::TranslateAddr};
+use crate::{hhdm_offset::HhdmOffset, translate_addr::TranslateToVirt};
 
 /// # Safety
 /// The phys frame must be offset mapped and be a valid page table.

@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::btree_set::BTreeSet};
+use alloc::boxed::Box;
 use common::AllocPageSize;
 use nodit::{Interval, NoditMap};
 use x86_64::{
@@ -21,7 +21,7 @@ pub enum MemoryType {
     Usable,
     UsedByLimine,
     UsedByKernel(KernelMemoryUsageType),
-    UsedByUserMode(BTreeSet<ProcessId>),
+    UsedByUserMode(ProcessId),
     Shared(u64),
 }
 
@@ -94,7 +94,7 @@ impl PhysicalMemory {
     ) -> PhysicalMemoryFrameAllocator<'_> {
         PhysicalMemoryFrameAllocator {
             physical_memory: self,
-            memory_type: MemoryType::UsedByUserMode(BTreeSet::from([process_id])),
+            memory_type: MemoryType::UsedByUserMode(process_id),
         }
     }
 
@@ -119,12 +119,11 @@ impl PhysicalMemory {
         }
     }
 
-    /// The frame must currently be owned by a user process
-    pub fn share_memory(
+    pub fn change_owner(
         &mut self,
         page_size: AllocPageSize,
         frame: PhysAddr,
-        process_id: ProcessId,
+        new_owner: ProcessId,
     ) {
         let interval = Interval::from({
             let start = frame.as_u64();
@@ -134,34 +133,8 @@ impl PhysicalMemory {
         let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();
         assert_eq!(overlapping_mut.next(), None);
         match memory_type {
-            MemoryType::UsedByUserMode(processes) => {
-                processes.insert(process_id);
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    /// Remove a process from owning physical memory. If no processes are left, the frame is marked as unused.
-    pub fn unshare_memory(
-        &mut self,
-        page_size: AllocPageSize,
-        frame: PhysAddr,
-        process_id: ProcessId,
-    ) {
-        let interval = Interval::from({
-            let start = frame.as_u64();
-            start..start + page_size.byte_len_u64()
-        });
-        let mut overlapping_mut = self.map.overlapping_mut(interval);
-        let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();
-        assert_eq!(overlapping_mut.next(), None);
-        match memory_type {
-            MemoryType::UsedByUserMode(processes) => {
-                processes.remove(&process_id);
-                if processes.is_empty() {
-                    drop(overlapping_mut);
-                    let _ = self.map.cut(interval);
-                }
+            MemoryType::UsedByUserMode(owner) => {
+                *owner = new_owner;
             }
             _ => unreachable!(),
         }

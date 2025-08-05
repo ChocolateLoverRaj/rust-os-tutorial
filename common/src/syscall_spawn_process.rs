@@ -3,25 +3,15 @@ use core::num::NonZero;
 use bincode::{Decode, Encode};
 use bitflags::bitflags;
 use x86_64::structures::paging::PageTableFlags;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, KnownLayout, TryFromBytes};
 
-use crate::{AllocPageSize, ElfSegmentFlags, SliceData, Syscall};
+use crate::{AllocPageSize, ElfSegmentFlags, Syscall, slice_data::SliceData2};
 
-#[derive(Debug, Encode, Decode, TryFromBytes, Immutable)]
+#[derive(Debug, Encode, Decode, TryFromBytes, Immutable, KnownLayout)]
 #[repr(u8)]
 pub enum SpawnProcessRelativePriority {
     Higher,
     Lower,
-}
-
-/// Returns the process id of the new process
-#[derive(Debug, Encode, Decode, TryFromBytes, Immutable, KnownLayout)]
-pub struct SyscallSpawnProcessInput {
-    pub priority: SpawnProcessRelativePriority,
-    pub rip: u64,
-    pub rsp: u64,
-    pub memory_mappings: SliceData,
-    pub send_capabilities: SliceData,
 }
 
 bitflags! {
@@ -35,6 +25,11 @@ bitflags! {
         const _2MiB_PAGE = 1 << 4;
         /// Use 1 GiB pages for this mapping (mapping must perfectly fit 1 GiB pages)
         const _1GiB_PAGE = 1 << 5;
+
+        // /// Instead of un-mapping the mem from the current process, leave the current process's mem as it is
+        // /// and also map it to the other process's mem.
+        // /// Currently this is only used for mapped Limine modules.
+        // const SHARE = 1 << 6;
 
         // The source may set any bits
         const _ = !0;
@@ -82,13 +77,36 @@ impl From<SpawnProcessMemoryFlags> for PageTableFlags {
     }
 }
 
-#[derive(Debug, FromBytes, IntoBytes, Immutable, KnownLayout, Clone)]
+#[derive(Debug, FromBytes, Immutable, KnownLayout, Clone)]
+#[repr(C)]
 pub struct SpawnProcessMemoryMapping {
     pub current_process_start: usize,
     pub new_process_start: usize,
     pub pages_len: usize,
     pub flags: u8,
-    pub _padding: [u8; 7],
+}
+
+#[derive(Debug, Clone, TryFromBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct MapModule {
+    pub module_id: usize,
+    pub start_page_offset: usize,
+    /// Each page is 4 KiB
+    pub pages_len: NonZero<usize>,
+    pub new_process_start: usize,
+    pub executable: bool,
+}
+
+/// Returns the process id of the new process
+#[derive(Debug, TryFromBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct SyscallSpawnProcessInput {
+    pub priority: SpawnProcessRelativePriority,
+    pub rip: u64,
+    pub rsp: u64,
+    pub send_memory: SliceData2,
+    pub map_modules: SliceData2,
+    pub send_capabilities: SliceData2,
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -100,18 +118,35 @@ pub enum SyscallSpawnProcessError {
     InvalidMemoryMappingPtr,
     // Invalid memory mapping, checked by `zerocopy`
     InvalidMemoryMapping,
-    InvalidMemoryMappingSrc,
+    InvalidSendMemSrcInterval,
+    /// The src is a mix of different memory types. This is not allowed.
+    SendMemSrcMix,
+    /// The src only partially exists
+    SendMemSrcPartial,
+    /// You tried to send memory that is not plain memory
+    SendMemNotPlain,
     InvalidCapabilityPtr,
+    InvalidSendMemDestInterval,
+    InvalidMapModulesPtr,
+    /// There were overlapping regions for the new process's memory
+    DestMemOverlap,
+    /// Checked by `zerocopy`
+    InvalidMapModule,
     /// Got a capability id of 0
-    InvalidCapabilityId,
+    CapabilityIdZero,
     /// You tried to send a capability that you don't own or doesn't exist
     CapabilityNotFound,
     OutOfPhysMem,
+    ModuleNotFound,
+    OutOfModuleRange,
+    InvalidModuleRange,
+    InvalidModuleDest,
+    ModuleUnalignedDest,
 }
 
 pub struct SyscallSpawnProcess;
 impl Syscall for SyscallSpawnProcess {
     const ID: u64 = 0x5B0B4092EAC9C9CE;
-    type Input = u64;
+    type Input = NonZero<usize>;
     type Output = Result<NonZero<u32>, SyscallSpawnProcessError>;
 }

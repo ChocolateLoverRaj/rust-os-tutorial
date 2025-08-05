@@ -1,6 +1,6 @@
 use core::{num::NonZero, slice};
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use alloc::sync::Arc;
 use common::{
     ENV_PS2_KEYBOARD_CAPABILITY, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, STACK_ALIGNMENT,
 };
@@ -170,9 +170,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                     .map_err(LoadUserModeProgramError::OverlappingElfSegments)?;
                 for page in start_page..=end_page {
                     let frame = physical_memory
-                        .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([
-                            process_id,
-                        ])))
+                        .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
                         .ok_or(LoadUserModeProgramError::OutOfMemory)?;
                     let flags = PageTableFlags::PRESENT
                         | PageTableFlags::USER_ACCESSIBLE
@@ -235,7 +233,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
             Page::<Size4KiB>::containing_address(VirtAddr::new(stack_end_inclusive));
         for page in stack_start_page..=stack_end_page_inclusive {
             let frame = physical_memory
-                .allocate_frame_with_type(MemoryType::UsedByUserMode(BTreeSet::from([process_id])))
+                .allocate_frame_with_type(MemoryType::UsedByUserMode(process_id))
                 .ok_or(LoadUserModeProgramError::OutOfMemory)?;
             // Safety: We just claimed this frame
             unsafe { frame.zero() };

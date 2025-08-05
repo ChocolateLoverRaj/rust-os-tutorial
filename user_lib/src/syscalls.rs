@@ -5,7 +5,7 @@ use core::{
 };
 
 use common::{
-    AllocPageSize, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
+    AllocPageSize, MapModule, SliceData2, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
     SpawnThreadRelativePriority, Syscall, SyscallAlloc, SyscallAllocError, SyscallAllocInput,
     SyscallAllocStack, SyscallAllocStackError, SyscallAllocStackInput, SyscallAllocStackOutput,
     SyscallCloneCapability, SyscallCloneCapabilityError, SyscallCreateChannel, SyscallExists,
@@ -153,8 +153,9 @@ pub struct RustSyscallSpawnProcessInput<'a> {
     pub priority: SpawnProcessRelativePriority,
     pub rip: u64,
     pub rsp: u64,
-    pub memory_mapping: &'a [SpawnProcessMemoryMapping],
+    pub send_memory: &'a [SpawnProcessMemoryMapping],
     pub send_capabilities: &'a [NonZero<u64>],
+    pub map_modules: &'a [MapModule],
 }
 
 pub fn syscall_spawn_process(
@@ -164,11 +165,12 @@ pub fn syscall_spawn_process(
         priority: input.priority,
         rip: input.rip,
         rsp: input.rsp,
-        memory_mappings: input.memory_mapping.into(),
-        send_capabilities: input.send_capabilities.into(),
+        send_memory: SliceData2::from_slice(input.send_memory),
+        send_capabilities: SliceData2::from_slice(input.send_capabilities),
+        map_modules: SliceData2::from_slice(input.map_modules),
     };
     // Safety: input ok
-    unsafe { syscall::<SyscallSpawnProcess>(&(&input as *const _ as u64)) }
+    unsafe { syscall::<SyscallSpawnProcess>(&NonNull::from_ref(&input).addr()) }
 }
 
 pub fn syscall_create_channel() -> NonZero<u64> {

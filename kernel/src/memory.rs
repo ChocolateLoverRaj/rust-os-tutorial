@@ -16,7 +16,7 @@ use crate::{
     get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
     map_page, max_page_size,
-    translate_addr::{TranslateAddr, ZeroFrame},
+    translate_addr::{TranslateToVirt, ZeroFrame},
 };
 pub use physical_memory::PhysicalMemoryFrameAllocator;
 

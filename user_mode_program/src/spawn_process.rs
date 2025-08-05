@@ -2,7 +2,7 @@ use core::num::NonZero;
 
 use alloc::vec::Vec;
 use common::{
-    AllocPageSize, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, STACK_ALIGNMENT,
+    AllocPageSize, ElfSegmentFlags, EnvEntry, LOWER_HALF_END, MapModule, STACK_ALIGNMENT,
     SpawnProcessMemoryFlags, SpawnProcessMemoryMapping, SpawnProcessRelativePriority,
 };
 use elf::{ElfBytes, endian::NativeEndian};
@@ -26,6 +26,7 @@ pub fn spawn_process(
     let elf = ElfBytes::<NativeEndian>::minimal_parse(slice).unwrap();
     let entry_point = elf.ehdr.e_entry;
     let mut memory_mappings = Vec::<SpawnProcessMemoryMapping>::new();
+    let mut map_modules = Vec::<MapModule>::new();
     for segment in elf
         .segments()
         .unwrap()
@@ -36,51 +37,64 @@ pub fn spawn_process(
         .filter(|segment| segment.p_memsz > 0)
     {
         let segment_data = elf.segment_data(&segment).unwrap();
-        let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(segment.p_vaddr));
-        let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(
-            segment.p_vaddr + (segment.p_memsz - 1),
-        ));
-        for page in start_page..=end_page {
-            let mut frame = syscall_alloc(
-                AllocPageSize::_4KiB,
-                1.try_into().unwrap(),
-                // TODO: No need to zero the entire page
-                true,
-            )
-            .unwrap();
-            memory_mappings.push(SpawnProcessMemoryMapping {
-                current_process_start: usize::from(frame.addr()).try_into().unwrap(),
-                new_process_start: page.start_address().as_u64() as usize,
-                pages_len: 1,
-                flags: SpawnProcessMemoryFlags::from(ElfSegmentFlags::from_bits_retain(
-                    segment.p_flags,
-                ))
-                .bits(),
-                _padding: Default::default(),
+        let flags = ElfSegmentFlags::from_bits_retain(segment.p_flags);
+        if flags.contains(ElfSegmentFlags::WRITABLE) {
+            let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(segment.p_vaddr));
+            let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(
+                segment.p_vaddr + (segment.p_memsz - 1),
+            ));
+            for page in start_page..=end_page {
+                let mut frame = syscall_alloc(
+                    AllocPageSize::_4KiB,
+                    1.try_into().unwrap(),
+                    // TODO: No need to zero the entire page
+                    true,
+                )
+                .unwrap();
+                memory_mappings.push(SpawnProcessMemoryMapping {
+                    current_process_start: frame.addr().into(),
+                    new_process_start: page.start_address().as_u64() as usize,
+                    pages_len: 1,
+                    flags: SpawnProcessMemoryFlags::from(flags).bits(),
+                });
+                let frame_data = unsafe { frame.as_mut() };
+                let bytes_to_zero_before = segment
+                    .p_vaddr
+                    .saturating_sub(page.start_address().as_u64())
+                    .min(Size4KiB::SIZE);
+                let range_before_to_zero = ..bytes_to_zero_before as usize;
+                frame_data[range_before_to_zero].fill(0);
+
+                let copy_start = bytes_to_zero_before;
+                let already_copied = page
+                    .start_address()
+                    .as_u64()
+                    .saturating_sub(segment.p_vaddr)
+                    .min(segment.p_filesz);
+                let copy_end =
+                    (copy_start + (segment.p_filesz - already_copied)).min(Size4KiB::SIZE);
+                let copy_len = copy_end - copy_start;
+                let range_to_copy = copy_start as usize..copy_end as usize;
+                frame_data[range_to_copy].copy_from_slice(
+                    &segment_data[already_copied as usize..(already_copied + copy_len) as usize],
+                );
+
+                let range_after_to_zero = copy_end as usize..;
+                frame_data[range_after_to_zero].fill(0);
+            }
+        } else {
+            map_modules.push(MapModule {
+                module_id,
+                start_page_offset: segment.p_offset as usize / AllocPageSize::_4KiB.byte_len(),
+                pages_len: ((segment.p_offset as usize + segment.p_filesz as usize)
+                    .div_ceil(AllocPageSize::_4KiB.byte_len())
+                    - (segment.p_offset as usize) / AllocPageSize::_4KiB.byte_len())
+                .try_into()
+                .unwrap(),
+                new_process_start: segment.p_vaddr as usize / AllocPageSize::_4KiB.byte_len()
+                    * AllocPageSize::_4KiB.byte_len(),
+                executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
             });
-            let frame_data = unsafe { frame.as_mut() };
-            let bytes_to_zero_before = segment
-                .p_vaddr
-                .saturating_sub(page.start_address().as_u64())
-                .min(Size4KiB::SIZE);
-            let range_before_to_zero = ..bytes_to_zero_before as usize;
-            frame_data[range_before_to_zero].fill(0);
-
-            let copy_start = bytes_to_zero_before;
-            let already_copied = page
-                .start_address()
-                .as_u64()
-                .saturating_sub(segment.p_vaddr)
-                .min(segment.p_filesz);
-            let copy_end = (copy_start + (segment.p_filesz - already_copied)).min(Size4KiB::SIZE);
-            let copy_len = copy_end - copy_start;
-            let range_to_copy = copy_start as usize..copy_end as usize;
-            frame_data[range_to_copy].copy_from_slice(
-                &segment_data[already_copied as usize..(already_copied + copy_len) as usize],
-            );
-
-            let range_after_to_zero = copy_end as usize..;
-            frame_data[range_after_to_zero].fill(0);
         }
     }
     let stack_top = LOWER_HALF_END as usize;
@@ -120,11 +134,10 @@ pub fn spawn_process(
 
     // Guard page
     memory_mappings.push(SpawnProcessMemoryMapping {
-        current_process_start: usize::from(stack.addr()).try_into().unwrap(),
+        current_process_start: stack.addr().into(),
         new_process_start: stack_top - stack_with_guard_len,
         pages_len: 1,
         flags: SpawnProcessMemoryFlags::empty().bits(),
-        _padding: Default::default(),
     });
     // Stack
     memory_mappings.push(SpawnProcessMemoryMapping {
@@ -132,18 +145,18 @@ pub fn spawn_process(
         new_process_start: stack_top - stack_len,
         pages_len: stack_len / AllocPageSize::_4KiB.byte_len(),
         flags: (SpawnProcessMemoryFlags::READABLE | SpawnProcessMemoryFlags::WRITABLE).bits(),
-        _padding: Default::default(),
     });
 
-    common::log::info!("Memory mappings: {memory_mappings:#X?}");
+    // common::log::info!("Memory mappings: {memory_mappings:#X?}. Map modules: {map_modules:#X?}");
 
     syscall_spawn_process(RustSyscallSpawnProcessInput {
         priority,
         rip: entry_point,
         rsp: u64::try_from(stack_top).unwrap()
             - u64::try_from(usize::from(stack.addr()) + stack.len() - env_ptr).unwrap(),
-        memory_mapping: &memory_mappings,
+        send_memory: &memory_mappings,
         send_capabilities,
+        map_modules: &map_modules,
     })
     .unwrap()
 }

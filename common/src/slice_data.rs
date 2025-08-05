@@ -1,7 +1,7 @@
-use core::slice;
+use core::{num::NonZero, ptr::NonNull, slice};
 
 use bincode::{Decode, Encode};
-use zerocopy::{FromBytes, Immutable};
+use zerocopy::{FromBytes, Immutable, KnownLayout, TryFromBytes};
 
 pub use zerocopy;
 
@@ -53,6 +53,24 @@ impl<T> From<&mut [T]> for SliceData {
         Self {
             pointer: value.as_ptr() as u64,
             len: value.len() as u64,
+        }
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, Encode, Decode, PartialEq, Eq, Immutable, TryFromBytes, KnownLayout,
+)]
+#[repr(C)]
+pub struct SliceData2 {
+    pub ptr: NonZero<usize>,
+    pub len: usize,
+}
+
+impl SliceData2 {
+    pub fn from_slice<T>(slice: &[T]) -> Self {
+        SliceData2 {
+            ptr: NonNull::from_ref(slice).addr(),
+            len: slice.len(),
         }
     }
 }
