@@ -1,23 +1,17 @@
-use core::{fmt::Debug, num::NonZero};
+use core::num::NonZero;
 
 use common::{
-    AllocPageSize, LOWER_HALF_END, PermissionFlags, SliceData, SyscallMapSharedMem,
-    SyscallMapSharedMemError,
+    LOWER_HALF_END, PermissionFlags, SliceData, SyscallMapSharedMem, SyscallMapSharedMemError,
 };
 use nodit::{InclusiveInterval, Interval};
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{
-        Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
-    },
-};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 use crate::{
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
-    get_page_table::get_page_table,
-    memory::{MEMORY, PhysicalMemoryFrameAllocator},
-    shared_mem::{SHARED_MEM, SharedMem},
+    map_page,
+    memory::MEMORY,
+    shared_mem::SHARED_MEM,
     task::{SharedVirtMem, THREADS, UserVirtMem},
 };
 
@@ -32,8 +26,9 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
         let output = (|| {
             let capability_id = helper.input().capability;
             let capabilities = CAPABILITIES.read();
-            // FIXME: Don't panic
-            let capability = capabilities.get(&capability_id).unwrap();
+            let capability = capabilities
+                .get(&capability_id)
+                .ok_or(SyscallMapSharedMemError::CapabilityNotFound)?;
 
             let thread_id = get_local().running_thread.try_lock().unwrap().unwrap();
             let threads = THREADS.read();
@@ -49,7 +44,11 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
             };
             let shared_mem = SHARED_MEM.read();
             let shared_mem = shared_mem.get(&shared_mem_id).unwrap();
-            let shared_mem_len = shared_mem.page_size.byte_len() * shared_mem.phys_mem.len();
+            let shared_mem_len = shared_mem
+                .phys_mem
+                .iter()
+                .map(|interval| interval.end() - interval.start() + 1)
+                .sum::<u64>();
 
             let mut process_mem = thread.process.memory.write();
             let interval = process_mem
@@ -67,8 +66,7 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                         None
                     }
                 })
-                // FIXME: Don't panic
-                .unwrap();
+                .ok_or(SyscallMapSharedMemError::NoVirtMem)?;
             process_mem
                 .mapped_virtual_memory
                 .insert_merge_touching_if_values_equal(
@@ -77,9 +75,6 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 )
                 .unwrap();
 
-            let l4_frame = thread.process.cr3;
-            let mut mapper = unsafe { get_page_table(l4_frame, false) };
-
             let mut phys_mem = MEMORY.get().unwrap().physical_memory.lock();
             let mut frame_allocator =
                 phys_mem.get_user_mode_program_frame_allocator(thread.process.id);
@@ -87,54 +82,30 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 | PageTableFlags::USER_ACCESSIBLE
                 | PermissionFlags::from_bits_retain(helper.input().permission_flags)
                     .page_table_flags();
-            pub fn map<T: PageSize + Debug, M: Mapper<T>>(
-                shared_mem: &SharedMem,
-                flags: PageTableFlags,
-                frame_allocator: &mut PhysicalMemoryFrameAllocator,
-                mapper: &mut M,
-                start_addr: VirtAddr,
-            ) {
-                let start_page = Page::<T>::from_start_address(start_addr).unwrap();
-                let mut pages_mapped = 0;
-                for interval in shared_mem.phys_mem.iter() {
-                    let start_frame =
-                        PhysFrame::<T>::from_start_address(PhysAddr::new(interval.start()))
-                            .unwrap();
-                    let frames_len = (interval.end() - interval.start() + 1) / T::SIZE;
-                    for i in 0..frames_len {
-                        let page = start_page + pages_mapped;
-                        let frame = start_frame + i;
-                        // FIXME: Handle out of mem errors
-                        unsafe { mapper.map_to(page, frame, flags, frame_allocator) }
-                            .unwrap()
-                            .flush();
-                        pages_mapped += 1;
+            let start_page = VirtAddr::new(interval.start());
+            let mut pages_mapped = 0;
+            for interval in shared_mem.phys_mem.iter() {
+                let start_frame = PhysAddr::new(interval.start());
+                let frames_len =
+                    (interval.end() - interval.start() + 1) / shared_mem.page_size.byte_len_u64();
+                for i in 0..frames_len {
+                    let page = start_page + pages_mapped * shared_mem.page_size.byte_len_u64();
+                    let frame = start_frame + i * shared_mem.page_size.byte_len_u64();
+                    log::debug!("Mapping {page:?} to {frame:?}");
+                    unsafe {
+                        map_page(
+                            thread.process.cr3,
+                            shared_mem.page_size,
+                            page,
+                            frame,
+                            flags,
+                            &mut frame_allocator,
+                        )
                     }
+                    .unwrap();
+                    // FIXME: Handle out of mem errors
+                    pages_mapped += 1;
                 }
-            }
-            let start_addr = VirtAddr::new(interval.start());
-            match shared_mem.page_size {
-                AllocPageSize::_4KiB => map::<Size4KiB, _>(
-                    shared_mem,
-                    flags,
-                    &mut frame_allocator,
-                    &mut mapper,
-                    start_addr,
-                ),
-                AllocPageSize::_2MiB => map::<Size2MiB, _>(
-                    shared_mem,
-                    flags,
-                    &mut frame_allocator,
-                    &mut mapper,
-                    start_addr,
-                ),
-                AllocPageSize::_1GiB => map::<Size1GiB, _>(
-                    shared_mem,
-                    flags,
-                    &mut frame_allocator,
-                    &mut mapper,
-                    start_addr,
-                ),
             }
 
             Ok(SliceData::new(interval.start(), shared_mem_len as u64))
