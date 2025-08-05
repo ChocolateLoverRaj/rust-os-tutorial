@@ -1,3 +1,5 @@
+use core::mem;
+
 use alloc::boxed::Box;
 use common::AllocPageSize;
 use nodit::{Interval, NoditMap};
@@ -16,7 +18,7 @@ pub enum KernelMemoryUsageType {
 }
 
 /// Note that there are other memory types (such as ACPI memory) that are not included here
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MemoryType {
     Usable,
     UsedByLimine,
@@ -138,6 +140,12 @@ impl PhysicalMemory {
             }
             _ => unreachable!(),
         }
+    }
+
+    pub fn remove(&mut self, value: &MemoryType) {
+        let map = mem::take(&mut self.map);
+        self.map = NoditMap::from_iter_strict(map.into_iter().filter(|(_interval, v)| v == value))
+            .unwrap();
     }
 }
 

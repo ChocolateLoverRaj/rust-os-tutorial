@@ -76,7 +76,7 @@ impl KeyboardSharedMemServer {
         let page_size = AllocPageSize::_4KiB;
         let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
             page_size,
-            pages_len: used_len.div_ceil(page_size.byte_len()),
+            pages_len: NonZero::new(used_len.div_ceil(page_size.byte_len())).unwrap(),
         })
         .map_err(NewKeyboardServerError::NewSharedMem)?;
         let client_shared_mem_capability = syscall_clone_capability(shared_mem_capability).unwrap();
@@ -214,7 +214,7 @@ impl KeyboardSharedMemClient {
         let len = size_of::<KeyboardBufSharedMem>() + size_of::<AtomicU8>() * slots_len;
         let input = SyscallNewSharedMemInput {
             page_size: AllocPageSize::_4KiB,
-            pages_len: len.div_ceil(AllocPageSize::_4KiB.byte_len()),
+            pages_len: NonZero::new(len.div_ceil(AllocPageSize::_4KiB.byte_len())).unwrap(),
         };
         let capability = unsafe { syscall::<SyscallNewSharedMem>(&input) }.unwrap();
         let shared_mem = syscall_map_shared_mem(

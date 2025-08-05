@@ -164,7 +164,7 @@ impl WindowSharedMemServer {
         let page_size = AllocPageSize::_2MiB;
         let shared_mem_capability = syscall_new_shared_mem(SyscallNewSharedMemInput {
             page_size,
-            pages_len: used_len.div_ceil(page_size.byte_len()),
+            pages_len: NonZero::new(used_len.div_ceil(page_size.byte_len())).unwrap(),
         })
         .map_err(NewWindowServerError::NewSharedMem)?;
         let client_shared_mem_capability = syscall_clone_capability(shared_mem_capability).unwrap();

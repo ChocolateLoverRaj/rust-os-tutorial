@@ -11,7 +11,7 @@ pub struct SyscallNewSharedMem;
 #[derive(Debug, Encode, Decode)]
 pub struct SyscallNewSharedMemInput {
     pub page_size: AllocPageSize,
-    pub pages_len: usize,
+    pub pages_len: NonZero<usize>,
 }
 
 #[derive(Debug, Encode, Decode)]
