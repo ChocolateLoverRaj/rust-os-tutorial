@@ -1,52 +1,54 @@
 use core::any::type_name;
 
 use alloc::collections::btree_map::{self, BTreeMap};
-use alloc_stack::SyscallAllocStackHandler;
-use channel::{SyscallCreateChannelHandler, SyscallTxSendHandler};
 use common::Syscall;
-use exists::SyscallExistsHandler;
-use exit_process::SyscallExitProcessHandler;
-use exit_thread::SyscallExitThreadHandler;
-use frame_buffer::{SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler};
-use futex::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
-use get_thread_id::SyscallGetThreadIdHandler;
-use keyboard_handler::SyscallSubscribeToKeyboardHandler;
-use map_module::SyscallMapModuleHandler;
-use mouse::SyscallSubscribeToMouseHandler;
-use spawn_thread::SyscallSpawnThreadHandler;
 use syscall_alloc_handler::SyscallAllocHandler;
+use syscall_alloc_stack_handler::SyscallAllocStackHandler;
+use syscall_channel_handler::{SyscallCreateChannelHandler, SyscallTxSendHandler};
 use syscall_clone_capability_handler::SyscallCloneCapabilityHandler;
+use syscall_exists_handler::SyscallExistsHandler;
+use syscall_exit_process_handler::SyscallExitProcessHandler;
+use syscall_exit_thread_handler::SyscallExitThreadHandler;
+use syscall_frame_buffer_handler::{
+    SyscallReleaseFrameBufferHandler, SyscallTakeFrameBufferHandler,
+};
+use syscall_futex_handler::{SyscallFutexLockHandler, SyscallFutexUnlockHandler};
+use syscall_get_thread_id_handler::SyscallGetThreadIdHandler;
+use syscall_keyboard_handler::SyscallSubscribeToKeyboardHandler;
 use syscall_log_handler::SyscallLogHandler;
+use syscall_map_module_handler::SyscallMapModuleHandler;
 use syscall_map_shared_mem_handler::SyscallMapSharedMemHandler;
+use syscall_mouse_handler::SyscallSubscribeToMouseHandler;
 use syscall_new_shared_mem_handler::SyscallNewSharedMemHandler;
 use syscall_send_capability_handler::SyscallSendCapabilityHandler;
 use syscall_spawn_process_handler::SyscallSpawnProcessHandler;
-use terminate_process_handler::SyscallTerminateProcessHandler;
-use wait_until_event::SyscallWaitUntilEventHandler;
+use syscall_spawn_thread_handler::SyscallSpawnThreadHandler;
+use syscall_terminate_process_handler::SyscallTerminateProcessHandler;
+use syscall_wait_until_event_handler::SyscallWaitUntilEventHandler;
 
 use crate::syscall_saved_regs::SyscallSavedRegs;
 
-mod alloc_stack;
-mod channel;
-mod exists;
-mod exit_process;
-mod exit_thread;
-mod frame_buffer;
-mod futex;
-mod get_thread_id;
-mod keyboard_handler;
-mod map_module;
-mod mouse;
-mod spawn_thread;
 mod syscall_alloc_handler;
+mod syscall_alloc_stack_handler;
+mod syscall_channel_handler;
 mod syscall_clone_capability_handler;
+mod syscall_exists_handler;
+mod syscall_exit_process_handler;
+mod syscall_exit_thread_handler;
+mod syscall_frame_buffer_handler;
+mod syscall_futex_handler;
+mod syscall_get_thread_id_handler;
+mod syscall_keyboard_handler;
 mod syscall_log_handler;
+mod syscall_map_module_handler;
 mod syscall_map_shared_mem_handler;
+mod syscall_mouse_handler;
 mod syscall_new_shared_mem_handler;
 mod syscall_send_capability_handler;
 mod syscall_spawn_process_handler;
-mod terminate_process_handler;
-mod wait_until_event;
+mod syscall_spawn_thread_handler;
+mod syscall_terminate_process_handler;
+mod syscall_wait_until_event_handler;
 
 struct ExtraData<'a> {
     saved_regs: &'a mut SyscallSavedRegs,
