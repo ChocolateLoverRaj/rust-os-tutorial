@@ -1,7 +1,7 @@
 use common::PageSize;
-use x86_64::{instructions::tlb::flush, structures::paging::PageTableFlags};
+use x86_64::instructions::tlb::flush;
 
-use crate::Page;
+use crate::{EffectiveFlags, Page};
 
 use super::{
     ManagedL4PageTable,
@@ -20,7 +20,7 @@ impl ManagedL4PageTable {
     pub unsafe fn update_flags(
         &mut self,
         page: Page,
-        flags: PageTableFlags,
+        flags: EffectiveFlags,
     ) -> Result<(), UpdateFlagsError2> {
         let mut l4 = self.table_mut();
         let mut l3 = l4

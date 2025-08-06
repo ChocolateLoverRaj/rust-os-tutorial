@@ -5,7 +5,7 @@ use x86_64::structures::paging::{
     PageTable, PageTableFlags, PageTableIndex, PhysFrame, page_table::PageTableEntry,
 };
 
-use crate::{Frame, translate_addr::TranslateToVirt};
+use crate::{EffectiveFlags, Frame, translate_addr::TranslateToVirt};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PageTableLevel {
@@ -90,7 +90,7 @@ impl PageTableEntryWithLevelMut<'_> {
         flags
     }
 
-    pub fn set_frame(&mut self, frame: Frame, flags: PageTableFlags) -> Result<(), SetFrameError> {
+    pub fn set_frame(&mut self, frame: Frame, flags: EffectiveFlags) -> Result<(), SetFrameError> {
         let level_frame_match = match self.level {
             PageTableLevel::L1 => matches!(frame.size(), PageSize::_4KiB),
             PageTableLevel::L2 => matches!(frame.size(), PageSize::_2MiB),
@@ -100,8 +100,10 @@ impl PageTableEntryWithLevelMut<'_> {
         if !level_frame_match {
             return Err(SetFrameError::NotAllowed);
         }
-        self.entry
-            .set_addr(frame.start_addr(), self.get_auto_flags() | flags);
+        self.entry.set_addr(
+            frame.start_addr(),
+            self.get_auto_flags() | flags.page_table_flags(),
+        );
         Ok(())
     }
 
@@ -125,7 +127,7 @@ impl PageTableEntryWithLevelMut<'_> {
     }
 
     /// Only sets flags for pointing to a frame, not pointing to a table
-    pub fn set_flags(&mut self, flags: PageTableFlags) -> Result<(), SetFlagsError> {
+    pub fn set_flags(&mut self, flags: EffectiveFlags) -> Result<(), SetFlagsError> {
         let frame_size = self.level.target_frame_size().ok_or(SetFlagsError::IsL4)?;
         if !self.entry.flags().contains(PageTableFlags::PRESENT) {
             return Err(SetFlagsError::NotPresent);
@@ -135,7 +137,8 @@ impl PageTableEntryWithLevelMut<'_> {
         {
             return Err(SetFlagsError::IsPageTable);
         }
-        self.entry.set_flags(self.get_auto_flags() | flags);
+        self.entry
+            .set_flags(self.get_auto_flags() | flags.page_table_flags());
         Ok(())
     }
 }

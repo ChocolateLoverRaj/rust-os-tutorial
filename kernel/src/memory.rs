@@ -9,14 +9,15 @@ use virtual_memory::VirtualMemory;
 use x86_64::{
     PhysAddr,
     registers::control::{Cr3, Cr3Flags},
-    structures::paging::{FrameAllocator, PageTableFlags, PhysFrame, Size4KiB},
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
 use crate::{
+    EffectiveFlags, Frame, ManagedL4PageTable,
     get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
-    map_page, max_page_size,
-    translate_addr::{TranslateToVirt, ZeroFrame},
+    max_page_size,
+    translate_addr::{TranslateFrame2, TranslateToVirt},
 };
 pub use physical_memory::PhysicalMemoryFrameAllocator;
 
@@ -38,6 +39,7 @@ static GLOBAL_ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = Talck::new({
 pub struct Memory {
     pub physical_memory: spin::Mutex<PhysicalMemory>,
     pub virtual_memory: spin::Mutex<VirtualMemory>,
+    pub kernel_l4: ManagedL4PageTable,
     pub new_kernel_cr3: PhysFrame<Size4KiB>,
     pub new_kernel_cr3_flags: Cr3Flags,
 }
@@ -118,7 +120,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
 
     let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut frame_allocator).unwrap();
-    unsafe { new_l4_frame.zero() };
+    let mut l4 = unsafe { ManagedL4PageTable::new(new_l4_frame) };
 
     // Offset map everything that is currently offset mapped
     let mut last_mapped_address = None::<PhysAddr>;
@@ -132,47 +134,42 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
         .contains(&entry.entry_type)
         {
             let range_to_map = {
-                let first = PhysAddr::new(entry.base);
-                let last = first + (entry.length - 1);
+                let start = PhysAddr::new(entry.base);
+                let end = start + entry.length;
                 match last_mapped_address {
                     Some(last_mapped_address) => {
-                        if first > last_mapped_address {
-                            Some(first..=last)
-                        } else if last > last_mapped_address {
-                            Some(last_mapped_address + 1..=last)
+                        if start > last_mapped_address {
+                            Some(start..end)
+                        } else if end > last_mapped_address {
+                            Some(last_mapped_address + 1..end)
                         } else {
                             None
                         }
                     }
-                    None => Some(first..=last),
+                    None => Some(start..end),
                 }
             };
             if let Some(range_to_map) = range_to_map {
-                let first_frame = range_to_map.start().align_down(page_size.byte_len_u64());
-                let last_frame = range_to_map.end().align_down(page_size.byte_len_u64());
-                let pages_len = (last_frame - first_frame) / page_size.byte_len_u64() + 1;
+                let first_frame = Frame::new(
+                    range_to_map.start.align_down(page_size.byte_len_u64()),
+                    page_size,
+                )
+                .unwrap();
+                let pages_len = range_to_map.end.as_u64().div_ceil(page_size.byte_len_u64())
+                    - range_to_map.start.as_u64() / page_size.byte_len_u64();
 
                 for i in 0..pages_len {
-                    let frame = first_frame + i * page_size.byte_len_u64();
-                    let page = frame.to_virt();
-                    let flags = PageTableFlags::WRITABLE | PageTableFlags::GLOBAL;
-                    unsafe {
-                        map_page(
-                            new_l4_frame,
-                            page_size,
-                            page,
-                            frame,
-                            flags,
-                            &mut frame_allocator,
-                        )
-                    }
-                    .unwrap();
+                    let frame = first_frame.offset(i).unwrap();
+                    let page = frame.to_page();
+                    let flags = EffectiveFlags {
+                        writable: true,
+                        executable: false,
+                        user_accessible: false,
+                        global: true,
+                    };
+                    unsafe { l4.map_page(page, frame, flags, &mut frame_allocator) }.unwrap();
                 }
-                last_mapped_address = Some(
-                    range_to_map.end().align_down(page_size.byte_len_u64())
-                        + page_size.byte_len_u64()
-                        - 1,
-                );
+                last_mapped_address = Some(range_to_map.end.align_up(page_size.byte_len_u64()) - 1);
             }
         }
     }
@@ -223,6 +220,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     MEMORY.call_once(|| Memory {
         physical_memory: Mutex::new(physical_memory),
         virtual_memory: Mutex::new(virtual_memory),
+        kernel_l4: l4,
         new_kernel_cr3: new_l4_frame,
         new_kernel_cr3_flags: cr3_flags,
     });

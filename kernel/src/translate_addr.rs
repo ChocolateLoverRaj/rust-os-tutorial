@@ -4,7 +4,7 @@ use x86_64::{
     structures::paging::{Page, PageSize, PhysFrame},
 };
 
-use crate::hhdm_offset::HhdmOffset;
+use crate::{Frame, hhdm_offset::HhdmOffset};
 
 pub trait TranslateToVirt {
     fn to_virt(self) -> VirtAddr;
@@ -34,6 +34,16 @@ pub trait TranslateFrame<S: PageSize> {
 impl<S: PageSize> TranslateFrame<S> for PhysFrame<S> {
     fn to_page(self) -> Page<S> {
         Page::from_start_address(self.start_address().to_virt()).unwrap()
+    }
+}
+
+pub trait TranslateFrame2 {
+    fn to_page(self) -> crate::Page;
+}
+
+impl TranslateFrame2 for Frame {
+    fn to_page(self) -> crate::Page {
+        crate::Page::new(self.start_addr().to_virt(), self.size()).unwrap()
     }
 }
 

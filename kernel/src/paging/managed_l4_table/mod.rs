@@ -4,7 +4,9 @@ use page_table_with_level::{PageTableLevel, PageTableWithLevelMut};
 use x86_64::structures::paging::{PageTable, PhysFrame};
 
 use crate::translate_addr::TranslateToVirt;
+pub use effective_flags::*;
 
+mod effective_flags;
 mod map_page;
 mod page_table_with_level;
 mod unmap_page;
