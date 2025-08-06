@@ -104,7 +104,7 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                                 &mut frame_allocator,
                             )
                         };
-                        if let Err(MapPageError::AllocateFrame) = &result {
+                        if let Err(MapPageError::FrameAllocationFailed) = &result {
                             // TODO: Cleanup
                             return Err(SyscallMemProtError::OutOfPhysMem);
                         }

@@ -44,7 +44,7 @@ fn set_addr(
 
 #[derive(Debug)]
 pub enum MapPageError {
-    AllocateFrame,
+    FrameAllocationFailed,
     Frame(FrameError),
     AlreadyMapped,
 }
@@ -57,7 +57,7 @@ fn get_or_create_page_table<'a>(
         if page_table_entry.is_unused() {
             let frame = frame_allocator
                 .allocate_frame()
-                .ok_or(MapPageError::AllocateFrame)?;
+                .ok_or(MapPageError::FrameAllocationFailed)?;
             let mut new_page_table =
                 NonNull::new(frame.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
             unsafe { new_page_table.write_bytes(0, 1) };

@@ -124,7 +124,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                     };
                     if let Err(e) = &result {
                         match e {
-                            MapPageError::AllocateFrame => {
+                            MapPageError::FrameAllocationFailed => {
                                 // TODO: Clean up previous
                                 return Err(SyscallSubscribeToKeyboardError::OutOfPhysMem);
                             }

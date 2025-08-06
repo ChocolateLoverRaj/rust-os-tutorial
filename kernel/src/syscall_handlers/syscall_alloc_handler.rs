@@ -105,7 +105,9 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                         )
                     }
                     .map_err(|e| match e {
-                        MapPageError::AllocateFrame => SyscallAllocError::OutOfPhysicalMemory,
+                        MapPageError::FrameAllocationFailed => {
+                            SyscallAllocError::OutOfPhysicalMemory
+                        }
                         e => unreachable!("{:#?}", e),
                     })?;
                 }

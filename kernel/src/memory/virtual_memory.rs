@@ -99,7 +99,7 @@ impl AllocatedPages<'_> {
                     frame_allocator,
                 )
             };
-            if let Err(MapPageError::AllocateFrame) = result {
+            if let Err(MapPageError::FrameAllocationFailed) = result {
                 return Err(MapToError::OutOfPhysMem);
             } else {
                 result.unwrap();

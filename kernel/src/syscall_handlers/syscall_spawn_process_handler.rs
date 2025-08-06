@@ -2,7 +2,7 @@ use core::{num::NonZero, ops::Deref, ptr::NonNull};
 
 use alloc::{boxed::Box, format, sync::Arc};
 use common::{
-    PageSize, LOWER_HALF_END, MapModule, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
+    LOWER_HALF_END, MapModule, PageSize, SpawnProcessMemoryFlags, SpawnProcessMemoryMapping,
     SpawnProcessRelativePriority, Syscall, SyscallSpawnProcess, SyscallSpawnProcessError,
     SyscallSpawnProcessInput,
 };
@@ -200,7 +200,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     };
                     if let Err(e) = &result {
                         match e {
-                            MapPageError::AllocateFrame => {
+                            MapPageError::FrameAllocationFailed => {
                                 return Err(SyscallSpawnProcessError::OutOfPhysMem);
                             }
                             _ => result.unwrap(),
@@ -303,7 +303,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     } {
                         Ok(_) => {}
                         Err(e) => match e {
-                            MapPageError::AllocateFrame => {
+                            MapPageError::FrameAllocationFailed => {
                                 return Err(SyscallSpawnProcessError::OutOfPhysMem);
                             }
                             e => unreachable!("{e:?}"),
