@@ -8,7 +8,7 @@ use x86_64::{
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
-use crate::task::ProcessId;
+use crate::{Frame, task::ProcessId};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum KernelMemoryUsageType {
@@ -36,7 +36,7 @@ impl PhysicalMemory {
         &mut self,
         page_size: PageSize,
         memory_type: MemoryType,
-    ) -> Option<PhysAddr> {
+    ) -> Option<Frame> {
         let aligned_start = self.map.iter().find_map(|(interval, memory_type)| {
             if let MemoryType::Usable = memory_type {
                 let aligned_start = interval.start().next_multiple_of(page_size.byte_len_u64());
@@ -55,7 +55,7 @@ impl PhysicalMemory {
         self.map
             .insert_merge_touching_if_values_equal(range.into(), memory_type)
             .unwrap();
-        Some(PhysAddr::new(aligned_start))
+        Some(Frame::new(PhysAddr::new(aligned_start), page_size).unwrap())
     }
 
     pub fn get_kernel_frame_allocator(&mut self) -> PhysicalMemoryFrameAllocator<'_> {
@@ -129,6 +129,6 @@ unsafe impl FrameAllocator<Size4KiB> for PhysicalMemoryFrameAllocator<'_> {
         let frame = self
             .physical_memory
             .allocate_frame_with_type(PageSize::_4KiB, self.memory_type)?;
-        Some(PhysFrame::from_start_address(frame).unwrap())
+        Some(PhysFrame::from_start_address(frame.start_addr()).unwrap())
     }
 }

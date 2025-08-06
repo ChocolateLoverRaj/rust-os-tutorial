@@ -3,15 +3,15 @@ use core::ops::RangeInclusive;
 use common::{HIGHER_HALF_START, PageSize};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{FrameAllocator, PageTableFlags, PhysFrame, Size4KiB},
+    VirtAddr,
+    structures::paging::{FrameAllocator, Size4KiB},
 };
 
-use crate::{MapPageError, map_page, unmap_page};
+use crate::{EffectiveFlags, Frame, ManagedL4PageTable, MapPageError2, Page};
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
-    pub(super) cr3: PhysFrame<Size4KiB>,
+    pub(super) l4: ManagedL4PageTable,
 }
 
 impl VirtualMemory {
@@ -67,6 +67,8 @@ pub struct AllocatedPages<'a> {
 
 #[derive(Debug)]
 pub enum MapToError {
+    SizeMismatch,
+    OutsideOfRange,
     OutOfPhysMem,
 }
 
@@ -83,43 +85,37 @@ impl AllocatedPages<'_> {
     /// See the safety for [`x86_64::structures::paging::mapper::Mapper::map_to`]
     pub unsafe fn map_to(
         &mut self,
-        page: VirtAddr,
-        frame: PhysAddr,
-        flags: PageTableFlags,
+        page: Page,
+        frame: Frame,
+        flags: EffectiveFlags,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Result<(), MapToError> {
-        if self.range.contains(&page.as_u64()) {
-            let result = unsafe {
-                map_page(
-                    self.virtual_memory.cr3,
-                    self.page_size,
-                    page,
-                    frame,
-                    flags,
-                    frame_allocator,
-                )
-            };
-            if let Err(MapPageError::FrameAllocationFailed) = result {
-                return Err(MapToError::OutOfPhysMem);
-            } else {
-                result.unwrap();
-            }
+        if page.size() != self.page_size || frame.size() != self.page_size {
+            return Err(MapToError::SizeMismatch);
+        }
+        if !self.range.contains(&page.start_addr().as_u64()) {
+            return Err(MapToError::OutsideOfRange);
+        }
+        let result = unsafe {
+            self.virtual_memory
+                .l4
+                .map_page(page, frame, flags, frame_allocator)
+        };
+        if let Err(MapPageError2::FrameAllocationFailed) = result {
+            return Err(MapToError::OutOfPhysMem);
         } else {
-            panic!(
-                "Tried to map page {page:?}, which is outside of allocated range {:X?}",
-                self.range
-            )
+            result.unwrap();
         }
         Ok(())
     }
 
     /// All pages must be mapped
     pub fn unmap_and_deallocate(self) {
-        let first_page = VirtAddr::new(*self.range.start());
+        let first_page = Page::new(VirtAddr::new(*self.range.start()), self.page_size).unwrap();
         let pages_len = (self.range.end() - self.range.start() + 1) / self.page_size.byte_len_u64();
         for i in 0..pages_len {
-            let page = first_page + i * self.page_size.byte_len_u64();
-            unsafe { unmap_page(self.virtual_memory.cr3, self.page_size, page) }.unwrap();
+            let page = first_page.offset(i).unwrap();
+            unsafe { self.virtual_memory.l4.unmap_page(page) }.unwrap();
         }
         let _ = self.virtual_memory.set.cut(Interval::from(self.range));
     }

@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 
 use crate::Syscall;
 
-#[derive(Debug, Encode, Decode, Clone, Copy)]
+#[derive(Debug, Encode, Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PageSize {
     _4KiB,
     _2MiB,

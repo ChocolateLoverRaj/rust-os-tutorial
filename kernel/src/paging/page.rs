@@ -1,7 +1,7 @@
 use common::PageSize;
 use x86_64::VirtAddr;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Page {
     start_addr: VirtAddr,
     size: PageSize,

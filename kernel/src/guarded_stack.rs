@@ -1,11 +1,9 @@
 use alloc::collections::btree_map::BTreeMap;
 use common::PageSize;
-use x86_64::{
-    VirtAddr,
-    structures::paging::{Page, PageTableFlags},
-};
+use x86_64::{VirtAddr, structures::paging::PageTableFlags};
 
 use crate::{
+    EffectiveFlags, Page,
     call_with_rsp::call_with_rsp,
     local_apic_id::LocalApicId,
     memory::{KernelMemoryUsageType, MEMORY, MemoryType},
@@ -24,29 +22,30 @@ impl GuardedStack {
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
         let mut virtual_memory = memory.virtual_memory.lock();
-        let page_size = PageSize::_4KiB;
-        let n_mapped_pages = size.div_ceil(page_size.byte_len_u64());
+        let n_mapped_pages = size.div_ceil(STACK_PAGE_SIZE.byte_len_u64());
         let n_virtual_pages = n_mapped_pages + 1;
         let mut allocated_pages = virtual_memory
-            .allocate_contiguous_pages(page_size, n_virtual_pages)
+            .allocate_contiguous_pages(STACK_PAGE_SIZE, n_virtual_pages)
             .unwrap();
         // We purposely don't map the bottom page
         // so that it causes a page fault instead of silently overwriting data used for other purposes
-        let guard_page = allocated_pages.start_addr();
-        STACK_GUARD_PAGES
-            .lock()
-            .insert(Page::from_start_address(guard_page).unwrap(), stack_type);
-        let start_page = guard_page + page_size.byte_len_u64();
+        let guard_page = Page::new(allocated_pages.start_addr(), STACK_PAGE_SIZE).unwrap();
+        STACK_GUARD_PAGES.lock().insert(guard_page, stack_type);
+        let start_page = guard_page.offset(1).unwrap();
         for i in 0..n_mapped_pages {
-            let page = start_page + i * page_size.byte_len_u64();
+            let page = start_page.offset(i).unwrap();
             let frame = physical_memory
                 .allocate_frame_with_type(
-                    page_size,
+                    STACK_PAGE_SIZE,
                     MemoryType::UsedByKernel(KernelMemoryUsageType::Stack),
                 )
                 .unwrap();
-            let flags =
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+            let flags = EffectiveFlags {
+                writable: true,
+                executable: false,
+                user_accessible: false,
+                global: true,
+            };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
         }
@@ -73,5 +72,6 @@ pub enum StackType {
     Normal(LocalApicId),
 }
 
+pub const STACK_PAGE_SIZE: PageSize = PageSize::_4KiB;
 pub static STACK_GUARD_PAGES: spin::Mutex<BTreeMap<Page, StackType>> =
     spin::Mutex::new(BTreeMap::new());

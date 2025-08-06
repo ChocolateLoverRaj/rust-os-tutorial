@@ -39,7 +39,6 @@ static GLOBAL_ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = Talck::new({
 pub struct Memory {
     pub physical_memory: spin::Mutex<PhysicalMemory>,
     pub virtual_memory: spin::Mutex<VirtualMemory>,
-    pub kernel_l4: ManagedL4PageTable,
     pub new_kernel_cr3: PhysFrame<Size4KiB>,
     pub new_kernel_cr3_flags: Cr3Flags,
 }
@@ -214,13 +213,12 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
             set.insert_merge_touching(iu(0xFFFFFF8000000000)).unwrap();
             set
         },
-        cr3: new_l4_frame,
+        l4,
     };
 
     MEMORY.call_once(|| Memory {
         physical_memory: Mutex::new(physical_memory),
         virtual_memory: Mutex::new(virtual_memory),
-        kernel_l4: l4,
         new_kernel_cr3: new_l4_frame,
         new_kernel_cr3_flags: cr3_flags,
     });

@@ -5,6 +5,9 @@ use x86_64::structures::paging::{PageTable, PhysFrame};
 
 use crate::translate_addr::TranslateToVirt;
 pub use effective_flags::*;
+pub use map_page::*;
+pub use unmap_page::*;
+pub use update_flags::*;
 
 mod effective_flags;
 mod map_page;
