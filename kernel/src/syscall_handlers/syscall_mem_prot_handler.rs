@@ -1,15 +1,13 @@
 use common::{MemProt, SyscallMemProt, SyscallMemProtError};
 use itertools::Itertools;
 use nodit::{InclusiveInterval, Interval};
-use x86_64::{VirtAddr, structures::paging::PageTableFlags};
+use x86_64::VirtAddr;
 
 use crate::{
-    MapPageError, UnmapPageError, UpdateFlagsError,
+    EffectiveFlags, GetTableError, MapPageError2, Page, UnmapPageError2, UpdateFlagsError2,
     cpu_local_data::get_local,
-    map_page,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
-    unmap_page, update_flags,
 };
 
 use super::GenericSyscallHandler;
@@ -26,7 +24,7 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                 .unwrap()
                 .process;
             // We still have to obtain a write lock to safely map pages
-            let process_memory = current_process.memory.write();
+            let mut process_memory = current_process.memory.write();
             // Make sure the mem is plain
             let page_size = helper.input().page_size;
             let interval = Interval::from({
@@ -65,23 +63,22 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
 
             // Actually change mappings
             for i in 0..helper.input().pages_len.get() {
-                let page = VirtAddr::new(
-                    ((helper.input().start_page_index.get() + i) * page_size.byte_len()) as u64,
-                );
+                let page = Page::new(
+                    VirtAddr::new(helper.input().start_page_index.get() as u64),
+                    page_size,
+                )
+                .unwrap()
+                .offset(i as u64)
+                .unwrap();
                 if prot.contains(MemProt::READABLE) {
-                    let flags = {
-                        let mut flags = PageTableFlags::USER_ACCESSIBLE;
-                        if prot.contains(MemProt::WRITABLE) {
-                            flags |= PageTableFlags::WRITABLE;
-                        }
-                        if !prot.contains(MemProt::EXECUTABLE) {
-                            flags |= PageTableFlags::NO_EXECUTE;
-                        }
-                        flags
+                    let flags = EffectiveFlags {
+                        writable: prot.contains(MemProt::WRITABLE),
+                        executable: prot.contains(MemProt::EXECUTABLE),
+                        user_accessible: true,
+                        global: false,
                     };
-                    let result =
-                        unsafe { update_flags(current_process.cr3, page_size, page, flags) };
-                    if let Err(UpdateFlagsError::NotMapped) = &result {
+                    let result = unsafe { process_memory.l4.update_flags(page, flags) };
+                    if let Err(UpdateFlagsError2::GetTable(GetTableError::NotMapped)) = &result {
                         let mut phys_mem = MEMORY.get().unwrap().physical_memory.lock();
                         let frame = if let Some(frame) = phys_mem.allocate_frame_with_type(
                             page_size,
@@ -95,16 +92,11 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                         let mut frame_allocator =
                             phys_mem.get_user_mode_program_frame_allocator(current_process.id);
                         let result = unsafe {
-                            map_page(
-                                current_process.cr3,
-                                page_size,
-                                page,
-                                frame,
-                                flags,
-                                &mut frame_allocator,
-                            )
+                            process_memory
+                                .l4
+                                .map_page(page, frame, flags, &mut frame_allocator)
                         };
-                        if let Err(MapPageError::FrameAllocationFailed) = &result {
+                        if let Err(MapPageError2::FrameAllocationFailed) = &result {
                             // TODO: Cleanup
                             return Err(SyscallMemProtError::OutOfPhysMem);
                         }
@@ -112,8 +104,11 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                         result.unwrap();
                     }
                 } else {
-                    let result = unsafe { unmap_page(current_process.cr3, page_size, page) };
-                    if !matches!(result, Err(UnmapPageError::NotMapped)) {
+                    let result = unsafe { process_memory.l4.unmap_page(page) };
+                    if !matches!(
+                        result,
+                        Err(UnmapPageError2::GetTable(GetTableError::NotMapped))
+                    ) {
                         result.unwrap();
                     }
                 }

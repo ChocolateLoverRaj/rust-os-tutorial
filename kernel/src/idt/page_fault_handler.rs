@@ -6,15 +6,13 @@ use core::{
 use x86_64::{
     PrivilegeLevel,
     registers::control::Cr2,
-    structures::{
-        idt::{InterruptStackFrame, PageFaultErrorCode},
-        paging::{Page, Size4KiB},
-    },
+    structures::idt::{InterruptStackFrame, PageFaultErrorCode},
 };
 
 use crate::{
+    Page,
     cpu_local_data::get_local,
-    guarded_stack::{STACK_GUARD_PAGES, StackType},
+    guarded_stack::{STACK_GUARD_PAGES, STACK_PAGE_SIZE, StackType},
     smep_smap::{clac, has_smap},
     try_access_user_mem::AccessUserMemError,
 };
@@ -31,7 +29,11 @@ pub extern "x86-interrupt" fn page_fault_handler(
         let running_thread = local.running_thread.try_lock().unwrap().unwrap();
         todo!("Thread {running_thread:?} caused a page fault. Terminate process.");
     } else {
-        let accessed_page = Page::<Size4KiB>::containing_address(accessed_address);
+        let accessed_page = Page::new(
+            accessed_address.align_down(STACK_PAGE_SIZE.byte_len_u64()),
+            STACK_PAGE_SIZE,
+        )
+        .unwrap();
         if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE)
             && let Some(stack) = STACK_GUARD_PAGES.lock().get(&accessed_page)
         {

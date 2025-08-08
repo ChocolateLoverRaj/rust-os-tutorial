@@ -96,10 +96,10 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn change_owner(&mut self, page_size: PageSize, frame: PhysAddr, new_owner: ProcessId) {
+    pub fn change_owner(&mut self, frame: Frame, new_owner: ProcessId) {
         let interval = Interval::from({
-            let start = frame.as_u64();
-            start..start + page_size.byte_len_u64()
+            let start = frame.start_addr().as_u64();
+            start..start + frame.size().byte_len_u64()
         });
         let mut overlapping_mut = self.map.overlapping_mut(interval);
         let (_cut_interval, memory_type) = overlapping_mut.next().unwrap();

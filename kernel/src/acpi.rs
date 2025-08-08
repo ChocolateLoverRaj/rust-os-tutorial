@@ -2,9 +2,9 @@ use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use limine::response::RsdpResponse;
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{max_page_size, memory::MEMORY};
+use crate::{EffectiveFlags, Frame, Page, max_page_size, memory::MEMORY};
 
 /// Note: this cannot be sent across CPUs because the other CPUs did not flush their cache for changes in page tables
 #[derive(Debug, Clone)]
@@ -24,25 +24,30 @@ impl AcpiHandler for KernelAcpiHandler {
 
         let n_pages = ((size + physical_address) as u64).div_ceil(page_size.byte_len_u64())
             - physical_address as u64 / page_size.byte_len_u64();
-        let start_frame = PhysAddr::new(
-            physical_address as u64 / page_size.byte_len_u64() * page_size.byte_len_u64(),
-        );
+        let start_frame = Frame::new(
+            PhysAddr::new(
+                physical_address as u64 / page_size.byte_len_u64() * page_size.byte_len_u64(),
+            ),
+            page_size,
+        )
+        .unwrap();
         let mut pages = virtual_memory
             .allocate_contiguous_pages(page_size, n_pages)
             .unwrap();
-        let start_page = VirtAddr::new(*pages.range().start());
+        let start_page = Page::new(VirtAddr::new(*pages.range().start()), page_size).unwrap();
 
         for i in 0..n_pages {
+            let page = start_page.offset(i).unwrap();
+            let frame = start_frame.offset(i).unwrap();
+            let flags = EffectiveFlags {
+                executable: false,
+                writable: false,
+                global: true,
+                user_accessible: false,
+            };
             unsafe {
                 pages
-                    .map_to(
-                        start_page + i * page_size.byte_len_u64(),
-                        start_frame + i * page_size.byte_len_u64(),
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::NO_EXECUTE
-                            | PageTableFlags::GLOBAL,
-                        &mut frame_allocator,
-                    )
+                    .map_to(page, frame, flags, &mut frame_allocator)
                     .unwrap();
             }
         }
@@ -51,7 +56,8 @@ impl AcpiHandler for KernelAcpiHandler {
             PhysicalMapping::new(
                 physical_address,
                 NonNull::new(
-                    (start_page + physical_address as u64 % page_size.byte_len_u64()).as_mut_ptr(),
+                    (start_page.start_addr() + physical_address as u64 % page_size.byte_len_u64())
+                        .as_mut_ptr(),
                 )
                 .unwrap(),
                 size,

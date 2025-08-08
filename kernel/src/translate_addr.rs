@@ -89,3 +89,14 @@ impl<S: PageSize> ZeroFrame for PhysFrame<S> {
         };
     }
 }
+
+impl ZeroFrame for Frame {
+    unsafe fn zero(self) {
+        let ptr = self.start_addr().to_virt().as_mut_ptr::<u8>();
+        let len = self.size().byte_len();
+        // Safety: frame is offset mapped
+        unsafe {
+            ptr.write_bytes(0, len);
+        };
+    }
+}

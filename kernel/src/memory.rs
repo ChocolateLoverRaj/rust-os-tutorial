@@ -119,7 +119,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
 
     let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut frame_allocator).unwrap();
-    let mut l4 = unsafe { ManagedL4PageTable::new(new_l4_frame) };
+    let mut l4 = unsafe { ManagedL4PageTable::new_kernel(new_l4_frame) };
 
     // Offset map everything that is currently offset mapped
     let mut last_mapped_address = None::<PhysAddr>;

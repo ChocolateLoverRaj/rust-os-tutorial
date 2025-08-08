@@ -4,10 +4,12 @@ use acpi::{
     spcr::{Spcr, SpcrInterfaceType},
 };
 use alloc::boxed::Box;
+use common::PageSize;
 use uart::{address::MmioAddress, writer::UartWriter};
-use x86_64::{PhysAddr, structures::paging::PageTableFlags};
+use x86_64::PhysAddr;
 
 use crate::{
+    EffectiveFlags, Frame, Page,
     logger::{self, AnyWriter},
     max_page_size,
     memory::MEMORY,
@@ -43,8 +45,11 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             let memory = MEMORY.get().unwrap();
             let phys_start_address = base_address.address;
             let len = u64::from(stride_bytes) * 8;
-            let start_frame =
-                PhysAddr::new(phys_start_address).align_down(page_size.byte_len_u64());
+            let start_frame = Frame::new(
+                PhysAddr::new(phys_start_address).align_down(page_size.byte_len_u64()),
+                PageSize::_4KiB,
+            )
+            .unwrap();
             let n_pages = (phys_start_address + len).div_ceil(page_size.byte_len_u64())
                 - phys_start_address.div_ceil(page_size.byte_len_u64());
             let mut physical_memory = memory.physical_memory.lock();
@@ -53,27 +58,24 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             let mut allocated_pages = virtual_memory
                 .allocate_contiguous_pages(page_size, n_pages)
                 .unwrap();
-            let start_page = allocated_pages.start_addr();
+            let start_page = Page::new(allocated_pages.start_addr(), page_size).unwrap();
             for i in 0..n_pages {
-                let page = start_page + i * page_size.byte_len_u64();
-                let frame = start_frame + i * page_size.byte_len_u64();
+                let page = start_page.offset(i).unwrap();
+                let frame = start_frame.offset(i).unwrap();
+                let flags = EffectiveFlags {
+                    writable: true,
+                    executable: false,
+                    global: true,
+                    user_accessible: false,
+                    // TODO: Disable cache
+                };
                 // Safety: the memory we are going to access is defined to be valid
-                unsafe {
-                    allocated_pages.map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::NO_EXECUTE
-                            | PageTableFlags::NO_CACHE
-                            | PageTableFlags::GLOBAL,
-                        &mut frame_allocator,
-                    )
-                }
-                .unwrap();
+                unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }
+                    .unwrap();
             }
-            let base_pointer =
-                (start_page + phys_start_address % page_size.byte_len_u64()).as_mut_ptr();
+            let base_pointer = (start_page.start_addr()
+                + phys_start_address % page_size.byte_len_u64())
+            .as_mut_ptr();
             unsafe { UartWriter::new(MmioAddress::new(base_pointer, stride_bytes as usize), false) }
         })
     {

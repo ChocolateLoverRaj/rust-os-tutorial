@@ -2,10 +2,11 @@ use acpi::platform::interrupt::Apic;
 use alloc::alloc::Allocator;
 use common::PageSize;
 use x2apic::ioapic::{IoApic, RedirectionTableEntry};
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::{
-    interrupt_vector::InterruptVector, memory::MEMORY, pic8259_interrupts::Pic8259Interrupts,
+    EffectiveFlags, Frame, Page, interrupt_vector::InterruptVector, memory::MEMORY,
+    pic8259_interrupts::Pic8259Interrupts,
 };
 
 pub fn init(apic: &Apic<impl Allocator>) {
@@ -30,19 +31,25 @@ pub fn init(apic: &Apic<impl Allocator>) {
         let mut physical_memory = memory.physical_memory.lock();
         let mut virtual_memory = memory.virtual_memory.lock();
         for io_apic_info in apic.io_apics.iter() {
-            let frame = PhysAddr::new(io_apic_info.address.into());
+            let frame =
+                Frame::new(PhysAddr::new(io_apic_info.address.into()), PageSize::_4KiB).unwrap();
             let mut allocated_pages = virtual_memory
                 .allocate_contiguous_pages(PageSize::_4KiB, 1)
                 .unwrap();
-            let page = VirtAddr::new(*allocated_pages.range().start());
-            let flags = PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::NO_EXECUTE
-                | PageTableFlags::NO_CACHE
-                | PageTableFlags::GLOBAL;
+            let page = Page::new(
+                VirtAddr::new(*allocated_pages.range().start()),
+                PageSize::_4KiB,
+            )
+            .unwrap();
+            let flags = EffectiveFlags {
+                writable: true,
+                executable: false,
+                global: true,
+                user_accessible: false, // TODO: Specify no cache
+            };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
-            let mut io_apic = unsafe { IoApic::new(page.as_u64()) };
+            let mut io_apic = unsafe { IoApic::new(page.start_addr().as_u64()) };
             let max_entry_relative = unsafe { io_apic.max_table_entry() };
             let global_system_interrupts = io_apic_info.global_system_interrupt_base
                 ..=io_apic_info.global_system_interrupt_base + u32::from(max_entry_relative);

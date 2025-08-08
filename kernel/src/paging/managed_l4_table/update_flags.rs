@@ -22,23 +22,24 @@ impl ManagedL4PageTable {
         page: Page,
         flags: EffectiveFlags,
     ) -> Result<(), UpdateFlagsError2> {
-        let mut l4 = self.table_mut();
-        let mut l3 = l4
+        let l4 = self.table_mut();
+        let l3 = l4
             .entry_mut(page.start_addr().p4_index())
             .get_page_table_mut()
             .map_err(UpdateFlagsError2::GetTable)?;
-        let mut l3_entry = l3.entry_mut(page.start_addr().p3_index());
-        let mut entry = if let PageSize::_1GiB = page.size() {
+        let l3_entry = l3.entry_mut(page.start_addr().p3_index());
+        let mut entry: super::PageTableEntryWithLevelMut<'_> = if let PageSize::_1GiB = page.size()
+        {
             l3_entry
         } else {
-            let mut l2 = l3_entry
+            let l2 = l3_entry
                 .get_page_table_mut()
                 .map_err(UpdateFlagsError2::GetTable)?;
-            let mut l2_entry = l2.entry_mut(page.start_addr().p2_index());
+            let l2_entry = l2.entry_mut(page.start_addr().p2_index());
             if let PageSize::_2MiB = page.size() {
                 l2_entry
             } else {
-                let mut l1 = l2_entry
+                let l1 = l2_entry
                     .get_page_table_mut()
                     .map_err(UpdateFlagsError2::GetTable)?;
                 l1.entry_mut(page.start_addr().p1_index())

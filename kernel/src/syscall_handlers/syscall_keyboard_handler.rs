@@ -5,16 +5,15 @@ use common::{
     SyscallSubscribeToKeyboardError, SyscallSubscribeToKeyboardOutput,
 };
 use nodit::{InclusiveInterval, Interval, interval::ee};
-use x86_64::{VirtAddr, structures::paging::PageTableFlags};
+use x86_64::VirtAddr;
 
 use crate::{
-    Capability, CapabilityId, EventStream, EventStreamSource, MapPageError,
+    Capability, CapabilityId, EffectiveFlags, EventStream, EventStreamSource, MapPageError2, Page,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
-    map_page,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
-    translate_addr::TranslateToVirt,
+    translate_addr::ZeroFrame,
 };
 
 use super::GenericSyscallHandler;
@@ -98,33 +97,26 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                     return Err(SyscallSubscribeToKeyboardError::OutOfPhysMem);
                 };
                 // Zero the frame
-                let ptr = frame.to_virt().as_mut_ptr::<u8>();
-                let len = page_size.byte_len();
-                unsafe {
-                    ptr.write_bytes(0, len);
-                }
+                unsafe { frame.zero() };
                 // Map in user addr space
                 {
-                    let page =
-                        VirtAddr::new(interval.start() + i as u64 * PageSize::_4KiB.byte_len_u64());
-                    let flags = PageTableFlags::USER_ACCESSIBLE
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_EXECUTE;
+                    let page = Page::new(VirtAddr::new(interval.start()), page_size)
+                        .unwrap()
+                        .offset(i as u64)
+                        .unwrap();
+                    let flags = EffectiveFlags {
+                        writable: true,
+                        executable: false,
+                        global: false,
+                        user_accessible: true,
+                    };
                     let mut frame_allocator =
                         phys_mem.get_user_mode_program_frame_allocator(current_process.id);
-                    let result = unsafe {
-                        map_page(
-                            current_process.cr3,
-                            PageSize::_4KiB,
-                            page,
-                            frame,
-                            flags,
-                            &mut frame_allocator,
-                        )
-                    };
+                    let result =
+                        unsafe { mem.l4.map_page(page, frame, flags, &mut frame_allocator) };
                     if let Err(e) = &result {
                         match e {
-                            MapPageError::FrameAllocationFailed => {
+                            MapPageError2::FrameAllocationFailed => {
                                 // TODO: Clean up previous
                                 return Err(SyscallSubscribeToKeyboardError::OutOfPhysMem);
                             }
@@ -134,10 +126,16 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                 }
                 // Map in kernel addr space
                 {
-                    let page = VirtAddr::new(
-                        kernel_pages.range().start() + i as u64 * PageSize::_4KiB.byte_len_u64(),
-                    );
-                    let flags = PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+                    let page = Page::new(VirtAddr::new(*kernel_pages.range().start()), page_size)
+                        .unwrap()
+                        .offset(i as u64)
+                        .unwrap();
+                    let flags = EffectiveFlags {
+                        writable: true,
+                        executable: false,
+                        user_accessible: false,
+                        global: true,
+                    };
                     let mut frame_allocator = phys_mem.get_kernel_frame_allocator();
                     if let Err(_e) =
                         unsafe { kernel_pages.map_to(page, frame, flags, &mut frame_allocator) }

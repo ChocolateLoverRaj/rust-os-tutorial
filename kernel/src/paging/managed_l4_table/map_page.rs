@@ -4,9 +4,10 @@ use x86_64::structures::paging::{FrameAllocator, Size4KiB};
 use crate::{EffectiveFlags, Frame, Page};
 
 use super::{
-    ManagedL4PageTable, PageTableWithLevelMut,
+    ManagedL4PageTable,
     page_table_with_level::{
-        GetTableError, PageTableEntryWithLevelMut, SetFrameError, SetTableError,
+        GetTableError, PageTableEntryWithLevelMut, PageTableWithLevelMut, SetFrameError,
+        SetTableError,
     },
 };
 
@@ -19,7 +20,7 @@ pub enum MapPageError2 {
 }
 
 fn get_or_create_page_table<'a>(
-    mut page_table_entry: PageTableEntryWithLevelMut<'a>,
+    page_table_entry: PageTableEntryWithLevelMut<'a>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> Result<PageTableWithLevelMut<'a>, MapPageError2> {
     Ok({
@@ -53,8 +54,8 @@ impl ManagedL4PageTable {
         flags: EffectiveFlags,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Result<(), MapPageError2> {
-        let mut l4 = self.table_mut();
-        let mut l3 =
+        let l4 = self.table_mut();
+        let l3 =
             get_or_create_page_table(l4.entry_mut(page.start_addr().p4_index()), frame_allocator)?;
         if let PageSize::_1GiB = page.size() {
             l3.entry_mut(page.start_addr().p3_index())
@@ -62,7 +63,7 @@ impl ManagedL4PageTable {
                 .map_err(MapPageError2::SetFrame)?;
             return Ok(());
         }
-        let mut l2 =
+        let l2 =
             get_or_create_page_table(l3.entry_mut(page.start_addr().p3_index()), frame_allocator)?;
         if let PageSize::_2MiB = page.size() {
             l2.entry_mut(page.start_addr().p2_index())
@@ -70,7 +71,7 @@ impl ManagedL4PageTable {
                 .map_err(MapPageError2::SetFrame)?;
             return Ok(());
         }
-        let mut l1 =
+        let l1 =
             get_or_create_page_table(l2.entry_mut(page.start_addr().p2_index()), frame_allocator)?;
         l1.entry_mut(page.start_addr().p1_index())
             .set_frame(frame, flags)

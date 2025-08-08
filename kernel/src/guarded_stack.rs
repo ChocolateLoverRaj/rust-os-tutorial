@@ -1,6 +1,6 @@
 use alloc::collections::btree_map::BTreeMap;
 use common::PageSize;
-use x86_64::{VirtAddr, structures::paging::PageTableFlags};
+use x86_64::VirtAddr;
 
 use crate::{
     EffectiveFlags, Page,
@@ -50,7 +50,7 @@ impl GuardedStack {
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
         }
         GuardedStack {
-            top: (start_page + n_mapped_pages * PageSize::_4KiB.byte_len_u64()),
+            top: (start_page.start_addr() + n_mapped_pages * PageSize::_4KiB.byte_len_u64()),
         }
     }
 

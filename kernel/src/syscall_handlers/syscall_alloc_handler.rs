@@ -3,15 +3,14 @@ use core::num::NonZero;
 use common::{LOWER_HALF_END, MemProt, PageSize, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ee;
 use raw_cpuid::CpuId;
-use x86_64::{VirtAddr, structures::paging::PageTableFlags};
+use x86_64::VirtAddr;
 
 use crate::{
-    MapPageError,
+    EffectiveFlags, MapPageError2, Page,
     cpu_local_data::get_local,
-    map_page,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
-    translate_addr::TranslateToVirt,
+    translate_addr::TranslateFrame2,
 };
 
 use super::GenericSyscallHandler;
@@ -70,12 +69,11 @@ impl GenericSyscallHandler for SyscallAllocHandler {
 
             // Map if needed
             if flags.contains(MemProt::READABLE) {
-                let start_page = VirtAddr::new(*range.start())
-                    .align_down(helper.input().page_size.byte_len_u64());
+                let start_page = Page::new(VirtAddr::new(*range.start()), page_size).unwrap();
                 let memory = MEMORY.get().unwrap();
                 let mut physical_memory = memory.physical_memory.lock();
                 for i in 0..helper.input().pages_len.get() as u64 {
-                    let page = start_page + i * helper.input().page_size.byte_len_u64();
+                    let page = start_page.offset(i).unwrap();
                     let frame = physical_memory
                         .allocate_frame_with_type(
                             helper.input().page_size,
@@ -85,27 +83,26 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                     // We could potentially improve performance by not zeroing frames and instead reusing frames released by the same process
                     unsafe {
                         frame
-                            .to_virt()
+                            .to_page()
+                            .start_addr()
                             .as_mut_ptr::<u8>()
                             .write_bytes(0, helper.input().page_size.byte_len())
                     };
-                    let flags = PageTableFlags::USER_ACCESSIBLE
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_EXECUTE;
+                    let flags = EffectiveFlags {
+                        writable: true,
+                        executable: false,
+                        global: false,
+                        user_accessible: true,
+                    };
                     let frame_allocator = &mut physical_memory
                         .get_user_mode_program_frame_allocator(current_process.id);
                     unsafe {
-                        map_page(
-                            current_process.cr3,
-                            helper.input().page_size,
-                            page,
-                            frame,
-                            flags,
-                            frame_allocator,
-                        )
+                        process_memory
+                            .l4
+                            .map_page(page, frame, flags, frame_allocator)
                     }
                     .map_err(|e| match e {
-                        MapPageError::FrameAllocationFailed => {
+                        MapPageError2::FrameAllocationFailed => {
                             SyscallAllocError::OutOfPhysicalMemory
                         }
                         e => unreachable!("{:#?}", e),

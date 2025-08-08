@@ -37,7 +37,7 @@ impl GenericSyscallHandler for SyscallNewSharedMemHandler {
                             {
                                 used.insert_merge_touching(
                                     {
-                                        let start = phys_frame.as_u64();
+                                        let start = phys_frame.start_addr().as_u64();
                                         start..start + page_size.byte_len_u64()
                                     }
                                     .into(),

@@ -1,13 +1,16 @@
 use core::ptr::NonNull;
 
 use common::PageSize;
+use raw_cpuid::CpuId;
 use x86_64::structures::paging::{
     PageTable, PageTableFlags, PageTableIndex, PhysFrame, page_table::PageTableEntry,
 };
 
 use crate::{EffectiveFlags, Frame, translate_addr::TranslateToVirt};
 
-#[derive(Debug, Clone, Copy)]
+use super::MapRestrictions;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageTableLevel {
     L1,
     L2,
@@ -39,12 +42,15 @@ impl PageTableLevel {
 pub struct PageTableEntryWithLevelMut<'a> {
     entry: &'a mut PageTableEntry,
     level: PageTableLevel,
+    l4_restrictions: &'a MapRestrictions,
 }
 
 #[derive(Debug)]
 pub enum SetFrameError {
     /// Either the page table is a L4 table (you can't map a 512 GiB frame) or the frame size is incompatible with the table level.
     NotAllowed,
+    /// This CPU cannot have 1 GiB page sizes
+    PageSizeNotSupported,
 }
 
 #[derive(Debug)]
@@ -100,6 +106,13 @@ impl PageTableEntryWithLevelMut<'_> {
         if !level_frame_match {
             return Err(SetFrameError::NotAllowed);
         }
+        if frame.size() == PageSize::_1GiB
+            && !CpuId::new()
+                .get_extended_processor_and_feature_identifiers()
+                .is_some_and(|info| info.has_1gib_pages())
+        {
+            return Err(SetFrameError::PageSizeNotSupported);
+        }
         self.entry.set_addr(
             frame.start_addr(),
             self.get_auto_flags() | flags.page_table_flags(),
@@ -146,12 +159,16 @@ impl PageTableEntryWithLevelMut<'_> {
 impl<'a> PageTableEntryWithLevelMut<'a> {
     /// This method also zeroes the frame
     pub fn set_page_table(
-        &mut self,
+        self,
         frame: PhysFrame,
     ) -> Result<PageTableWithLevelMut<'a>, SetTableError> {
         let page_table_level = self.level.sub_level().ok_or(SetTableError::IsL1)?;
-        let mut ptr =
-            NonNull::new(frame.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
+        if self.level == PageTableLevel::L4 && !self.l4_restrictions.can_create_new_l4_entries() {
+            panic!(
+                "Cannot create new L3 pages because the kernel page table would be out of sync with user page tables"
+            )
+        }
+        let ptr = NonNull::new(frame.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
         unsafe { ptr.write_bytes(0, 1) };
 
         self.entry.set_frame(
@@ -159,12 +176,13 @@ impl<'a> PageTableEntryWithLevelMut<'a> {
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
         );
         Ok(PageTableWithLevelMut {
-            page_table: unsafe { ptr.as_mut() },
+            page_table: ptr,
             level: page_table_level,
+            l4_restrictions: self.l4_restrictions,
         })
     }
 
-    pub fn get_page_table_mut(&mut self) -> Result<PageTableWithLevelMut<'a>, GetTableError> {
+    pub fn get_page_table_mut(self) -> Result<PageTableWithLevelMut<'a>, GetTableError> {
         let page_table_level = self.level.sub_level().ok_or(GetTableError::IsL1)?;
         if self.entry.is_unused() {
             return Err(GetTableError::NotMapped);
@@ -173,30 +191,40 @@ impl<'a> PageTableEntryWithLevelMut<'a> {
             return Err(GetTableError::MappedToFrame);
         }
         let frame = self.entry.frame(false).unwrap();
-        let mut ptr =
-            NonNull::new(frame.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
+        let ptr = NonNull::new(frame.start_address().to_virt().as_mut_ptr::<PageTable>()).unwrap();
         Ok(PageTableWithLevelMut {
-            page_table: unsafe { ptr.as_mut() },
+            page_table: ptr,
             level: page_table_level,
+            l4_restrictions: self.l4_restrictions,
         })
     }
 }
 
 #[derive(Debug)]
 pub struct PageTableWithLevelMut<'a> {
-    pub(super) page_table: &'a mut PageTable,
+    pub(super) l4_restrictions: &'a MapRestrictions,
+    pub(super) page_table: NonNull<PageTable>,
     pub(super) level: PageTableLevel,
 }
 
 impl<'a> PageTableWithLevelMut<'a> {
-    pub fn entry_mut(&mut self, index: PageTableIndex) -> PageTableEntryWithLevelMut<'a> {
+    pub fn entry_mut(mut self, index: PageTableIndex) -> PageTableEntryWithLevelMut<'a> {
+        if self.level == PageTableLevel::L4 {
+            let range = self.l4_restrictions.l4_managed_entry_range();
+            if !range.contains(&index) {
+                panic!(
+                    "Cannot access L4 entry {index:?} because it is outside of the range managed by this page table ({range:?})"
+                )
+            }
+        }
         PageTableEntryWithLevelMut {
             entry: {
-                let mut ptr = NonNull::from_mut(&mut self.page_table[index]);
+                let mut ptr = NonNull::from_mut(&mut unsafe { self.page_table.as_mut() }[index]);
                 // Safety: We are still capturing a &mut to the managed L4 table
                 unsafe { ptr.as_mut() }
             },
             level: self.level,
+            l4_restrictions: self.l4_restrictions,
         }
     }
 }

@@ -4,9 +4,12 @@ use common::PageSize;
 use force_send_sync::SendSync;
 use spin::Once;
 use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{cpu_local_data::get_local, interrupt_vector::InterruptVector, memory::MEMORY};
+use crate::{
+    EffectiveFlags, Frame, cpu_local_data::get_local, interrupt_vector::InterruptVector,
+    memory::MEMORY,
+};
 
 #[derive(Debug)]
 pub enum LocalApicAccess {
@@ -24,7 +27,8 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
         if cpu_has_x2apic() {
             LocalApicAccess::RegisterBased
         } else {
-            let frame = PhysAddr::new(apic.local_apic_address);
+            let frame =
+                Frame::new(PhysAddr::new(apic.local_apic_address), PageSize::_4KiB).unwrap();
             // Local APIC is always exactly 4 KiB, aligned to 4 KiB
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
@@ -33,22 +37,17 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
             let mut pages = virtual_memory
                 .allocate_contiguous_pages(PageSize::_4KiB, 1)
                 .unwrap();
-            let page = pages.start_addr();
+            let page = pages.start_page();
+            let flags = EffectiveFlags {
+                writable: true,
+                executable: false,
+                global: true,
+                user_accessible: false,
+                // TODO: Specify no cache
+            };
             // Safety: We map to the correct page for the Local APIC
-            unsafe {
-                pages.map_to(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_CACHE
-                        | PageTableFlags::NO_EXECUTE
-                        | PageTableFlags::GLOBAL,
-                    &mut frame_allocator,
-                )
-            }
-            .unwrap();
-            LocalApicAccess::Mmio(page)
+            unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
+            LocalApicAccess::Mmio(page.start_addr())
         }
     });
 }

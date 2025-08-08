@@ -4,7 +4,7 @@ use common::{HIGHER_HALF_START, PageSize};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     VirtAddr,
-    structures::paging::{FrameAllocator, Size4KiB},
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
 use crate::{EffectiveFlags, Frame, ManagedL4PageTable, MapPageError2, Page};
@@ -58,6 +58,12 @@ impl VirtualMemory {
             page_size,
         }
     }
+
+    /// # Safety
+    /// You must "own" the frame (nothing else can reference it)
+    pub unsafe fn new_user_page_table(&mut self, frame: PhysFrame) -> ManagedL4PageTable {
+        unsafe { ManagedL4PageTable::new_user(&mut self.l4, frame) }
+    }
 }
 pub struct AllocatedPages<'a> {
     virtual_memory: &'a mut VirtualMemory,
@@ -75,6 +81,10 @@ pub enum MapToError {
 impl AllocatedPages<'_> {
     pub fn start_addr(&self) -> VirtAddr {
         VirtAddr::new(*self.range.start())
+    }
+
+    pub fn start_page(&self) -> Page {
+        Page::new(self.start_addr(), self.page_size).unwrap()
     }
 
     pub fn range(&self) -> &RangeInclusive<u64> {

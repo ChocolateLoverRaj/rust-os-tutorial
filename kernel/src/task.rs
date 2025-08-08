@@ -15,8 +15,9 @@ use nodit::{Interval, NoditMap};
 use x86_64::structures::paging::PhysFrame;
 
 use crate::{
-    CapabilityId, interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
-    syscall_saved_regs::SyscallSavedRegs, try_access_user_mem::try_access_user_mem,
+    CapabilityId, ManagedL4PageTable, interrupted_context::InterruptedContext,
+    local_apic_id::LocalApicId, syscall_saved_regs::SyscallSavedRegs,
+    try_access_user_mem::try_access_user_mem,
 };
 
 #[derive(Debug, Clone)]
@@ -80,7 +81,7 @@ pub type ProcessMappedVirtMem = NoditMap<u64, Interval<u64>, UserVirtMem>;
 #[derive(Debug)]
 pub struct ProcessMemory {
     pub mapped_virtual_memory: ProcessMappedVirtMem,
-    // pub frame_buffer_virtual_start: Option<u64>,
+    pub l4: ManagedL4PageTable,
 }
 
 #[derive(Debug)]
