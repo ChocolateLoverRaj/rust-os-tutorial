@@ -1,19 +1,13 @@
 use common::{
-    HIGHER_HALF_START, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
+    HIGHER_HALF_START, PageSize, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
     SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
 };
 use nodit::interval::ue;
-use raw_cpuid::CpuId;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{
-        Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, mapper::MapToError,
-    },
-};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
+    EffectiveFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
-    get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
     limine_requests::FRAME_BUFFER_REQUEST,
     logger,
@@ -22,6 +16,8 @@ use crate::{
 };
 
 use super::GenericSyscallHandler;
+
+const PAGE_SIZE: PageSize = PageSize::_4KiB;
 
 pub struct SyscallTakeFrameBufferHandler;
 impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
@@ -35,8 +31,11 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 .next()
                 .ok_or(SyscallTakeFrameBufferError::NotAvailable)?;
             let frame_buffer_len = frame_buffer.pitch() * frame_buffer.height();
-            if !((frame_buffer.addr() as u64).is_multiple_of(Size4KiB::SIZE)
-                && frame_buffer_len.is_multiple_of(Size4KiB::SIZE))
+            if !(frame_buffer
+                .addr()
+                .addr()
+                .is_multiple_of(PAGE_SIZE.byte_len())
+                && frame_buffer_len.is_multiple_of(PAGE_SIZE.byte_len_u64()))
             {
                 Err(SyscallTakeFrameBufferError::WouldNotBeSecure)?;
             }
@@ -52,7 +51,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 .mapped_virtual_memory
                 .gaps_trimmed(ue(HIGHER_HALF_START))
                 .find_map(|range| {
-                    let aligned_start = range.start().next_multiple_of(Size4KiB::SIZE);
+                    let aligned_start = range.start().next_multiple_of(PAGE_SIZE.byte_len_u64());
                     let needed_end_inclusive = aligned_start + (frame_buffer_len - 1);
                     if needed_end_inclusive <= range.end() {
                         Some(aligned_start..=needed_end_inclusive)
@@ -69,12 +68,15 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                 )
                 .unwrap();
             // process_memory.frame_buffer_virtual_start = Some(*range.start());
-            let first_frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(
-                frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
-            ))
+            let first_frame = Frame::new(
+                PhysAddr::new(
+                    frame_buffer.addr() as u64 - u64::from(HhdmOffset::get_from_response()),
+                ),
+                PAGE_SIZE,
+            )
             .unwrap();
-            let first_page = Page::from_start_address(VirtAddr::new(*range.start())).unwrap();
-            let n_pages = frame_buffer_len / Size4KiB::SIZE;
+            let first_page = Page::new(VirtAddr::new(*range.start()), PAGE_SIZE).unwrap();
+            let n_pages = frame_buffer_len / PAGE_SIZE.byte_len_u64();
             // Zero the frame buffer to not leak data
             // Safety: we are only accessing frame buffer memory
             unsafe {
@@ -82,46 +84,31 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                     .addr()
                     .write_bytes(0, frame_buffer_len as usize)
             };
-            // Safety: the page table is valid
-            let mut mapper = unsafe { get_page_table(current_process.cr3, false) };
             let mut physical_memory = MEMORY.get().unwrap().physical_memory.lock();
             for i in 0..n_pages {
-                let frame = first_frame + i;
-                let page = first_page + i;
-                let flags = {
-                    let mut base_flags = PageTableFlags::PRESENT
-                        | PageTableFlags::USER_ACCESSIBLE
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_EXECUTE;
-                    if CpuId::new().get_feature_info().unwrap().has_pat() {
-                        // https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#x86-64
-                        // This is the PAT index for WC (Write Combining)
-                        let pat_index = 5;
-                        if pat_index & (1 << 0) != 0 {
-                            base_flags |= PageTableFlags::WRITE_THROUGH;
-                        }
-                        if pat_index & (1 << 1) != 0 {
-                            base_flags |= PageTableFlags::NO_CACHE;
-                        }
-                        if pat_index & (1 << 2) != 0 {
-                            base_flags |= PageTableFlags::PAT_4KIB_PAGE;
-                        }
-                    } else {
-                        base_flags |= PageTableFlags::WRITE_THROUGH;
-                    }
-                    base_flags
+                let frame = first_frame.offset(i).unwrap();
+                let page = first_page.offset(i).unwrap();
+                let flags = EffectiveFlags {
+                    writable: true,
+                    executable: false,
+                    global: false,
+                    user_accessible: true,
+                    pat_memory_type: PatMemoryType::WriteCombining,
                 };
                 let frame_allocator =
                     &mut physical_memory.get_user_mode_program_frame_allocator(current_process.id);
                 // Safety: virtual memory is unused, physical memory is okay to access
-                unsafe { mapper.map_to(page, frame, flags, frame_allocator) }
-                    .map_err(|e| match e {
-                        MapToError::FrameAllocationFailed => {
-                            SyscallTakeFrameBufferError::OutOfPhysicalMemory
-                        }
-                        e => unreachable!("{:#?}", e),
-                    })?
-                    .flush();
+                unsafe {
+                    process_memory
+                        .l4
+                        .map_page(page, frame, flags, frame_allocator)
+                }
+                .map_err(|e| match e {
+                    MapPageError2::FrameAllocationFailed => {
+                        SyscallTakeFrameBufferError::OutOfPhysicalMemory
+                    }
+                    e => unreachable!("{:#?}", e),
+                })?;
             }
             Ok(SyscallTakeFrameBufferOutput {
                 ptr: *range.start(),
@@ -159,17 +146,13 @@ impl GenericSyscallHandler for SyscallReleaseFrameBufferHandler {
             if let Some(frame_buffer_interval) = frame_buffer_interval {
                 let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
                 let frame_buffer = frame_buffer_response.framebuffers().next().unwrap();
-                // Safety: the page table is valid
-                let mut mapper = unsafe { get_page_table(runnning_thread.process.cr3, false) };
                 let frame_buffer_len = frame_buffer.pitch() * frame_buffer.height();
-                let n_pages = frame_buffer_len / Size4KiB::SIZE;
-                let start_page = Page::<Size4KiB>::from_start_address(VirtAddr::new(
-                    frame_buffer_interval.start(),
-                ))
-                .unwrap();
+                let n_pages = frame_buffer_len / PAGE_SIZE.byte_len_u64();
+                let start_page =
+                    Page::new(VirtAddr::new(frame_buffer_interval.start()), PAGE_SIZE).unwrap();
                 for i in 0..n_pages {
-                    let page = start_page + i;
-                    mapper.unmap(page).unwrap().2.flush();
+                    let page = start_page.offset(i).unwrap();
+                    unsafe { process_memory.l4.unmap_page(page) }.unwrap();
                 }
                 let _ = process_memory
                     .mapped_virtual_memory
