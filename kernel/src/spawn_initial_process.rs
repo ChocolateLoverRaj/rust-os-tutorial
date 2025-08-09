@@ -262,7 +262,6 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
 
         let process = Arc::new(Process {
             id: process_id,
-            cr3: process_l4.frame(),
             memory: RwLock::new(ProcessMemory {
                 mapped_virtual_memory,
                 l4: process_l4,

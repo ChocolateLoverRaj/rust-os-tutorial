@@ -12,7 +12,6 @@ use alloc::{
 };
 use common::{SliceData, Syscall, SyscallWaitUntilEvent};
 use nodit::{Interval, NoditMap};
-use x86_64::structures::paging::PhysFrame;
 
 use crate::{
     CapabilityId, ManagedL4PageTable, interrupted_context::InterruptedContext,
@@ -87,7 +86,6 @@ pub struct ProcessMemory {
 #[derive(Debug)]
 pub struct Process {
     pub id: ProcessId,
-    pub cr3: PhysFrame,
     pub memory: spin::RwLock<ProcessMemory>,
     pub mutexes: spin::RwLock<BTreeMap<MutexKey, UserMutex>>,
 }

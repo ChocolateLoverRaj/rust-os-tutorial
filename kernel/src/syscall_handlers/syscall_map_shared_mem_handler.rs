@@ -4,12 +4,12 @@ use common::{
     LOWER_HALF_END, PermissionFlags, SliceData, SyscallMapSharedMem, SyscallMapSharedMemError,
 };
 use nodit::{InclusiveInterval, Interval};
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
+    EffectiveFlags, Frame, Page,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
-    map_page,
     memory::MEMORY,
     shared_mem::SHARED_MEM,
     task::{SharedVirtMem, THREADS, UserVirtMem},
@@ -78,29 +78,31 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
             let mut phys_mem = MEMORY.get().unwrap().physical_memory.lock();
             let mut frame_allocator =
                 phys_mem.get_user_mode_program_frame_allocator(thread.process.id);
-            let flags = PageTableFlags::PRESENT
-                | PageTableFlags::USER_ACCESSIBLE
-                | PermissionFlags::from_bits_retain(helper.input().permission_flags)
-                    .page_table_flags();
-            let start_page = VirtAddr::new(interval.start());
+            let permission_flags =
+                PermissionFlags::from_bits_retain(helper.input().permission_flags);
+            let flags = EffectiveFlags {
+                user_accessible: true,
+                writable: permission_flags.contains(PermissionFlags::WRITABLE),
+                executable: permission_flags.contains(PermissionFlags::EXECUTABLE),
+                global: false,
+                pat_memory_type: PatMemoryType::WriteBack,
+            };
+            let start_page =
+                Page::new(VirtAddr::new(interval.start()), shared_mem.page_size).unwrap();
             let mut pages_mapped = 0;
             for interval in shared_mem.phys_mem.iter() {
-                let start_frame = PhysAddr::new(interval.start());
+                let start_frame =
+                    Frame::new(PhysAddr::new(interval.start()), shared_mem.page_size).unwrap();
                 let frames_len =
                     (interval.end() - interval.start() + 1) / shared_mem.page_size.byte_len_u64();
                 for i in 0..frames_len {
-                    let page = start_page + pages_mapped * shared_mem.page_size.byte_len_u64();
-                    let frame = start_frame + i * shared_mem.page_size.byte_len_u64();
+                    let page = start_page.offset(pages_mapped).unwrap();
+                    let frame = start_frame.offset(i).unwrap();
                     log::trace!("Mapping {page:?} to {frame:?}");
                     unsafe {
-                        map_page(
-                            thread.process.cr3,
-                            shared_mem.page_size,
-                            page,
-                            frame,
-                            flags,
-                            &mut frame_allocator,
-                        )
+                        process_mem
+                            .l4
+                            .map_page(page, frame, flags, &mut frame_allocator)
                     }
                     .unwrap();
                     // FIXME: Handle out of mem errors

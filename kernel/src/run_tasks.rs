@@ -1,9 +1,6 @@
 use core::ops::Deref;
 
-use x86_64::{
-    instructions::interrupts,
-    registers::{control::Cr3, rflags::RFlags},
-};
+use x86_64::{instructions::interrupts, registers::rflags::RFlags};
 
 use crate::{
     cpu_local_data::get_local,
@@ -40,11 +37,9 @@ pub fn run_threads() -> ! {
                         let action = Action::Start(ready_state.clone());
                         *local.running_thread.try_lock().unwrap() = Some(*thread_id);
                         *thread_state = ThreadState::Running(local.cpu.into());
+                        let cr3_flags = MEMORY.get().unwrap().new_kernel_cr3_flags;
                         unsafe {
-                            Cr3::write(
-                                thread.process.cr3,
-                                MEMORY.get().unwrap().new_kernel_cr3_flags,
-                            )
+                            thread.process.memory.read().l4.switch_to(cr3_flags);
                         };
                         break action;
                     }
@@ -54,11 +49,9 @@ pub fn run_threads() -> ! {
                             let local = get_local();
                             *local.running_thread.try_lock().unwrap() = Some(*thread_id);
                             *thread_state = ThreadState::Running(local.cpu.into());
+                            let cr3_flags = MEMORY.get().unwrap().new_kernel_cr3_flags;
                             unsafe {
-                                Cr3::write(
-                                    thread.process.cr3,
-                                    MEMORY.get().unwrap().new_kernel_cr3_flags,
-                                )
+                                thread.process.memory.read().l4.switch_to(cr3_flags);
                             };
                             break action;
                         } else {

@@ -330,7 +330,6 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 new_thread_id,
                 Thread {
                     process: Arc::new(Process {
-                        cr3: new_process_l4.frame(),
                         id: new_process_id,
                         memory: spin::RwLock::new(ProcessMemory {
                             mapped_virtual_memory: new_virt_mem,
