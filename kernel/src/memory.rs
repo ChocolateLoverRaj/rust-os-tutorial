@@ -16,7 +16,7 @@ use x86_64::{
 };
 
 use crate::{
-    EffectiveFlags, Frame, ManagedL4PageTable, ManagedPat,
+    ConfigurableFlags, Frame, ManagedL4PageTable, ManagedPat,
     get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
     max_page_size,
@@ -163,11 +163,9 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
                 for i in 0..pages_len {
                     let frame = first_frame.offset(i).unwrap();
                     let page = frame.to_page();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: true,
                         executable: false,
-                        user_accessible: false,
-                        global: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     unsafe { l4.map_page(page, frame, flags, &mut frame_allocator) }.unwrap();

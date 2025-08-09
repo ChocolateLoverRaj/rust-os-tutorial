@@ -1,11 +1,11 @@
-pub use effective_flags::*;
+pub use configurable_flags::*;
 pub use managed_l4_page_table::*;
 pub use map_page::*;
 pub use page_table_with_level::*;
 pub use unmap_page::*;
 pub use update_flags::*;
 
-mod effective_flags;
+mod configurable_flags;
 mod managed_l4_page_table;
 mod map_page;
 mod page_table_with_level;

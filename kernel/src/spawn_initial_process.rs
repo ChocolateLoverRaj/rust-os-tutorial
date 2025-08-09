@@ -18,7 +18,7 @@ use x86_64::{
 };
 
 use crate::{
-    EffectiveFlags, Frame, MapPageError2, Page,
+    ConfigurableFlags, Frame, MapPageError2, Page,
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     memory::{MEMORY, MemoryType},
     smep_smap::{clac, has_smap, stac},
@@ -127,11 +127,9 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                 for i in 0..page_count {
                     let page = start_page.offset(i).unwrap();
                     let frame = first_frame.offset(i).unwrap();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: false,
                         executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
-                        global: false,
-                        user_accessible: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =
@@ -183,11 +181,9 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                             MemoryType::UsedByUserMode(process_id),
                         )
                         .ok_or(LoadUserModeProgramError::OutOfMemory)?;
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: flags.contains(ElfSegmentFlags::WRITABLE),
                         executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
-                        global: false,
-                        user_accessible: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     log::trace!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
@@ -245,11 +241,9 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                 .ok_or(LoadUserModeProgramError::OutOfMemory)?;
             // Safety: We just claimed this frame
             unsafe { frame.zero() };
-            let flags = EffectiveFlags {
+            let flags = ConfigurableFlags {
                 writable: true,
                 executable: false,
-                user_accessible: true,
-                global: false,
                 pat_memory_type: PatMemoryType::WriteBack,
             };
             let mut frame_allocator =

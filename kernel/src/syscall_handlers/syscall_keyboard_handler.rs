@@ -8,7 +8,8 @@ use nodit::{InclusiveInterval, Interval, interval::ee};
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    Capability, CapabilityId, EffectiveFlags, EventStream, EventStreamSource, MapPageError2, Page,
+    Capability, CapabilityId, ConfigurableFlags, EventStream, EventStreamSource, MapPageError2,
+    Page,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     memory::{MEMORY, MemoryType},
@@ -104,11 +105,9 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                         .unwrap()
                         .offset(i as u64)
                         .unwrap();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: true,
                         executable: false,
-                        global: false,
-                        user_accessible: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =
@@ -131,11 +130,9 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                         .unwrap()
                         .offset(i as u64)
                         .unwrap();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: true,
                         executable: false,
-                        user_accessible: false,
-                        global: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator = phys_mem.get_kernel_frame_allocator();

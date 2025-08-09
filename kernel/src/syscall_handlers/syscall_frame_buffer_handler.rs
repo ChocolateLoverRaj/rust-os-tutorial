@@ -6,7 +6,7 @@ use nodit::interval::ue;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, MapPageError2, Page,
+    ConfigurableFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
     hhdm_offset::HhdmOffset,
     limine_requests::FRAME_BUFFER_REQUEST,
@@ -88,11 +88,9 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
             for i in 0..n_pages {
                 let frame = first_frame.offset(i).unwrap();
                 let page = first_page.offset(i).unwrap();
-                let flags = EffectiveFlags {
+                let flags = ConfigurableFlags {
                     writable: true,
                     executable: false,
-                    global: false,
-                    user_accessible: true,
                     pat_memory_type: PatMemoryType::WriteCombining,
                 };
                 let frame_allocator =

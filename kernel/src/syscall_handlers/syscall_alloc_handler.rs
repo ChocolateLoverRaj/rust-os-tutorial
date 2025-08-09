@@ -6,7 +6,7 @@ use raw_cpuid::CpuId;
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, MapPageError2, Page,
+    ConfigurableFlags, MapPageError2, Page,
     cpu_local_data::get_local,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
@@ -88,11 +88,9 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             .as_mut_ptr::<u8>()
                             .write_bytes(0, helper.input().page_size.byte_len())
                     };
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: true,
                         executable: false,
-                        global: false,
-                        user_accessible: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let frame_allocator = &mut physical_memory

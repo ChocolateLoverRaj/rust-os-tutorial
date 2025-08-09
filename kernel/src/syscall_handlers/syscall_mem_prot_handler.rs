@@ -4,7 +4,7 @@ use nodit::{InclusiveInterval, Interval};
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, GetTableError, MapPageError2, Page, UnmapPageError2, UpdateFlagsError2,
+    ConfigurableFlags, GetTableError, MapPageError2, Page, UnmapPageError2, UpdateFlagsError2,
     cpu_local_data::get_local,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
@@ -71,11 +71,9 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                 .offset(i as u64)
                 .unwrap();
                 if prot.contains(MemProt::READABLE) {
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: prot.contains(MemProt::WRITABLE),
                         executable: prot.contains(MemProt::EXECUTABLE),
-                        user_accessible: true,
-                        global: false,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let result = unsafe { process_memory.l4.update_flags(page, flags) };

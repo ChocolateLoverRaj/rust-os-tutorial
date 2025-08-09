@@ -3,7 +3,7 @@ use common::PageSize;
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Page,
+    ConfigurableFlags, Page,
     call_with_rsp::call_with_rsp,
     local_apic_id::LocalApicId,
     memory::{KernelMemoryUsageType, MEMORY, MemoryType},
@@ -40,11 +40,9 @@ impl GuardedStack {
                     MemoryType::UsedByKernel(KernelMemoryUsageType::Stack),
                 )
                 .unwrap();
-            let flags = EffectiveFlags {
+            let flags = ConfigurableFlags {
                 writable: true,
                 executable: false,
-                user_accessible: false,
-                global: true,
                 pat_memory_type: PatMemoryType::WriteBack,
             };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();

@@ -9,7 +9,7 @@ use uart::{address::MmioAddress, writer::UartWriter};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, Page,
+    ConfigurableFlags, Frame, Page,
     logger::{self, AnyWriter},
     max_page_size,
     memory::MEMORY,
@@ -62,11 +62,9 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             for i in 0..n_pages {
                 let page = start_page.offset(i).unwrap();
                 let frame = start_frame.offset(i).unwrap();
-                let flags = EffectiveFlags {
+                let flags = ConfigurableFlags {
                     writable: true,
                     executable: false,
-                    global: true,
-                    user_accessible: false,
                     pat_memory_type: PatMemoryType::StrongUncacheable,
                 };
                 // Safety: the memory we are going to access is defined to be valid

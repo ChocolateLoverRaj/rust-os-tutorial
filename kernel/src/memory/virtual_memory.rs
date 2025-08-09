@@ -7,7 +7,7 @@ use x86_64::{
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
-use crate::{EffectiveFlags, Frame, MANAGED_PAT, ManagedL4PageTable, MapPageError2, Page};
+use crate::{ConfigurableFlags, Frame, MANAGED_PAT, ManagedL4PageTable, MapPageError2, Page};
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
@@ -97,7 +97,7 @@ impl AllocatedPages<'_> {
         &mut self,
         page: Page,
         frame: Frame,
-        flags: EffectiveFlags,
+        flags: ConfigurableFlags,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Result<(), MapToError> {
         if page.size() != self.page_size || frame.size() != self.page_size {

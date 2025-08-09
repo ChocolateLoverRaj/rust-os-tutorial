@@ -13,28 +13,28 @@ use crate::{
 use super::page_table_with_level::{PageTableLevel, PageTableWithLevelMut};
 
 #[derive(Debug)]
-pub struct HigherHalfRestrictions {
+pub struct KernelL4Data {
     is_referenced: bool,
 }
 
 #[derive(Debug)]
-pub(super) enum MapRestrictions {
-    LowerHalf,
-    HigherHalf(HigherHalfRestrictions),
+pub(super) enum L4Type {
+    User,
+    Kernel(KernelL4Data),
 }
 
-impl MapRestrictions {
+impl L4Type {
     pub fn l4_managed_entry_range(&self) -> RangeInclusive<PageTableIndex> {
         match self {
-            Self::LowerHalf => PageTableIndex::new(0)..=PageTableIndex::new(255),
-            Self::HigherHalf(_) => PageTableIndex::new(256)..=PageTableIndex::new(511),
+            Self::User => PageTableIndex::new(0)..=PageTableIndex::new(255),
+            Self::Kernel(_) => PageTableIndex::new(256)..=PageTableIndex::new(511),
         }
     }
 
     pub fn can_create_new_l4_entries(&self) -> bool {
         match self {
-            Self::LowerHalf => true,
-            Self::HigherHalf(HigherHalfRestrictions { is_referenced }) => !is_referenced,
+            Self::User => true,
+            Self::Kernel(KernelL4Data { is_referenced }) => !is_referenced,
         }
     }
 }
@@ -42,7 +42,7 @@ impl MapRestrictions {
 #[derive(Debug)]
 pub struct ManagedL4PageTable {
     pub(super) frame: PhysFrame,
-    pub(super) map_restrictions: MapRestrictions,
+    pub(super) _type: L4Type,
     pub(super) pat: ManagedPat,
 }
 
@@ -55,7 +55,7 @@ impl ManagedL4PageTable {
         unsafe { frame.zero() };
         Self {
             frame,
-            map_restrictions: MapRestrictions::HigherHalf(HigherHalfRestrictions {
+            _type: L4Type::Kernel(KernelL4Data {
                 is_referenced: false,
             }),
             pat,
@@ -65,21 +65,21 @@ impl ManagedL4PageTable {
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
     pub unsafe fn new_user(&mut self, frame: PhysFrame, pat: ManagedPat) -> Self {
-        match &mut self.map_restrictions {
-            MapRestrictions::LowerHalf => {
+        match &mut self._type {
+            L4Type::User => {
                 panic!("self must be a kernel's l4 frame to copy from it")
             }
-            MapRestrictions::HigherHalf(HigherHalfRestrictions { is_referenced }) => {
+            L4Type::Kernel(KernelL4Data { is_referenced }) => {
                 *is_referenced = true;
             }
         };
         unsafe { frame.zero() };
         let mut lower_half = Self {
             frame,
-            map_restrictions: MapRestrictions::LowerHalf,
+            _type: L4Type::User,
             pat,
         };
-        let range_to_copy = self.map_restrictions.l4_managed_entry_range();
+        let range_to_copy = self._type.l4_managed_entry_range();
         let kernel_page_table = unsafe { self.page_table_mut().as_mut() };
         let user_page_table = unsafe { lower_half.page_table_mut().as_mut() };
         for index in range_to_copy {

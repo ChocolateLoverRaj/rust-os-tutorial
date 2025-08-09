@@ -4,7 +4,7 @@ use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use limine::response::RsdpResponse;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
-use crate::{EffectiveFlags, Frame, Page, max_page_size, memory::MEMORY};
+use crate::{ConfigurableFlags, Frame, Page, max_page_size, memory::MEMORY};
 
 /// Note: this cannot be sent across CPUs because the other CPUs did not flush their cache for changes in page tables
 #[derive(Debug, Clone)]
@@ -39,11 +39,9 @@ impl AcpiHandler for KernelAcpiHandler {
         for i in 0..n_pages {
             let page = start_page.offset(i).unwrap();
             let frame = start_frame.offset(i).unwrap();
-            let flags = EffectiveFlags {
+            let flags = ConfigurableFlags {
                 executable: false,
                 writable: false,
-                global: true,
-                user_accessible: false,
                 pat_memory_type: PatMemoryType::WriteBack,
             };
             unsafe {

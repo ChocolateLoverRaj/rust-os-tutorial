@@ -4,7 +4,7 @@ use nodit::interval::ee;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, MapPageError2, Page,
+    ConfigurableFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
     hhdm_offset::HhdmOffset,
     limine_requests::MODULE_REQUEST,
@@ -71,11 +71,9 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
             for i in 0..n_pages {
                 let page = start_page.offset(i).unwrap();
                 let frame = first_frame.offset(i).unwrap();
-                let flags = EffectiveFlags {
+                let flags = ConfigurableFlags {
                     writable: false,
                     executable: false,
-                    global: false,
-                    user_accessible: true,
                     pat_memory_type: PatMemoryType::WriteBack,
                 };
                 let frame_allocator =

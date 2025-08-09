@@ -7,7 +7,7 @@ use nodit::{InclusiveInterval, Interval};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, Page,
+    ConfigurableFlags, Frame, Page,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     memory::MEMORY,
@@ -80,11 +80,9 @@ impl GenericSyscallHandler for SyscallMapSharedMemHandler {
                 phys_mem.get_user_mode_program_frame_allocator(thread.process.id);
             let permission_flags =
                 PermissionFlags::from_bits_retain(helper.input().permission_flags);
-            let flags = EffectiveFlags {
-                user_accessible: true,
+            let flags = ConfigurableFlags {
                 writable: permission_flags.contains(PermissionFlags::WRITABLE),
                 executable: permission_flags.contains(PermissionFlags::EXECUTABLE),
-                global: false,
                 pat_memory_type: PatMemoryType::WriteBack,
             };
             let start_page =

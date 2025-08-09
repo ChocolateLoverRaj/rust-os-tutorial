@@ -1,7 +1,7 @@
 use common::PageSize;
 use x86_64::structures::paging::{FrameAllocator, Size4KiB};
 
-use crate::{EffectiveFlags, Frame, Page};
+use crate::{ConfigurableFlags, Frame, Page};
 
 use super::{
     ManagedL4PageTable,
@@ -51,7 +51,7 @@ impl ManagedL4PageTable {
         &mut self,
         page: Page,
         frame: Frame,
-        flags: EffectiveFlags,
+        flags: ConfigurableFlags,
         frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     ) -> Result<(), MapPageError2> {
         let l4 = self.table_mut();

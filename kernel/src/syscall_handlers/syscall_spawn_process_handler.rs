@@ -15,7 +15,7 @@ use x86_64::{
 use zerocopy::TryFromBytes;
 
 use crate::{
-    CAPABILITIES, EffectiveFlags, Frame, MapPageError2, Page,
+    CAPABILITIES, ConfigurableFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
     interrupt_vector::InterruptVector,
     limine_requests::MODULE_REQUEST,
@@ -184,11 +184,9 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                 for i in 0..map_module.pages_len.get() {
                     let page = start_page.offset(i as u64).unwrap();
                     let frame = start_frame.offset(i as u64).unwrap();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: false,
                         executable: map_module.executable,
-                        global: false,
-                        user_accessible: true,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let result = unsafe {
@@ -295,12 +293,10 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     let frame = unsafe { process_memory.l4.unmap_page(page) }.unwrap();
                     physical_memory.change_owner(frame, new_process_id);
                     let page = start_page_new.offset(i as u64).unwrap();
-                    let flags = EffectiveFlags {
+                    let flags = ConfigurableFlags {
                         writable: memory_mapping_flags.contains(SpawnProcessMemoryFlags::WRITABLE),
                         executable: memory_mapping_flags
                             .contains(SpawnProcessMemoryFlags::EXECUTABLE),
-                        user_accessible: true,
-                        global: false,
                         pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =

@@ -7,7 +7,7 @@ use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, cpu_local_data::get_local, interrupt_vector::InterruptVector,
+    ConfigurableFlags, Frame, cpu_local_data::get_local, interrupt_vector::InterruptVector,
     memory::MEMORY,
 };
 
@@ -38,11 +38,9 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
                 .allocate_contiguous_pages(PageSize::_4KiB, 1)
                 .unwrap();
             let page = pages.start_page();
-            let flags = EffectiveFlags {
+            let flags = ConfigurableFlags {
                 writable: true,
                 executable: false,
-                global: true,
-                user_accessible: false,
                 pat_memory_type: PatMemoryType::StrongUncacheable,
             };
             // Safety: We map to the correct page for the Local APIC

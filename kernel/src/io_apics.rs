@@ -5,7 +5,7 @@ use x2apic::ioapic::{IoApic, RedirectionTableEntry};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    EffectiveFlags, Frame, Page, interrupt_vector::InterruptVector, memory::MEMORY,
+    ConfigurableFlags, Frame, Page, interrupt_vector::InterruptVector, memory::MEMORY,
     pic8259_interrupts::Pic8259Interrupts,
 };
 
@@ -41,11 +41,9 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 PageSize::_4KiB,
             )
             .unwrap();
-            let flags = EffectiveFlags {
+            let flags = ConfigurableFlags {
                 writable: true,
                 executable: false,
-                global: true,
-                user_accessible: false,
                 pat_memory_type: PatMemoryType::StrongUncacheable,
             };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
