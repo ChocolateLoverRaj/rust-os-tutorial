@@ -4,11 +4,8 @@ use x86_64::structures::paging::{FrameAllocator, Size4KiB};
 use crate::{ConfigurableFlags, Frame, Page};
 
 use super::{
-    ManagedL4PageTable,
-    page_table_with_level::{
-        GetTableError, PageTableEntryWithLevelMut, PageTableWithLevelMut, SetFrameError,
-        SetTableError,
-    },
+    GetTableError, ManagedL4PageTable, PageTableEntryWithLevelMut, SetFrameError, SetTableError,
+    page_table_with_level::PageTableWithLevelMut,
 };
 
 #[derive(Debug)]

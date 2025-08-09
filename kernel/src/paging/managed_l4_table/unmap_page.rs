@@ -3,7 +3,7 @@ use x86_64::instructions::tlb::flush;
 
 use crate::{Frame, ManagedL4PageTable, Page};
 
-use super::page_table_with_level::{GetTableError, UnmapFrameError};
+use super::{GetTableError, UnmapFrameError};
 
 #[derive(Debug)]
 pub enum UnmapPageError2 {

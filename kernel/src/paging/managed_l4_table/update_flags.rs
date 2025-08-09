@@ -3,10 +3,7 @@ use x86_64::instructions::tlb::flush;
 
 use crate::{ConfigurableFlags, Page};
 
-use super::{
-    ManagedL4PageTable,
-    page_table_with_level::{GetTableError, SetFlagsError},
-};
+use super::{GetTableError, ManagedL4PageTable, SetFlagsError};
 
 #[derive(Debug)]
 pub enum UpdateFlagsError2 {
