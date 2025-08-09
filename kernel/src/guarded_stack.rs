@@ -1,6 +1,6 @@
 use alloc::collections::btree_map::BTreeMap;
 use common::PageSize;
-use x86_64::VirtAddr;
+use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     EffectiveFlags, Page,
@@ -45,6 +45,7 @@ impl GuardedStack {
                 executable: false,
                 user_accessible: false,
                 global: true,
+                pat_memory_type: PatMemoryType::WriteBack,
             };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();

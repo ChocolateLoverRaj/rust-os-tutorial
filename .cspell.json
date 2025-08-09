@@ -58,6 +58,7 @@
         "Talck",
         "thiserror",
         "uart",
+        "Uncacheable",
         "uninit",
         "virt",
         "xorriso",

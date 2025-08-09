@@ -6,7 +6,7 @@ use acpi::{
 use alloc::boxed::Box;
 use common::PageSize;
 use uart::{address::MmioAddress, writer::UartWriter};
-use x86_64::PhysAddr;
+use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     EffectiveFlags, Frame, Page,
@@ -67,7 +67,7 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                     executable: false,
                     global: true,
                     user_accessible: false,
-                    // TODO: Disable cache
+                    pat_memory_type: PatMemoryType::StrongUncacheable,
                 };
                 // Safety: the memory we are going to access is defined to be valid
                 unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }

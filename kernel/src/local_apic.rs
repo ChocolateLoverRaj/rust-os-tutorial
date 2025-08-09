@@ -4,7 +4,7 @@ use common::PageSize;
 use force_send_sync::SendSync;
 use spin::Once;
 use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     EffectiveFlags, Frame, cpu_local_data::get_local, interrupt_vector::InterruptVector,
@@ -43,7 +43,7 @@ pub fn map_if_needed(apic: &Apic<impl Allocator>) {
                 executable: false,
                 global: true,
                 user_accessible: false,
-                // TODO: Specify no cache
+                pat_memory_type: PatMemoryType::StrongUncacheable,
             };
             // Safety: We map to the correct page for the Local APIC
             unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();

@@ -8,7 +8,7 @@ use x86_64::structures::paging::{
 
 use crate::{EffectiveFlags, Frame, translate_addr::TranslateToVirt};
 
-use super::MapRestrictions;
+use super::ManagedL4PageTable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageTableLevel {
@@ -42,7 +42,7 @@ impl PageTableLevel {
 pub struct PageTableEntryWithLevelMut<'a> {
     entry: &'a mut PageTableEntry,
     level: PageTableLevel,
-    l4_restrictions: &'a MapRestrictions,
+    l4: &'a ManagedL4PageTable,
 }
 
 #[derive(Debug)]
@@ -115,7 +115,7 @@ impl PageTableEntryWithLevelMut<'_> {
         }
         self.entry.set_addr(
             frame.start_addr(),
-            self.get_auto_flags() | flags.page_table_flags(),
+            self.get_auto_flags() | flags.page_table_flags(&self.l4.pat, frame.size()),
         );
         Ok(())
     }
@@ -141,17 +141,17 @@ impl PageTableEntryWithLevelMut<'_> {
 
     /// Only sets flags for pointing to a frame, not pointing to a table
     pub fn set_flags(&mut self, flags: EffectiveFlags) -> Result<(), SetFlagsError> {
-        let frame_size = self.level.target_frame_size().ok_or(SetFlagsError::IsL4)?;
+        let page_size = self.level.target_frame_size().ok_or(SetFlagsError::IsL4)?;
         if !self.entry.flags().contains(PageTableFlags::PRESENT) {
             return Err(SetFlagsError::NotPresent);
         }
         if !self.entry.flags().contains(PageTableFlags::HUGE_PAGE)
-            && !matches!(frame_size, PageSize::_4KiB)
+            && !matches!(page_size, PageSize::_4KiB)
         {
             return Err(SetFlagsError::IsPageTable);
         }
         self.entry
-            .set_flags(self.get_auto_flags() | flags.page_table_flags());
+            .set_flags(self.get_auto_flags() | flags.page_table_flags(&self.l4.pat, page_size));
         Ok(())
     }
 }
@@ -163,7 +163,8 @@ impl<'a> PageTableEntryWithLevelMut<'a> {
         frame: PhysFrame,
     ) -> Result<PageTableWithLevelMut<'a>, SetTableError> {
         let page_table_level = self.level.sub_level().ok_or(SetTableError::IsL1)?;
-        if self.level == PageTableLevel::L4 && !self.l4_restrictions.can_create_new_l4_entries() {
+        if self.level == PageTableLevel::L4 && !self.l4.map_restrictions.can_create_new_l4_entries()
+        {
             panic!(
                 "Cannot create new L3 pages because the kernel page table would be out of sync with user page tables"
             )
@@ -178,7 +179,7 @@ impl<'a> PageTableEntryWithLevelMut<'a> {
         Ok(PageTableWithLevelMut {
             page_table: ptr,
             level: page_table_level,
-            l4_restrictions: self.l4_restrictions,
+            l4: self.l4,
         })
     }
 
@@ -195,14 +196,14 @@ impl<'a> PageTableEntryWithLevelMut<'a> {
         Ok(PageTableWithLevelMut {
             page_table: ptr,
             level: page_table_level,
-            l4_restrictions: self.l4_restrictions,
+            l4: self.l4,
         })
     }
 }
 
 #[derive(Debug)]
 pub struct PageTableWithLevelMut<'a> {
-    pub(super) l4_restrictions: &'a MapRestrictions,
+    pub(super) l4: &'a ManagedL4PageTable,
     pub(super) page_table: NonNull<PageTable>,
     pub(super) level: PageTableLevel,
 }
@@ -210,7 +211,7 @@ pub struct PageTableWithLevelMut<'a> {
 impl<'a> PageTableWithLevelMut<'a> {
     pub fn entry_mut(mut self, index: PageTableIndex) -> PageTableEntryWithLevelMut<'a> {
         if self.level == PageTableLevel::L4 {
-            let range = self.l4_restrictions.l4_managed_entry_range();
+            let range = self.l4.map_restrictions.l4_managed_entry_range();
             if !range.contains(&index) {
                 panic!(
                     "Cannot access L4 entry {index:?} because it is outside of the range managed by this page table ({range:?})"
@@ -224,7 +225,7 @@ impl<'a> PageTableWithLevelMut<'a> {
                 unsafe { ptr.as_mut() }
             },
             level: self.level,
-            l4_restrictions: self.l4_restrictions,
+            l4: self.l4,
         }
     }
 }

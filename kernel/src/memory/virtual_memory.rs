@@ -7,7 +7,7 @@ use x86_64::{
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
-use crate::{EffectiveFlags, Frame, ManagedL4PageTable, MapPageError2, Page};
+use crate::{EffectiveFlags, Frame, MANAGED_PAT, ManagedL4PageTable, MapPageError2, Page};
 
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
@@ -62,7 +62,7 @@ impl VirtualMemory {
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
     pub unsafe fn new_user_page_table(&mut self, frame: PhysFrame) -> ManagedL4PageTable {
-        unsafe { ManagedL4PageTable::new_user(&mut self.l4, frame) }
+        unsafe { ManagedL4PageTable::new_user(&mut self.l4, frame, MANAGED_PAT) }
     }
 }
 pub struct AllocatedPages<'a> {

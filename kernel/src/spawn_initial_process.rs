@@ -13,6 +13,7 @@ use thiserror::Error;
 use x86_64::{
     VirtAddr,
     addr::VirtAddrNotValid,
+    registers::model_specific::PatMemoryType,
     structures::paging::{FrameAllocator, Size4KiB},
 };
 
@@ -131,6 +132,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                         executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
                         global: false,
                         user_accessible: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =
                         physical_memory.get_user_mode_program_frame_allocator(process_id);
@@ -186,6 +188,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                         executable: flags.contains(ElfSegmentFlags::EXECUTABLE),
                         global: false,
                         user_accessible: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     log::trace!("Mapping {page:?}->{frame:?} with flags: {flags:?}");
                     let mut frame_allocator =
@@ -247,6 +250,7 @@ fn spawn_task(file: &File) -> Result<(), LoadUserModeProgramError> {
                 executable: false,
                 user_accessible: true,
                 global: false,
+                pat_memory_type: PatMemoryType::WriteBack,
             };
             let mut frame_allocator =
                 physical_memory.get_user_mode_program_frame_allocator(process_id);

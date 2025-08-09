@@ -3,7 +3,7 @@ use core::num::NonZero;
 use common::{LOWER_HALF_END, MemProt, PageSize, SyscallAlloc, SyscallAllocError};
 use nodit::interval::ee;
 use raw_cpuid::CpuId;
-use x86_64::VirtAddr;
+use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     EffectiveFlags, MapPageError2, Page,
@@ -93,6 +93,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                         executable: false,
                         global: false,
                         user_accessible: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let frame_allocator = &mut physical_memory
                         .get_user_mode_program_frame_allocator(current_process.id);

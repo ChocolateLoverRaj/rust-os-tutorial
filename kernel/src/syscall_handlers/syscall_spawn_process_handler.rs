@@ -9,7 +9,9 @@ use common::{
 use itertools::Itertools;
 use nodit::{InclusiveInterval, Interval, NoditMap};
 use x2apic::lapic::IpiAllShorthand;
-use x86_64::{VirtAddr, structures::paging::FrameAllocator};
+use x86_64::{
+    VirtAddr, registers::model_specific::PatMemoryType, structures::paging::FrameAllocator,
+};
 use zerocopy::TryFromBytes;
 
 use crate::{
@@ -187,6 +189,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                         executable: map_module.executable,
                         global: false,
                         user_accessible: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let result = unsafe {
                         new_process_l4.map_page(page, frame, flags, &mut frame_allocator)
@@ -298,6 +301,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                             .contains(SpawnProcessMemoryFlags::EXECUTABLE),
                         user_accessible: true,
                         global: false,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =
                         physical_memory.get_user_mode_program_frame_allocator(new_process_id);

@@ -5,7 +5,7 @@ use common::{
     SyscallSubscribeToKeyboardError, SyscallSubscribeToKeyboardOutput,
 };
 use nodit::{InclusiveInterval, Interval, interval::ee};
-use x86_64::VirtAddr;
+use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     Capability, CapabilityId, EffectiveFlags, EventStream, EventStreamSource, MapPageError2, Page,
@@ -109,6 +109,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                         executable: false,
                         global: false,
                         user_accessible: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator =
                         phys_mem.get_user_mode_program_frame_allocator(current_process.id);
@@ -135,6 +136,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                         executable: false,
                         user_accessible: false,
                         global: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     let mut frame_allocator = phys_mem.get_kernel_frame_allocator();
                     if let Err(_e) =

@@ -2,7 +2,7 @@ use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use limine::response::RsdpResponse;
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{EffectiveFlags, Frame, Page, max_page_size, memory::MEMORY};
 
@@ -44,6 +44,7 @@ impl AcpiHandler for KernelAcpiHandler {
                 writable: false,
                 global: true,
                 user_accessible: false,
+                pat_memory_type: PatMemoryType::WriteBack,
             };
             unsafe {
                 pages

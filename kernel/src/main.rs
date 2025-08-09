@@ -14,6 +14,7 @@ use limine_requests::{
     RSDP_REQUEST,
 };
 use local_apic_id::LocalApicId;
+pub use managed_pat::*;
 pub use max_page_size::*;
 use memory::MEMORY;
 pub use paging::*;
@@ -42,6 +43,7 @@ pub mod limine_requests;
 pub mod local_apic;
 pub mod local_apic_id;
 pub mod logger;
+mod managed_pat;
 pub mod max_page_size;
 pub mod memory;
 pub mod nmi_handler_states;

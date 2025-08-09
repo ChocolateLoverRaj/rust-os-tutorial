@@ -2,7 +2,7 @@ use acpi::platform::interrupt::Apic;
 use alloc::alloc::Allocator;
 use common::PageSize;
 use x2apic::ioapic::{IoApic, RedirectionTableEntry};
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
     EffectiveFlags, Frame, Page, interrupt_vector::InterruptVector, memory::MEMORY,
@@ -45,7 +45,8 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 writable: true,
                 executable: false,
                 global: true,
-                user_accessible: false, // TODO: Specify no cache
+                user_accessible: false,
+                pat_memory_type: PatMemoryType::StrongUncacheable,
             };
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             unsafe { allocated_pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();

@@ -1,4 +1,7 @@
-use x86_64::structures::paging::PageTableFlags;
+use common::PageSize;
+use x86_64::{registers::model_specific::PatMemoryType, structures::paging::PageTableFlags};
+
+use crate::ManagedPat;
 
 /// All mappings are readable because they require the PRESENT flag.
 /// Some flags are also used as flags for sub-pages.
@@ -11,11 +14,14 @@ pub struct EffectiveFlags {
     pub executable: bool,
     pub user_accessible: bool,
     pub global: bool,
+    pub pat_memory_type: PatMemoryType,
 }
 
 impl EffectiveFlags {
-    pub(super) fn page_table_flags(&self) -> PageTableFlags {
-        let mut flags = PageTableFlags::empty();
+    pub(super) fn page_table_flags(&self, pat: &ManagedPat, page_size: PageSize) -> PageTableFlags {
+        let mut flags = pat
+            .get_page_table_flags(self.pat_memory_type, page_size)
+            .expect("There are only 6 memory types and 8 slots, so all memory types should be present in the slots");
         if self.writable {
             flags |= PageTableFlags::WRITABLE;
         }

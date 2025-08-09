@@ -8,12 +8,15 @@ use talc::{ErrOnOom, Talc, Talck};
 use virtual_memory::VirtualMemory;
 use x86_64::{
     PhysAddr,
-    registers::control::{Cr3, Cr3Flags},
+    registers::{
+        control::{Cr3, Cr3Flags},
+        model_specific::PatMemoryType,
+    },
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
 use crate::{
-    EffectiveFlags, Frame, ManagedL4PageTable,
+    EffectiveFlags, Frame, ManagedL4PageTable, ManagedPat,
     get_page_table::get_page_table,
     hhdm_offset::HhdmOffset,
     max_page_size,
@@ -119,7 +122,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
 
     let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut frame_allocator).unwrap();
-    let mut l4 = unsafe { ManagedL4PageTable::new_kernel(new_l4_frame) };
+    let mut l4 = unsafe { ManagedL4PageTable::new_kernel(new_l4_frame, ManagedPat) };
 
     // Offset map everything that is currently offset mapped
     let mut last_mapped_address = None::<PhysAddr>;
@@ -165,6 +168,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
                         executable: false,
                         user_accessible: false,
                         global: true,
+                        pat_memory_type: PatMemoryType::WriteBack,
                     };
                     unsafe { l4.map_page(page, frame, flags, &mut frame_allocator) }.unwrap();
                 }

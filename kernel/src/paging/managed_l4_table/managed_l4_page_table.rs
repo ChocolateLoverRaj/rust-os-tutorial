@@ -5,7 +5,10 @@ use x86_64::{
     structures::paging::{PageTable, PageTableIndex, PhysFrame},
 };
 
-use crate::translate_addr::{TranslateToVirt, ZeroFrame};
+use crate::{
+    ManagedPat,
+    translate_addr::{TranslateToVirt, ZeroFrame},
+};
 
 use super::page_table_with_level::{PageTableLevel, PageTableWithLevelMut};
 
@@ -38,8 +41,9 @@ impl MapRestrictions {
 
 #[derive(Debug)]
 pub struct ManagedL4PageTable {
-    frame: PhysFrame,
-    map_restrictions: MapRestrictions,
+    pub(super) frame: PhysFrame,
+    pub(super) map_restrictions: MapRestrictions,
+    pub(super) pat: ManagedPat,
 }
 
 impl ManagedL4PageTable {
@@ -47,19 +51,20 @@ impl ManagedL4PageTable {
     ///
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
-    pub unsafe fn new_kernel(frame: PhysFrame) -> Self {
+    pub unsafe fn new_kernel(frame: PhysFrame, pat: ManagedPat) -> Self {
         unsafe { frame.zero() };
         Self {
             frame,
             map_restrictions: MapRestrictions::HigherHalf(HigherHalfRestrictions {
                 is_referenced: false,
             }),
+            pat,
         }
     }
 
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
-    pub unsafe fn new_user(&mut self, frame: PhysFrame) -> Self {
+    pub unsafe fn new_user(&mut self, frame: PhysFrame, pat: ManagedPat) -> Self {
         match &mut self.map_restrictions {
             MapRestrictions::LowerHalf => {
                 panic!("self must be a kernel's l4 frame to copy from it")
@@ -72,6 +77,7 @@ impl ManagedL4PageTable {
         let mut lower_half = Self {
             frame,
             map_restrictions: MapRestrictions::LowerHalf,
+            pat,
         };
         let range_to_copy = self.map_restrictions.l4_managed_entry_range();
         let kernel_page_table = unsafe { self.page_table_mut().as_mut() };
@@ -100,7 +106,7 @@ impl ManagedL4PageTable {
         PageTableWithLevelMut {
             page_table: self.page_table_mut(),
             level: PageTableLevel::L4,
-            l4_restrictions: &self.map_restrictions,
+            l4: self,
         }
     }
 
