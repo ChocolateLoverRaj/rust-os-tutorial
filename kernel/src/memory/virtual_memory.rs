@@ -1,4 +1,4 @@
-use core::ops::RangeInclusive;
+use core::{num::NonZero, ops::RangeInclusive};
 
 use common::{HIGHER_HALF_START, PageSize};
 use nodit::{Interval, NoditSet, interval::iu};
@@ -22,13 +22,23 @@ impl VirtualMemory {
         page_size: PageSize,
         n_pages: u64,
     ) -> Option<AllocatedPages> {
+        self.allocate_contiguous_pages_2(page_size, n_pages.try_into().unwrap())
+    }
+
+    /// Returns the start page of the allocated range of pages.
+    /// Pages are guaranteed not to be mapped.
+    pub fn allocate_contiguous_pages_2(
+        &mut self,
+        page_size: PageSize,
+        n_pages: NonZero<u64>,
+    ) -> Option<AllocatedPages> {
         let range = self
             .set
             .gaps_trimmed(iu(HIGHER_HALF_START))
             .find_map(|gap| {
                 let aligned_start = gap.start().next_multiple_of(page_size.byte_len_u64());
                 let required_end_inclusive =
-                    aligned_start + (n_pages * page_size.byte_len_u64() - 1);
+                    aligned_start + (n_pages.get() * page_size.byte_len_u64() - 1);
                 if required_end_inclusive <= gap.end() {
                     Some(aligned_start..=required_end_inclusive)
                 } else {

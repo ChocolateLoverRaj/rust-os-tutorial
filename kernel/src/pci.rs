@@ -279,7 +279,6 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                 let page_size = PageSize::_4KiB;
                 let len = range.end - range.start;
                 let n_pages = (len) / page_size.byte_len_u64();
-                log::debug!("Need to map 0x{n_pages:X} pages for PCIe");
                 let mut pages = virt_mem
                     .allocate_contiguous_pages(page_size, n_pages)
                     .unwrap();

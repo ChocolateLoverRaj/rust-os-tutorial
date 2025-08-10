@@ -4,7 +4,6 @@ use acpi::{
     spcr::{Spcr, SpcrInterfaceType},
 };
 use alloc::boxed::Box;
-use common::PageSize;
 use uart::{address::MmioAddress, writer::UartWriter};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
@@ -47,11 +46,11 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             let len = u64::from(stride_bytes) * 8;
             let start_frame = Frame::new(
                 PhysAddr::new(phys_start_address).align_down(page_size.byte_len_u64()),
-                PageSize::_4KiB,
+                page_size,
             )
             .unwrap();
             let n_pages = (phys_start_address + len).div_ceil(page_size.byte_len_u64())
-                - phys_start_address.div_ceil(page_size.byte_len_u64());
+                - phys_start_address / page_size.byte_len_u64();
             let mut physical_memory = memory.physical_memory.lock();
             let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
