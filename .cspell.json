@@ -39,6 +39,7 @@
         "p_vaddr",
         "pixelcolor",
         "pkgs",
+        "Prefetchable",
         "rctrl",
         "regs",
         "repr",

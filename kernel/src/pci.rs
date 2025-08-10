@@ -1,4 +1,6 @@
 use core::{
+    fmt::Debug,
+    num::NonZero,
     ops::{Range, RangeInclusive},
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
@@ -9,6 +11,7 @@ use acpi::{
 };
 use alloc::vec;
 use bitfield::{bitfield, bitfield_constructor};
+use num_enum::TryFromPrimitive;
 use volatile::VolatilePtr;
 use x86_64::{PhysAddr, instructions::port::Port, registers::model_specific::PatMemoryType};
 
@@ -22,6 +25,7 @@ pub fn get_phys_range_to_map(mcfg_entry: &McfgEntry) -> Range<PhysAddr> {
     start_addr..start_addr + len
 }
 
+#[derive(Debug)]
 pub struct Pci {
     config_address: Port<u32>,
     config_data: Port<u32>,
@@ -45,11 +49,13 @@ pub struct Pci {
 //     _padding: [u8; 0xFF0],
 // }
 
+#[derive(Debug)]
 pub struct Pcie {
     mcfg_entry: McfgEntry,
     ptr: VolatilePtr<'static, [u8]>,
 }
 
+#[derive(Debug)]
 pub enum PciAccess {
     Pci(Pci),
     Pcie(Pcie),
@@ -142,9 +148,10 @@ impl PciBus<'_> {
         assert!((0..32).contains(&device_number));
         let vendor_id = self.pci.read_u32(self.bus_number, device_number, 0, 0x0) as u16;
         if vendor_id != u16::MAX {
-            let multi_function =
-                HeaderType((self.pci.read_u32(self.bus_number, device_number, 0, 0xC) >> 16) as u8)
-                    .multi_function();
+            let multi_function = HeaderTypeByte(
+                (self.pci.read_u32(self.bus_number, device_number, 0, 0xC) >> 16) as u8,
+            )
+            .multi_function();
             let pci_device = PciDevice {
                 pci: self.pci,
                 bus_number: self.bus_number,
@@ -217,11 +224,15 @@ impl PciDevice<'_> {
                 (
                     reg as u8,
                     (reg >> 8) as u8,
-                    HeaderType((reg >> 16) as u8),
+                    HeaderTypeByte((reg >> 16) as u8),
                     (reg >> 24) as u8,
                 )
             };
             Some(PciFunction {
+                pci: self.pci,
+                bus_number: self.bus_number,
+                device_number: self.device_number,
+                function_number: function_number,
                 vendor_id,
                 device_id,
                 command,
@@ -242,7 +253,11 @@ impl PciDevice<'_> {
 }
 
 #[derive(Debug)]
-pub struct PciFunction {
+pub struct PciFunction<'a> {
+    pci: &'a mut PciAccess,
+    bus_number: u8,
+    device_number: u8,
+    function_number: u8,
     pub vendor_id: u16,
     pub device_id: u16,
     pub command: u16,
@@ -253,12 +268,181 @@ pub struct PciFunction {
     pub class_code: u8,
     pub cache_line_size: u8,
     pub latency_timer: u8,
-    pub header_type: HeaderType,
+    pub header_type: HeaderTypeByte,
     pub bist: u8,
 }
 
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u8)]
+pub enum HeaderType {
+    GeneralDevice = 0x0,
+    PciToPciBridge = 0x1,
+    PciToCardBusBridge = 0x2,
+}
+
+#[derive(Clone, Copy)]
+pub struct FullBarMemory {
+    bar: MemorySpaceBar,
+    next_bar: u32,
+}
+
+impl FullBarMemory {
+    /// Get the address as a u64, whether it's a 32 bit or 64 bit address
+    pub fn addr_u64(&self) -> u64 {
+        match self.bar._type() {
+            0x0 => (self.bar.0 & !0b1111) as u64,
+            0x2 => (self.bar.0 & !0b1111) as u64 | (self.next_bar as u64) << 32,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn width_bits(&self) -> u8 {
+        match self.bar._type() {
+            0x0 => 32,
+            0x2 => 64,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Debug for FullBarMemory {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MemorySpaceBar")
+            .field("width_bits", &self.width_bits())
+            .field("addr", &format_args!("0x{:X}", self.addr_u64()))
+            .field("prefetchable", &self.bar.prefetchable())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FullBarType {
+    Memory(FullBarMemory),
+    Io(IoSpaceBar),
+}
+
+#[derive(Clone, Copy)]
+pub struct FullBar {
+    bar: BarCommon,
+    next_bar: u32,
+}
+
+impl Debug for FullBar {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.get_enum().fmt(f)
+    }
+}
+
+impl FullBar {
+    pub fn get_enum(&self) -> FullBarType {
+        if self.bar.bar_type() == 0x0 {
+            FullBarType::Memory(FullBarMemory {
+                bar: MemorySpaceBar(self.bar.0),
+                next_bar: self.next_bar,
+            })
+        } else {
+            FullBarType::Io(IoSpaceBar(self.bar.0))
+        }
+    }
+
+    /// The number of BARs that make up this BAR
+    pub fn slots_len(&self) -> u8 {
+        if self.bar.bar_type() == 0x0 {
+            if MemorySpaceBar(self.bar.0)._type() == 0x2 {
+                2
+            } else {
+                1
+            }
+        } else {
+            1
+        }
+    }
+}
+
 bitfield! {
-  pub struct HeaderType(u8);
+    #[derive( Clone, Copy)]
+  pub struct BarCommon(u32);
+  impl Debug;
+  u8; bar_type, _: 1, 1;
+}
+
+bitfield! {
+    #[derive(Clone, Copy)]
+    pub struct MemorySpaceBar(u32);
+  impl Debug;
+    prefetchable, _: 3;
+    u8; _type, _: 2, 1;
+}
+
+bitfield! {
+    #[derive(Clone, Copy)]
+    pub struct IoSpaceBar(u32);
+}
+
+impl IoSpaceBar {
+    pub fn addr(self) -> u32 {
+        // The lowest 2 bits should be masked out
+        self.0 & !0b11
+    }
+}
+
+impl Debug for IoSpaceBar {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("IoSpaceBar")
+            .field("addr", &format_args!("0x{:X}", self.addr()))
+            .finish()
+    }
+}
+
+impl PciFunction<'_> {
+    pub fn header_type(&self) -> Option<HeaderType> {
+        self.header_type.header_type().try_into().ok()
+    }
+
+    pub fn max_bars(&self) -> u8 {
+        match self.header_type().unwrap() {
+            HeaderType::GeneralDevice => 6,
+            HeaderType::PciToPciBridge => 2,
+            HeaderType::PciToCardBusBridge => 0,
+        }
+    }
+
+    fn read_bar_raw(&mut self, bar_index: u8) -> u32 {
+        assert!((0..self.max_bars()).contains(&bar_index));
+        self.pci.read_u32(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0x10 + size_of::<u32>() as u8 * bar_index,
+        )
+    }
+
+    pub fn read_bar(&mut self, bar_index: u8) -> Option<FullBar> {
+        let bar0 = NonZero::new(self.read_bar_raw(bar_index))?.get();
+        Some(if BarCommon(bar0).bar_type() == 0x0 {
+            let bar = MemorySpaceBar(bar0);
+            match bar._type() {
+                0x0 => FullBar {
+                    bar: BarCommon(bar0),
+                    next_bar: Default::default(),
+                },
+                0x2 => FullBar {
+                    bar: BarCommon(bar0),
+                    next_bar: self.read_bar_raw(bar_index + 1),
+                },
+                bar_type => panic!("unsupported bar type: 0x{bar_type:X}"),
+            }
+        } else {
+            FullBar {
+                bar: BarCommon(bar0),
+                next_bar: Default::default(),
+            }
+        })
+    }
+}
+
+bitfield! {
+  pub struct HeaderTypeByte(u8);
   impl Debug;
   // The fields default to u16
   multi_function, _: 7;
@@ -310,10 +494,18 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             for device_number in 0..32 {
                 if let Some(mut device) = bus.device(device_number) {
                     for function_number in device.possible_functions() {
-                        if let Some(function) = device.function(function_number) {
-                            log::debug!(
-                                "Device: {device_number}. Function: {function_number}. {function:#X?}"
-                            );
+                        if let Some(mut function) = device.function(function_number) {
+                            log::debug!("{function:#X?}");
+                            let mut bar_number = 0;
+                            while bar_number < function.max_bars() {
+                                if let Some(bar) = function.read_bar(bar_number) {
+                                    log::debug!("Bar {bar_number}: {bar:?}");
+                                    bar_number += bar.slots_len();
+                                } else {
+                                    log::debug!("No bar {bar_number}");
+                                    bar_number += 1;
+                                }
+                            }
                         }
                     }
                 }
