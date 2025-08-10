@@ -2,7 +2,7 @@ use core::num::NonZero;
 
 use common::{
     MemProt, PageSize, SpawnThreadRelativePriority, SyscallAllocError, SyscallMemProt,
-    SyscallMemProtError, SyscallMemProtInput,
+    SyscallMemProtError, SyscallMemProtInput, log,
 };
 
 use crate::{syscall, syscall_alloc, syscalls::syscall_spawn_thread};
@@ -13,6 +13,7 @@ pub struct GuardedStack {
     top: u64,
 }
 
+#[derive(Debug)]
 pub enum GuardedStackError {
     Alloc(SyscallAllocError),
     MemProt(SyscallMemProtError),
@@ -39,6 +40,7 @@ impl GuardedStack {
                     pages_len: stack_pages_len,
                     new_prot: (MemProt::READABLE | MemProt::WRITABLE).bits(),
                 };
+                log::debug!("Alloc outpput: {output:p}. Input: {input:#?}");
                 unsafe { syscall::<SyscallMemProt>(&input) }.map_err(GuardedStackError::MemProt)?;
                 (output.addr().get() + len) as u64
             },

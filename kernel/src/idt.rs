@@ -1,6 +1,7 @@
 use core::sync::atomic::Ordering;
 
 use check_tasks_ipi_handler::raw_check_tasks_ipi_handler;
+use flush_tlb_ipi_handler::raw_flush_tlb_ipi_handler;
 use keyboard_interrupt_handler::raw_keyboard_interrupt_handler;
 use mouse_interrupt_handler::raw_mouse_interrupt_handler;
 use page_fault_handler::page_fault_handler;
@@ -19,6 +20,7 @@ use crate::{
 };
 
 mod check_tasks_ipi_handler;
+mod flush_tlb_ipi_handler;
 mod keyboard_interrupt_handler;
 mod mouse_interrupt_handler;
 mod page_fault_handler;
@@ -90,6 +92,11 @@ pub fn init() {
         unsafe {
             idt[u8::from(InterruptVector::CheckTasks)]
                 .set_handler_addr(VirtAddr::from_ptr(raw_check_tasks_ipi_handler as *const ()))
+                .set_stack_index(NORMAL_STACK_INDEX);
+        }
+        unsafe {
+            idt[u8::from(InterruptVector::FlushTlb)]
+                .set_handler_addr(VirtAddr::from_ptr(raw_flush_tlb_ipi_handler as *const ()))
                 .set_stack_index(NORMAL_STACK_INDEX);
         }
         idt

@@ -9,3 +9,4 @@ publish = false
 kernel = { path = "../kernel", artifact = "bin", target = "x86_64-unknown-none" }
 user_mode_program = { path = "../user_mode_program", artifact = "bin", target = "x86_64-unknown-none" }
 user_mode_program_2 = { path = "../user_mode_program_2", artifact = "bin", target = "x86_64-unknown-none" }
+user_mode_program_3 = { path = "../user_mode_program_3", artifact = "bin", target = "x86_64-unknown-none" }

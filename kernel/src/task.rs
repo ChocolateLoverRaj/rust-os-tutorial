@@ -1,7 +1,7 @@
 use core::{
     num::{NonZero, NonZeroU32},
     ptr::NonNull,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
 use alloc::{
@@ -125,7 +125,12 @@ pub struct UserMutex {
 #[derive(Debug)]
 pub struct WaitingForMutexState {
     pub saved_regs: SyscallSavedRegs,
-    // pub mutex_id: u64,
+}
+
+#[derive(Debug)]
+pub struct FlushingTlbState {
+    pub flushed_count: AtomicUsize,
+    pub state: ThreadReadyStateInSyscall,
 }
 
 #[derive(Debug)]
@@ -135,18 +140,23 @@ pub enum ThreadState {
     /// A thread could be in this state even if it is ready (which is if at least 1 event which it is waiting for happened)
     WaitingForEvents(ThreadWaitingState),
     WaitingForMutex(WaitingForMutexState),
+    FlushingTlb(FlushingTlbState),
 }
 
-impl ThreadState {
-    pub fn is_ready(&self) -> bool {
-        match self {
-            ThreadState::Ready(_) => true,
-            ThreadState::Running(_) => false,
-            Self::WaitingForEvents(state) => state.events.values().any(|happened| *happened),
-            Self::WaitingForMutex(_) => false,
-        }
-    }
-}
+// impl ThreadState {
+//     pub fn is_ready(&self) -> bool {
+//         match self {
+//             ThreadState::Ready(_) => true,
+//             ThreadState::Running(_) => false,
+//             Self::WaitingForEvents(state) => state.events.values().any(|happened| *happened),
+//             Self::WaitingForMutex(_) => false,
+//             Self::FlushingTlb(state) => {
+//                 state.flushed_count.load(Ordering::Relaxed)
+//                     == MP_REQUEST.get_response().unwrap().cpus().len()
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Thread {

@@ -43,6 +43,7 @@ pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new().with_internal_mo
     &InternalModule::new().with_path(KERNEL_CONFIG_PATH),
     &InternalModule::new().with_path(USER_MODE_PROGRAM_PATH),
     &InternalModule::new().with_path(c"/extra_module_0"),
+    &InternalModule::new().with_path(c"/extra_module_1"),
 ]);
 
 #[used]

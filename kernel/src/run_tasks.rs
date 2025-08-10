@@ -65,6 +65,7 @@ pub fn run_threads() -> ! {
                         // TODO: Run the thread that's holding the mutex lock (priority inheritance / priority boosting)
                         // log::debug!("{thread_id:?} is waiting for mutex");
                     }
+                    ThreadState::FlushingTlb(_) => {}
                 }
             } else {
                 break Action::DoNothing;

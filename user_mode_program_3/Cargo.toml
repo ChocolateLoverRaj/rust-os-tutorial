@@ -1,0 +1,14 @@
+[package]
+name = "user_mode_program_3"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "user_mode_program_3"
+test = false
+bench = false
+
+[dependencies]
+pc-keyboard = "0.8.0"
+spin = "0.10.0"
+user_lib = { version = "0.1.0", path = "../user_lib" }

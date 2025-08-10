@@ -10,4 +10,6 @@ pub enum InterruptVector {
     Mouse,
     /// IPI - tells CPUs to maybe switch threads, depending on priorities
     CheckTasks,
+    /// IPI - tells CPUs to flush their TLB
+    FlushTlb,
 }

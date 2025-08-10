@@ -46,10 +46,7 @@ fn main(initial_rsp: NonNull<()>) {
     let env_entries = unsafe { EnvEntries::from_initial_rsp(initial_rsp) };
     log::info!("{env_entries:#X?}");
 
-    let apps = [
-        "Keyboard Tester",
-        "Non-existent app (will crash if you try to launch)",
-    ];
+    let apps = ["Keyboard Tester", "Syscall Mem Prot Tester"];
 
     let mut frame_buffer = FrameBuffer::try_new().unwrap();
 

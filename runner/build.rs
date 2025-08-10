@@ -19,6 +19,8 @@ fn main() {
     let user_mode_program_executable_file = env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM").unwrap();
     let user_mode_program_2_executable_file =
         env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM_2").unwrap();
+    let user_mode_program_3_executable_file =
+        env::var("CARGO_BIN_FILE_USER_MODE_PROGRAM_3").unwrap();
 
     // Symlink the out dir so we get a constant path to it
     ensure_symlink(&out_dir, runner_dir.join("out_dir")).unwrap();
@@ -50,6 +52,11 @@ fn main() {
     ensure_symlink(
         user_mode_program_2_executable_file,
         iso_dir.join("extra_module_0"),
+    )
+    .unwrap();
+    ensure_symlink(
+        user_mode_program_3_executable_file,
+        iso_dir.join("extra_module_1"),
     )
     .unwrap();
 

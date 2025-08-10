@@ -8,6 +8,7 @@ use ::acpi::InterruptModel;
 use alloc::boxed::Box;
 pub use capabilities::*;
 use cpu_local_data::init_cpu;
+pub use cpus_count::*;
 use create_normal_stack::create_normal_stack;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
@@ -25,6 +26,7 @@ pub mod acpi;
 pub mod call_with_rsp;
 mod capabilities;
 pub mod cpu_local_data;
+mod cpus_count;
 pub mod cr4;
 pub mod create_normal_stack;
 pub mod enter_user_mode;

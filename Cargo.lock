@@ -556,6 +556,7 @@ dependencies = [
  "kernel",
  "user_mode_program",
  "user_mode_program_2",
+ "user_mode_program_3",
 ]
 
 [[package]]
@@ -727,6 +728,15 @@ dependencies = [
  "common",
  "pc-keyboard",
  "rand",
+ "user_lib",
+]
+
+[[package]]
+name = "user_mode_program_3"
+version = "0.1.0"
+dependencies = [
+ "pc-keyboard",
+ "spin",
  "user_lib",
 ]
 
