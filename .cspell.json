@@ -6,6 +6,7 @@
         "apic",
         "apics",
         "bindgen",
+        "bist",
         "bitflags",
         "clac",
         "cpuid",

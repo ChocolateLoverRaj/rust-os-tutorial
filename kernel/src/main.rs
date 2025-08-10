@@ -10,6 +10,7 @@ pub use capabilities::*;
 use cpu_local_data::init_cpu;
 pub use cpus_count::*;
 use create_normal_stack::create_normal_stack;
+use hlt_loop::hlt_loop;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
     RSDP_REQUEST,
@@ -134,6 +135,9 @@ extern "sysv64" fn init_bsp() -> ! {
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
     spawn_initial_process::spawn_initial_process(module_response);
+
+    pci::init();
+    hlt_loop();
 
     run_threads()
 }
