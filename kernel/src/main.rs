@@ -100,6 +100,8 @@ extern "sysv64" fn init_bsp() -> ! {
     // Safety: We're not sending this across CPUs
     let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
     spcr::init(&acpi_tables);
+    pci::init(&acpi_tables);
+    hlt_loop();
 
     {
         let acpi_tables = acpi_tables
@@ -135,9 +137,6 @@ extern "sysv64" fn init_bsp() -> ! {
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
     spawn_initial_process::spawn_initial_process(module_response);
-
-    pci::init();
-    hlt_loop();
 
     run_threads()
 }
