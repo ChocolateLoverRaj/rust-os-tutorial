@@ -9,11 +9,10 @@ use acpi::{
 };
 use alloc::vec;
 use bitfield::{bitfield, bitfield_constructor};
-use common::PageSize;
 use volatile::VolatilePtr;
 use x86_64::{PhysAddr, instructions::port::Port, registers::model_specific::PatMemoryType};
 
-use crate::{ConfigurableFlags, Frame, memory::MEMORY};
+use crate::{ConfigurableFlags, Frame, max_page_size, memory::MEMORY};
 
 pub fn get_phys_range_to_map(mcfg_entry: &McfgEntry) -> Range<PhysAddr> {
     let n_buses = (mcfg_entry.bus_number_end - mcfg_entry.bus_number_start) as u64 + 1;
@@ -276,18 +275,17 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
             .iter()
             .map(|entry| {
                 let range = get_phys_range_to_map(entry);
-                let page_size = PageSize::_4KiB;
-                let len = range.end - range.start;
-                let n_pages = (len) / page_size.byte_len_u64();
+                let page_size = max_page_size();
+                let offset_in_page = range.start.as_u64() % page_size.byte_len_u64();
+                let first_frame = Frame::new(range.start - offset_in_page, page_size).unwrap();
+                let n_pages = range.end.as_u64().div_ceil(page_size.byte_len_u64())
+                    - range.start.as_u64() / page_size.byte_len_u64();
                 let mut pages = virt_mem
                     .allocate_contiguous_pages(page_size, n_pages)
                     .unwrap();
                 for i in 0..n_pages {
                     let page = pages.start_page().offset(i).unwrap();
-                    let frame = Frame::new(range.start, page_size)
-                        .unwrap()
-                        .offset(i)
-                        .unwrap();
+                    let frame = first_frame.offset(i).unwrap();
                     let flags = ConfigurableFlags {
                         writable: true,
                         executable: false,
@@ -296,8 +294,8 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                     unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
                 }
                 let mapped_mem = NonNull::new(slice_from_raw_parts_mut(
-                    pages.start_addr().as_mut_ptr(),
-                    len as usize,
+                    (pages.start_addr() + offset_in_page).as_mut_ptr(),
+                    (range.end - range.start) as usize,
                 ))
                 .unwrap();
                 unsafe { PciAccess::new_pcie(*entry, mapped_mem) }
