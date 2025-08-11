@@ -53,6 +53,7 @@ pub mod nmi_handler_states;
 mod paging;
 pub mod panic_handler;
 pub mod pci;
+mod pci_init;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
@@ -100,7 +101,7 @@ extern "sysv64" fn init_bsp() -> ! {
     // Safety: We're not sending this across CPUs
     let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
     spcr::init(&acpi_tables);
-    pci::init(&acpi_tables);
+    pci_init::init(&acpi_tables);
     hlt_loop();
 
     {
