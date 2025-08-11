@@ -12,6 +12,7 @@ use pci_config::*;
 
 mod bar;
 mod bus;
+mod capabilities;
 mod device;
 mod function;
 mod get_phys_range_to_map;

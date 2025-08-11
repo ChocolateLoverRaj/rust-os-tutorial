@@ -11,6 +11,10 @@ use crate::{
 
 pub fn init(apic: &Apic<impl Allocator>) {
     if apic.also_has_legacy_pics {
+        log::info!("I/O APIC has legacy PICs");
+        for interrupt_source_override in apic.interrupt_source_overrides.iter() {
+            log::info!("Interrupt source override: {interrupt_source_override:#?}");
+        }
         let find_global_system_interrupt = |isa_interrupt: u8| {
             apic.interrupt_source_overrides
                 .iter()
@@ -81,5 +85,7 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 log::info!("Found I/O APIC for mouse");
             }
         }
+    } else {
+        log::info!("I/O APIC does not have legacy PICs");
     }
 }

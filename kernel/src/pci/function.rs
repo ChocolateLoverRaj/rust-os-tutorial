@@ -3,7 +3,7 @@ use crate::pci::{
     MemoryBarInfo, MemorySpaceBar,
 };
 
-use super::{BarCommon, HeaderType, HeaderTypeByte, PciAccess};
+use super::{BarCommon, HeaderType, HeaderTypeByte, PciAccess, capabilities::Capabilities};
 
 #[derive(Debug)]
 pub struct PciFunction<'a> {
@@ -26,20 +26,24 @@ pub struct PciFunction<'a> {
 }
 
 impl PciFunction<'_> {
+    /// Returns `None` if the header type is not known
     pub fn header_type(&self) -> Option<HeaderType> {
         self.header_type.header_type().try_into().ok()
     }
 
-    pub fn max_bars(&self) -> u8 {
-        match self.header_type().unwrap() {
+    /// Returns `None` if the header type is not known
+    pub fn max_bars(&self) -> Option<u8> {
+        Some(match self.header_type()? {
             HeaderType::GeneralDevice => 6,
             HeaderType::PciToPciBridge => 2,
             HeaderType::PciToCardBusBridge => 0,
-        }
+        })
     }
 
-    pub fn read_bar_with_size(&mut self, bar_index: u8) -> Option<BarWithSize> {
-        assert!((0..self.max_bars()).contains(&bar_index));
+    /// Returns `None` if header type is not known.
+    /// Returns `Some(None)` if the bar is not present
+    pub fn read_bar_with_size(&mut self, bar_index: u8) -> Option<Option<BarWithSize>> {
+        assert!((0..self.max_bars()?).contains(&bar_index));
         let register_offset = 0x10 + size_of::<u32>() as u8 * bar_index;
         let raw_addr = self.pci.read_u32(
             self.bus_number,
@@ -48,7 +52,7 @@ impl PciFunction<'_> {
             register_offset,
         );
         if raw_addr == 0 {
-            return None;
+            return Some(None);
         }
         self.pci.write_u32(
             self.bus_number,
@@ -70,7 +74,7 @@ impl PciFunction<'_> {
             register_offset,
             raw_addr,
         );
-        Some(if BarCommon(raw_addr).bar_type() == 0x0 {
+        Some(Some(if BarCommon(raw_addr).bar_type() == 0x0 {
             BarWithSize::Memory(MemoryBarInfo {
                 addr_and_size: match MemorySpaceBar(raw_addr)._type() {
                     0x0 => MemoryBarAddrAndSize::U32(MemoryBarAddrAndSizeU32 {
@@ -120,6 +124,47 @@ impl PciFunction<'_> {
                 addr: raw_addr & !0b11,
                 size: (!(raw_size & !0b11)).wrapping_add(1),
             })
+        }))
+    }
+
+    /// Returns `None` if header type is unknown
+    pub fn interrupt_info(&mut self) -> Option<InterruptInfo> {
+        self.header_type()?;
+        let reg = self.pci.read_u32(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0x3C,
+        );
+        Some(InterruptInfo {
+            interrupt_pin: (reg >> 8) as u8,
+            interrupt_line: reg as u8,
         })
     }
+
+    /// Returns `None` if the header type is unknown
+    pub fn capabilities(&mut self) -> Option<Capabilities> {
+        Some(Capabilities {
+            bus_number: self.bus_number,
+            device_number: self.device_number,
+            function_number: self.function_number,
+            ptr: self.pci.read_u32(
+                self.bus_number,
+                self.device_number,
+                self.function_number,
+                match self.header_type()? {
+                    HeaderType::GeneralDevice => 0x34,
+                    HeaderType::PciToPciBridge => 0x34,
+                    HeaderType::PciToCardBusBridge => 0x14,
+                },
+            ) as u8,
+            pci: self.pci,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct InterruptInfo {
+    pub interrupt_pin: u8,
+    pub interrupt_line: u8,
 }

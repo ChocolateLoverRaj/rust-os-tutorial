@@ -101,8 +101,6 @@ extern "sysv64" fn init_bsp() -> ! {
     // Safety: We're not sending this across CPUs
     let acpi_tables = unsafe { acpi::get_acpi_tables(rsdp) };
     spcr::init(&acpi_tables);
-    pci_init::init(&acpi_tables);
-    hlt_loop();
 
     {
         let acpi_tables = acpi_tables
@@ -118,6 +116,9 @@ extern "sysv64" fn init_bsp() -> ! {
     };
     local_apic::map_if_needed(&apic);
     io_apics::init(&apic);
+
+    pci_init::init(&acpi_tables);
+    hlt_loop();
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();

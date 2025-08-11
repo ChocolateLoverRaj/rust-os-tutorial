@@ -1,7 +1,7 @@
 use core::ptr::{NonNull, slice_from_raw_parts_mut};
 
 use acpi::{AcpiHandler, AcpiTables, mcfg::Mcfg};
-use alloc::vec;
+use alloc::{vec, vec::Vec};
 use x86_64::registers::model_specific::PatMemoryType;
 
 use crate::{
@@ -58,14 +58,26 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                         if let Some(mut function) = device.function(function_number) {
                             log::debug!("{function:#X?}");
                             let mut bar_number = 0;
-                            while bar_number < function.max_bars() {
-                                if let Some(bar) = function.read_bar_with_size(bar_number) {
-                                    log::debug!("Bar {bar_number}: {bar:X?}");
-                                    bar_number += bar.slots_len();
-                                } else {
-                                    log::debug!("No bar {bar_number}");
-                                    bar_number += 1;
+                            if function.header_type().is_some() {
+                                while bar_number
+                                    < function.max_bars().expect("Header type is known")
+                                {
+                                    if let Some(bar) = function
+                                        .read_bar_with_size(bar_number)
+                                        .expect("Header type is known")
+                                    {
+                                        log::debug!("Bar {bar_number}: {bar:X?}");
+                                        bar_number += bar.slots_len();
+                                    } else {
+                                        bar_number += 1;
+                                    }
                                 }
+                                log::debug!("Interrupt: {:X?}", function.interrupt_info());
+                                let capabilities = function
+                                    .capabilities()
+                                    .expect("Header type is known")
+                                    .collect::<Vec<_>>();
+                                log::debug!("Capabilities: {capabilities:X?}");
                             }
                         }
                     }
