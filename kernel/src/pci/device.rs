@@ -57,7 +57,7 @@ impl PciDevice<'_> {
                 pci: self.pci,
                 bus_number: self.bus_number,
                 device_number: self.device_number,
-                function_number: function_number,
+                function_number,
                 vendor_id,
                 device_id,
                 command,

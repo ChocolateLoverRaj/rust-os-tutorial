@@ -2,85 +2,6 @@ use core::fmt::Debug;
 
 use bitfield::bitfield;
 
-#[derive(Clone, Copy)]
-pub struct FullBarMemory {
-    bar: MemorySpaceBar,
-    next_bar: u32,
-}
-
-impl FullBarMemory {
-    /// Get the address as a u64, whether it's a 32 bit or 64 bit address
-    pub fn addr_u64(&self) -> u64 {
-        match self.bar._type() {
-            0x0 => (self.bar.0 & !0b1111) as u64,
-            0x2 => (self.bar.0 & !0b1111) as u64 | (self.next_bar as u64) << 32,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn width_bits(&self) -> u8 {
-        match self.bar._type() {
-            0x0 => 32,
-            0x2 => 64,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Debug for FullBarMemory {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("MemorySpaceBar")
-            .field("width_bits", &self.width_bits())
-            .field("addr", &format_args!("0x{:X}", self.addr_u64()))
-            .field("prefetchable", &self.bar.prefetchable())
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum FullBarType {
-    Memory(FullBarMemory),
-    Io(IoSpaceBar),
-}
-
-#[derive(Clone, Copy)]
-pub struct FullBar {
-    pub(super) bar: BarCommon,
-    pub(super) next_bar: u32,
-}
-
-impl Debug for FullBar {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.get_enum().fmt(f)
-    }
-}
-
-impl FullBar {
-    pub fn get_enum(&self) -> FullBarType {
-        if self.bar.bar_type() == 0x0 {
-            FullBarType::Memory(FullBarMemory {
-                bar: MemorySpaceBar(self.bar.0),
-                next_bar: self.next_bar,
-            })
-        } else {
-            FullBarType::Io(IoSpaceBar(self.bar.0))
-        }
-    }
-
-    /// The number of BARs that make up this BAR
-    pub fn slots_len(&self) -> u8 {
-        if self.bar.bar_type() == 0x0 {
-            if MemorySpaceBar(self.bar.0)._type() == 0x2 {
-                2
-            } else {
-                1
-            }
-        } else {
-            1
-        }
-    }
-}
-
 bitfield! {
     #[derive( Clone, Copy)]
   pub struct BarCommon(u32);
@@ -113,5 +34,77 @@ impl Debug for IoSpaceBar {
         f.debug_struct("IoSpaceBar")
             .field("addr", &format_args!("0x{:X}", self.addr()))
             .finish()
+    }
+}
+
+#[derive(Debug)]
+pub struct MemoryBarAddrAndSizeU32 {
+    pub addr: u32,
+    pub size: u32,
+}
+
+#[derive(Debug)]
+pub struct MemoryBarAddrAndSizeU64 {
+    pub addr: u64,
+    pub size: u64,
+}
+
+#[derive(Debug)]
+pub enum MemoryBarAddrAndSize {
+    U32(MemoryBarAddrAndSizeU32),
+    U64(MemoryBarAddrAndSizeU64),
+}
+
+impl MemoryBarAddrAndSize {
+    /// Get the address as a `u64` regardless of whether this is a 32-bit or 64-bit address.
+    pub fn addr_u64(&self) -> u64 {
+        match self {
+            Self::U32(addr_and_size) => addr_and_size.addr as u64,
+            Self::U64(addr_and_size) => addr_and_size.addr,
+        }
+    }
+
+    /// Get the size as a `u64` regardless of whether this is a 32-bit or 64-bit address.
+    pub fn size_u64(&self) -> u64 {
+        match self {
+            Self::U32(addr_and_size) => addr_and_size.size as u64,
+            Self::U64(addr_and_size) => addr_and_size.size,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MemoryBarInfo {
+    pub addr_and_size: MemoryBarAddrAndSize,
+    /// CPUs can pre-fetch memory, which can result in memory being fetched earlier than your code reads it, fetched multiple times, or memory that your code doesn't read being fetched.
+    /// Pre-fetching memory is good for performance, but can cause bad side-effects if the memory is not prefetchable.
+    ///
+    /// If this is `false`, then the mem type should be UC (strong uncacheable).
+    /// If this is `true`, then the mem type should be WT (write-through) for most use cases, and WC (write-combining) for frame buffers.
+    pub prefetchable: bool,
+}
+
+#[derive(Debug)]
+pub struct IoBarInfo {
+    pub addr: u32,
+    pub size: u32,
+}
+
+#[derive(Debug)]
+pub enum BarWithSize {
+    Memory(MemoryBarInfo),
+    Io(IoBarInfo),
+}
+
+impl BarWithSize {
+    /// How many BAR slots this bar takes up. 64-bit memory addresses use up 2 BAR slots
+    pub fn slots_len(&self) -> u8 {
+        match self {
+            Self::Memory(memory_bar_info) => match memory_bar_info.addr_and_size {
+                MemoryBarAddrAndSize::U32(_) => 1,
+                MemoryBarAddrAndSize::U64(_) => 2,
+            },
+            BarWithSize::Io(_) => 1,
+        }
     }
 }

@@ -59,8 +59,8 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                             log::debug!("{function:#X?}");
                             let mut bar_number = 0;
                             while bar_number < function.max_bars() {
-                                if let Some(bar) = function.read_bar(bar_number) {
-                                    log::debug!("Bar {bar_number}: {bar:?}");
+                                if let Some(bar) = function.read_bar_with_size(bar_number) {
+                                    log::debug!("Bar {bar_number}: {bar:X?}");
                                     bar_number += bar.slots_len();
                                 } else {
                                     log::debug!("No bar {bar_number}");

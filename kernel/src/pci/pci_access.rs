@@ -99,4 +99,46 @@ impl PciAccess {
             }
         }
     }
+
+    pub(super) fn write_u32(
+        &mut self,
+        bus_number: u8,
+        device_number: u8,
+        function_number: u8,
+        register_offset: u8,
+        value: u32,
+    ) {
+        assert!(
+            register_offset.is_multiple_of(size_of::<u32>().try_into().unwrap()),
+            "Register offset represents bytes and should be aligned to u32"
+        );
+        match self {
+            Self::Pci(pci) => {
+                let mut address = PciConfig(0);
+                address.set_enable(true);
+                address.set_bus_number(bus_number);
+                address.set_device_number(device_number);
+                address.set_function_number(function_number);
+                address.set_register_offset(register_offset);
+
+                unsafe { pci.config_address.write(address.0) };
+                unsafe { pci.config_data.write(value) }
+            }
+            Self::Pcie(pcie) => {
+                // assert!(self.known_buses().contains(&bus_number));
+                let bus_offset = bus_number - pcie.mcfg_entry.bus_number_start;
+                pcie.ptr
+                    .as_chunks()
+                    .0
+                    .index(
+                        ((bus_offset as usize) << 20
+                            | (device_number as usize) << 15
+                            | (function_number as usize) << 12
+                            | register_offset as usize)
+                            / 4,
+                    )
+                    .write(value.to_le_bytes());
+            }
+        }
+    }
 }
