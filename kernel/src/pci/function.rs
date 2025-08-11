@@ -26,6 +26,14 @@ pub struct PciFunction<'a> {
 }
 
 impl PciFunction<'_> {
+    pub fn vendor_id(&self) -> u16 {
+        self.vendor_id
+    }
+
+    pub fn device_id(&self) -> u16 {
+        self.device_id
+    }
+
     /// Returns `None` if the header type is not known
     pub fn header_type(&self) -> Option<HeaderType> {
         self.header_type.header_type().try_into().ok()
@@ -129,12 +137,11 @@ impl PciFunction<'_> {
 
     /// Returns `None` if header type is unknown
     pub fn interrupt_info(&mut self) -> Option<InterruptInfo> {
-        self.header_type()?;
         let reg = self.pci.read_u32(
             self.bus_number,
             self.device_number,
             self.function_number,
-            0x3C,
+            self.header_type()?.interrupt_reg_addr(),
         );
         Some(InterruptInfo {
             interrupt_pin: (reg >> 8) as u8,
@@ -160,6 +167,31 @@ impl PciFunction<'_> {
             ) as u8,
             pci: self.pci,
         })
+    }
+
+    /// # Important
+    /// Writing to this will not actually change the IRQ number that this gets routed to.
+    /// The firmware writes to the interrupt line to indicate to the OS which one it is.
+    /// So the interrupt line should be treated as read-only by the OS.
+    ///
+    /// Returns `None` if the header type is unknown
+    pub fn set_interrupt_line(&mut self, interrupt_line: u8) -> Option<()> {
+        let register_offset = self.header_type()?.interrupt_reg_addr();
+        let current_reg = self.pci.read_u32(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            register_offset,
+        );
+        let new_reg = current_reg & !0xFF | interrupt_line as u32;
+        self.pci.write_u32(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            register_offset,
+            new_reg,
+        );
+        Some(())
     }
 }
 

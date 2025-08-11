@@ -37,19 +37,19 @@ impl Debug for IoSpaceBar {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MemoryBarAddrAndSizeU32 {
     pub addr: u32,
     pub size: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MemoryBarAddrAndSizeU64 {
     pub addr: u64,
     pub size: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MemoryBarAddrAndSize {
     U32(MemoryBarAddrAndSizeU32),
     U64(MemoryBarAddrAndSizeU64),
@@ -69,6 +69,16 @@ impl MemoryBarAddrAndSize {
         match self {
             Self::U32(addr_and_size) => addr_and_size.size as u64,
             Self::U64(addr_and_size) => addr_and_size.size,
+        }
+    }
+
+    pub fn addr_and_size_u64(self) -> MemoryBarAddrAndSizeU64 {
+        match self {
+            Self::U32(addr_and_size) => MemoryBarAddrAndSizeU64 {
+                addr: addr_and_size.addr as u64,
+                size: addr_and_size.size as u64,
+            },
+            Self::U64(addr_and_size) => addr_and_size,
         }
     }
 }

@@ -31,6 +31,7 @@ pub fn init(apic: &Apic<impl Allocator>) {
             find_global_system_interrupt(Pic8259Interrupts::Keyboard.into());
         let mouse_global_system_interrupt =
             find_global_system_interrupt(Pic8259Interrupts::Mouse.into());
+        let irq11_global_system_interrupt = find_global_system_interrupt(11);
         let memory = MEMORY.get().unwrap();
         let mut physical_memory = memory.physical_memory.lock();
         let mut virtual_memory = memory.virtual_memory.lock();
@@ -83,6 +84,20 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 unsafe { io_apic.set_table_entry(irq, entry) };
                 unsafe { io_apic.enable_irq(irq) };
                 log::info!("Found I/O APIC for mouse");
+            }
+            if global_system_interrupts.contains(&irq11_global_system_interrupt) {
+                let irq = (irq11_global_system_interrupt
+                    - io_apic_info.global_system_interrupt_base)
+                    .try_into()
+                    .unwrap();
+                let entry = {
+                    let mut entry = RedirectionTableEntry::default();
+                    entry.set_vector(InterruptVector::PciIntA.into());
+                    entry
+                };
+                unsafe { io_apic.set_table_entry(irq, entry) };
+                unsafe { io_apic.enable_irq(irq) };
+                log::info!("Found I/O APIC for IRQ 11");
             }
         }
     } else {

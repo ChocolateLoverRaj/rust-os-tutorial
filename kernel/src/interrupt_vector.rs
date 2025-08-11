@@ -12,4 +12,5 @@ pub enum InterruptVector {
     CheckTasks,
     /// IPI - tells CPUs to flush their TLB
     FlushTlb,
+    PciIntA,
 }

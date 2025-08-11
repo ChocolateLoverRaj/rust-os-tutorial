@@ -10,7 +10,6 @@ pub use capabilities::*;
 use cpu_local_data::init_cpu;
 pub use cpus_count::*;
 use create_normal_stack::create_normal_stack;
-use hlt_loop::hlt_loop;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST,
     RSDP_REQUEST,
@@ -117,9 +116,6 @@ extern "sysv64" fn init_bsp() -> ! {
     local_apic::map_if_needed(&apic);
     io_apics::init(&apic);
 
-    pci_init::init(&acpi_tables);
-    hlt_loop();
-
     let mp_response = MP_REQUEST.get_response().unwrap();
     let cpu_count = mp_response.cpus().len();
     log::info!("CPU Count: {cpu_count}");
@@ -134,11 +130,13 @@ extern "sysv64" fn init_bsp() -> ! {
     local_apic::init();
     syscalls::init();
 
+    pci_init::init(&acpi_tables);
+
     // mouse::init();
     // x86_64::instructions::interrupts::enable();
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
-    spawn_initial_process::spawn_initial_process(module_response);
+    // spawn_initial_process::spawn_initial_process(module_response);
 
     run_threads()
 }
