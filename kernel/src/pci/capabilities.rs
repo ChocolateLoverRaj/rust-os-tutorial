@@ -21,6 +21,7 @@ impl Iterator for Capabilities<'_> {
             self.ptr,
         );
         let capability = Capability {
+            ptr_to_self: self.ptr,
             id: reg as u8,
             next_ptr: (reg << 8) as u8,
         };
@@ -31,6 +32,7 @@ impl Iterator for Capabilities<'_> {
 
 #[derive(Debug)]
 pub struct Capability {
+    pub ptr_to_self: u8,
     pub id: u8,
     /// The offset in the function's memory where the next capability is
     pub next_ptr: u8,

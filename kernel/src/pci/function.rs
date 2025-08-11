@@ -3,7 +3,7 @@ use crate::pci::{
     MemoryBarInfo, MemorySpaceBar,
 };
 
-use super::{BarCommon, HeaderType, HeaderTypeByte, PciAccess, capabilities::Capabilities};
+use super::{BarCommon, HeaderType, HeaderTypeByte, Msi, PciAccess, capabilities::Capabilities};
 
 #[derive(Debug)]
 pub struct PciFunction<'a> {
@@ -192,6 +192,10 @@ impl PciFunction<'_> {
             new_reg,
         );
         Some(())
+    }
+
+    pub fn msi(&mut self) -> Option<Option<Msi>> {
+        Msi::find(self)
     }
 }
 

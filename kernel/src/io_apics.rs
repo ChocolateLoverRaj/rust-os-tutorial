@@ -92,7 +92,7 @@ pub fn init(apic: &Apic<impl Allocator>) {
                     .unwrap();
                 let entry = {
                     let mut entry = RedirectionTableEntry::default();
-                    entry.set_vector(InterruptVector::PciIntA.into());
+                    entry.set_vector(InterruptVector::Pci.into());
                     entry
                 };
                 unsafe { io_apic.set_table_entry(irq, entry) };

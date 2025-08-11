@@ -53,8 +53,8 @@ extern "x86-interrupt" fn nmi_handler(_stack_frame: InterruptStackFrame) {
     handle_panic_originating_on_other_cpu()
 }
 
-extern "x86-interrupt" fn pci_int_a_handler(_stack_frame: InterruptStackFrame) {
-    log::debug!("PCI INT A received");
+extern "x86-interrupt" fn pci_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    log::debug!("interrupt from a PCI function received");
     // We must notify the local APIC that it's the end of interrupt, otherwise we won't receive any more interrupts from it
     let mut local_apic = get_local().local_apic.get().unwrap().lock();
     // Safety: We are done with an interrupt triggered by the local APIC
@@ -108,8 +108,8 @@ pub fn init() {
                 .set_stack_index(NORMAL_STACK_INDEX);
         }
         unsafe {
-            idt[u8::from(InterruptVector::PciIntA)]
-                .set_handler_fn(pci_int_a_handler)
+            idt[u8::from(InterruptVector::Pci)]
+                .set_handler_fn(pci_interrupt_handler)
                 .set_stack_index(NORMAL_STACK_INDEX)
         };
         idt

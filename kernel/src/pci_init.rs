@@ -12,9 +12,13 @@ use volatile::{
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, max_page_size,
+    ConfigurableFlags, Frame,
+    interrupt_vector::InterruptVector,
+    max_page_size,
     memory::MEMORY,
-    pci::{BarWithSize, PciAccess, get_phys_range_to_map},
+    pci::{
+        ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, PciAccess, get_phys_range_to_map,
+    },
 };
 
 pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
@@ -87,8 +91,9 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                                 log::debug!("Capabilities: {capabilities:X?}");
                             }
 
+                            // We can use the QEMU edu device (https://www.qemu.org/docs/master/specs/edu.html)
+                            // To test if our BAR reading, mapping, and interrupts are working
                             if function.vendor_id() == 0x1234 && function.device_id() == 0x11e8 {
-                                // QEMU edu device
                                 let bar = function
                                     .read_bar_with_size(0)
                                     .expect("Header type is known")
@@ -171,6 +176,24 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                                 edu_mmio.card_liveness_check().write(input);
                                 assert_eq!(edu_mmio.card_liveness_check().read(), !input);
                                 log::debug!("Passed card liveness check");
+                                if let Some(mut msi) = function.msi().expect("Header type is known")
+                                {
+                                    log::debug!("MSI is supported. Configuring and enabling MSI.");
+                                    let mut message_control = msi.get_message_control();
+                                    msi.set_message_addr(ApicMsiMessageAddress::default().0);
+                                    // We can specify trigger mode, delivery mode, and vector here
+                                    msi.set_message_data({
+                                        let mut data = ApicMsiMessageData(0);
+                                        data.set_vector(InterruptVector::Pci.into());
+                                        data.0
+                                    });
+                                    message_control.set_enable(true);
+                                    // Disable multiple messages
+                                    message_control.set_multiple_message_enable(0b000);
+                                    msi.set_message_control(message_control);
+                                } else {
+                                    log::debug!("No MSI. Falling back to legacy PCI interrupts");
+                                }
                                 log::debug!("Raising interrupt");
                                 // Note that we would have to get the interrupt line and dynamically configure the I/O APIC
                                 // Right now the I/O APIC code is hardcoded to use IRQ 11, which matches the interrupt line

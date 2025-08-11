@@ -12,5 +12,8 @@ pub enum InterruptVector {
     CheckTasks,
     /// IPI - tells CPUs to flush their TLB
     FlushTlb,
-    PciIntA,
+    /// Note that PCI devices can actually send interrupts to >1 interrupt vector.
+    /// To maximize performance, more interrupt vectors should be used for PCI, and they should be distributed to multiple CPUs.
+    /// However for now we will just use a single vector.
+    Pci,
 }
