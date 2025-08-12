@@ -7,6 +7,7 @@ use crate::{
     ConfigurableFlags, Frame, max_page_size,
     memory::MEMORY,
     pci::{BarWithSize, PciFunction},
+    xhci::regs::{OperationalRegs, OperationalRegsVolatileFieldAccess},
 };
 
 use super::{CapabilityRegs, CapabilityRegsVolatileFieldAccess};
@@ -50,7 +51,7 @@ pub fn init(mut function: PciFunction) {
         };
         unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
     }
-    let mmio = (pages.start_addr() + (addr_and_size.addr % page_size.byte_len_u64()));
+    let mmio = pages.start_addr() + (addr_and_size.addr % page_size.byte_len_u64());
     parse_capability_registers(mmio);
 }
 
@@ -59,16 +60,60 @@ fn parse_capability_registers(mmio: VirtAddr) {
     let cap_regs = unsafe { VolatilePtr::new(ptr) };
     let cap_regs_len = cap_regs.cap_length().read();
 
-    let max_device_slots = cap_regs.hcs_params_1().read().max_slots();
-    let max_interrupters = cap_regs.hcs_params_1().read().max_interrupters();
-    let max_ports = cap_regs.hcs_params_1().read().max_ports();
+    let ops_regs_ptr =
+        NonNull::new((mmio + cap_regs_len as u64).as_mut_ptr::<OperationalRegs>()).unwrap();
+    let op_regs = unsafe { VolatilePtr::new(ops_regs_ptr) };
 
-    let isochronous_scheduling_threshold = cap_regs
-        .hcs_params_2()
-        .read()
-        .isochronous_scheduling_threshold();
-    let erst_max = cap_regs.hcs_params_2().read().erst_max();
-    let max_scratchpad_buffers = cap_regs.hcs_params_2().read().max_scratchpad_buffers();
+    // let max_device_slots = cap_regs.hcs_params_1().read().max_slots();
+    // let max_interrupters = cap_regs.hcs_params_1().read().max_interrupters();
+    // let max_ports = cap_regs.hcs_params_1().read().max_ports();
+
+    // let isochronous_scheduling_threshold = cap_regs
+    //     .hcs_params_2()
+    //     .read()
+    //     .isochronous_scheduling_threshold();
+    // let erst_max = cap_regs.hcs_params_2().read().erst_max();
+    // let max_scratchpad_buffers = cap_regs.hcs_params_2().read().max_scratchpad_buffers();
 
     log::debug!("xHCI Capability Registers: {:#X?}", cap_regs.read());
+    log::debug!("xHCI Operational Registers: {:#X?}", op_regs.read());
+
+    // Reset the host controller
+    log::debug!("Stopping host controller");
+    op_regs.usb_cmd().update(|mut cmd| {
+        cmd.set_run(false);
+        cmd
+    });
+    // TODO: Timeout after 200ms
+    while !op_regs.usb_sts().read().hch() {}
+
+    log::debug!("Resetting host controller");
+    op_regs.usb_cmd().update(|mut cmd| {
+        cmd.set_host_controller_reset(true);
+        cmd
+    });
+    // TODO: Timeout after 1000ms
+    while op_regs.usb_cmd().read().host_controller_reset() || op_regs.usb_sts().read().cnr() {}
+
+    // TODO: On real hardware, wait for 50ms - https://youtu.be/9rI_fYvng6Q?list=PLATP7rOKo3E82tBnMp90B4zejpWeAKlxn&t=359
+    if op_regs.usb_cmd().read().0 != 0 {
+        panic!()
+    }
+    if op_regs.dn_ctrl().read().0 != 0 {
+        panic!()
+    }
+    if op_regs.crcr().read().0 != 0 {
+        panic!()
+    }
+    if op_regs.dcbaap().read().0 != 0 {
+        panic!()
+    }
+    if op_regs.config().read().0 != 0 {
+        panic!()
+    }
+
+    log::debug!(
+        "xHCI Operational Registers after resetting: {:#X?}",
+        op_regs.read()
+    );
 }
