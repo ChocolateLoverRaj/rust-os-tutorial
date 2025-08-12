@@ -103,6 +103,11 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                                 && function.sub_class() == 0x3
                                 && function.prog_if() == 0x30
                             {
+                                let capabilities = function
+                                    .capabilities()
+                                    .expect("Header type is known")
+                                    .collect::<Vec<_>>();
+                                log::debug!("Capabilities: {capabilities:X?}");
                                 xhci::init(function);
                             }
                         }

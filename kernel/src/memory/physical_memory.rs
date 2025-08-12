@@ -25,6 +25,7 @@ pub enum MemoryType {
     UsedByKernel(KernelMemoryUsageType),
     UsedByUserMode(ProcessId),
     Shared(u64),
+    UsedByXhci,
 }
 
 pub struct PhysicalMemory {

@@ -221,7 +221,22 @@ bitfield! {
     pub struct Dcbaap(u64);
     impl Debug;
 
-    u64; pub dcbaap, set_dcbaap: 63, 6;
+    u64;
+    /// Note that the high bits of the u64 are stored here. The "u64" still starts at bit 0.
+    /// It's just that bits 0-5 are not used for the for dcbaap.
+    /// Since the dcbaap is aligned by 64, bits 0-5 will be 0 anyways.
+    /// So the spec reserved bits 0-5 so they can be used to encode other information in the future.
+    _dcbaap, _set_dcbaap: 63, 6;
+}
+
+impl Dcbaap {
+    pub fn dcbaap(&self) -> u64 {
+        self._dcbaap() << 6
+    }
+
+    pub fn set_dcbaap(&mut self, dcbaap: u64) {
+        self._set_dcbaap(dcbaap >> 6);
+    }
 }
 
 bitfield! {

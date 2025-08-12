@@ -375,6 +375,7 @@ dependencies = [
  "volatile 0.6.1",
  "x2apic",
  "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
+ "xhci_driver",
  "zerocopy",
 ]
 
@@ -935,6 +936,15 @@ dependencies = [
  "bitflags 2.9.1",
  "rustversion",
  "volatile 0.4.6",
+]
+
+[[package]]
+name = "xhci_driver"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "debug-ignore",
+ "volatile 0.6.1",
 ]
 
 [[package]]
