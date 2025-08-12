@@ -208,11 +208,21 @@ bitfield! {
     pub struct Crcr(u64);
     impl Debug;
 
-    pub rcs, set_rcs: 0;
+    pub ring_cycle_state, set_ring_cycle_state: 0;
     pub cs, set_cs: 1;
     pub ca, set_ca: 2;
     pub crr, _: 3;
-    u64; command_ring_ptr, set_command_ring_ptr: 63, 6;
+    u64; _command_ring_ptr, _set_command_ring_ptr: 63, 6;
+}
+
+impl Crcr {
+    pub fn command_ring_ptr(&self) -> u64 {
+        self._command_ring_ptr() << 6
+    }
+
+    pub fn set_command_ring_ptr(&mut self, command_ring_ptr: u64) {
+        self._set_command_ring_ptr(command_ring_ptr >> 6);
+    }
 }
 
 bitfield! {

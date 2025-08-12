@@ -2,12 +2,16 @@ use core::num::NonZero;
 
 use common::PageSize;
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
-use xhci_driver::{ScratchpadPages, SetUpDcbaaInput, XhciPage};
+use xhci_driver::{
+    AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse, ScratchpadPages,
+    SetUpDcbaaInput, XhciPage,
+};
 
 use crate::{
     ConfigurableFlags, Frame, max_page_size,
     memory::{MEMORY, MemoryType},
     pci::{BarWithSize, PciFunction},
+    translate_addr::TranslateToVirt,
 };
 
 pub fn init(mut function: PciFunction) {
@@ -71,21 +75,11 @@ pub fn init(mut function: PciFunction) {
         "xHCI op regs: {:#X?}",
         xhci_driver.debug_operational_registers()
     );
-    xhci_driver.configure_operational_registers();
-
-    let input = SetUpDcbaaInput {
-        dcbaa_page: allocate_xhci_page(),
-        scratchpad_pages: xhci_driver
-            .required_scratchpad_pages()
-            .map(|required_pages| ScratchpadPages {
-                scratchpad_array_page: allocate_xhci_page(),
-                scratchpad_pages: (0..required_pages.get() as usize)
-                    .map(|_| allocate_xhci_page())
-                    .collect(),
-            }),
-    };
+    let res = xhci_driver
+        .configure_operational_registers_req()
+        .map(allocate_multi);
     // Safety: pages are properly allocated
-    unsafe { xhci_driver.set_up_dcbaa(input) };
+    unsafe { xhci_driver.configure_operational_registers(res) };
     log::debug!("xHCI driver: {xhci_driver:X?}");
     log::debug!(
         "xHCI op regs: {:#X?}",
@@ -115,4 +109,30 @@ pub fn allocate_xhci_page() -> XhciPage {
         phys_addr: frame.start_addr().as_u64(),
         virt_addr: NonZero::new(page.start_addr().as_u64() as usize).expect("ptr is not null"),
     }
+}
+
+pub fn allocate(request: &AllocRequest) -> AllocResponse {
+    let memory = MEMORY.get().unwrap();
+    let phys_addr = memory
+        .physical_memory
+        .lock()
+        .allocate(
+            request.size,
+            request.align,
+            request.boundary,
+            MemoryType::UsedByXhci,
+        )
+        .unwrap();
+    AllocResponse {
+        phys_addr: phys_addr.as_u64(),
+        virt_addr: NonZero::new(phys_addr.to_virt().as_u64() as usize).expect("ptr is not null"),
+    }
+}
+
+pub fn allocate_multi(request: Option<MultiAllocRequest>) -> MultiAllocResponse {
+    request.map_or_else(Default::default, |request| {
+        (0..request.count.get())
+            .map(|_| allocate(&request.request))
+            .collect()
+    })
 }

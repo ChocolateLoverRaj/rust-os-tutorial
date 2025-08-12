@@ -1,8 +1,8 @@
-use core::mem;
+use core::{mem, num::NonZero};
 
 use alloc::boxed::Box;
 use common::PageSize;
-use nodit::{Interval, NoditMap};
+use nodit::{InclusiveInterval, Interval, NoditMap, interval::ie};
 use x86_64::{
     PhysAddr,
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
@@ -57,6 +57,57 @@ impl PhysicalMemory {
             .insert_merge_touching_if_values_equal(range.into(), memory_type)
             .unwrap();
         Some(Frame::new(PhysAddr::new(aligned_start), page_size).unwrap())
+    }
+
+    /// Useful for use with PCI devices which may need memory smaller than a page or have a boundary requirement, such as xHCI.
+    pub fn allocate(
+        &mut self,
+        size: NonZero<u64>,
+        align: NonZero<u64>,
+        boundary: NonZero<u64>,
+        memory_type: MemoryType,
+    ) -> Option<PhysAddr> {
+        assert!(size <= boundary);
+        assert!(align.is_power_of_two());
+        assert!(align <= boundary);
+        assert!(boundary.is_power_of_two());
+        let interval = self
+            .map
+            .iter()
+            .filter_map(|(interval, memory_type)| {
+                if matches!(memory_type, MemoryType::Usable) {
+                    Some(interval)
+                } else {
+                    None
+                }
+            })
+            .find_map(|gap| {
+                // Check for a valid region before the boundary
+                {
+                    let start = gap.start().next_multiple_of(align.get());
+                    let interval = ie(start, start + size.get());
+                    if gap.contains_interval(&interval)
+                        && interval.start() / boundary == interval.end() / boundary
+                    {
+                        return Some(interval);
+                    }
+                }
+                // Check for a valid region after the next boundary
+                {
+                    let start = gap.start().next_multiple_of(boundary.get());
+                    let interval = ie(start, start + size.get());
+                    if gap.contains_interval(&interval) {
+                        return Some(interval);
+                    }
+                }
+                None
+            })?;
+        // Interval is no longer Usable
+        self.map.cut(interval);
+        self.map
+            .insert_merge_touching_if_values_equal(interval, memory_type)
+            .unwrap();
+        Some(PhysAddr::new(interval.start()))
     }
 
     pub fn get_kernel_frame_allocator(&mut self) -> PhysicalMemoryFrameAllocator<'_> {
