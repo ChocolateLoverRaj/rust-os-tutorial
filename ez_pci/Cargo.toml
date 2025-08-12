@@ -1,0 +1,11 @@
+[package]
+name = "ez_pci"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+acpi = { version = "5.2.0", default-features = false }
+bitfield = { version = "0.19.1", default-features = false }
+num_enum = { version = "0.7.4", default-features = false }
+volatile = { version = "0.6.1", default-features = false, features = ["unstable"] }
+x86_64 = { version = "0.15.2", default-features = false, features = ["instructions"] }

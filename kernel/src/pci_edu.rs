@@ -1,5 +1,6 @@
 use core::{num::NonZero, ptr::NonNull};
 
+use ez_pci::{ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, PciFunction};
 use volatile::{
     VolatileFieldAccess, VolatilePtr,
     access::{NoAccess, ReadOnly, WriteOnly},
@@ -7,11 +8,7 @@ use volatile::{
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame,
-    interrupt_vector::InterruptVector,
-    max_page_size,
-    memory::MEMORY,
-    pci::{ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, PciFunction},
+    ConfigurableFlags, Frame, interrupt_vector::InterruptVector, max_page_size, memory::MEMORY,
 };
 
 pub fn init(mut function: PciFunction) {

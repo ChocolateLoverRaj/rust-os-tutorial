@@ -1,26 +1,11 @@
-use core::{
-    num::NonZero,
-    ptr::{NonNull, slice_from_raw_parts_mut},
-};
+use core::ptr::{NonNull, slice_from_raw_parts_mut};
 
 use acpi::{AcpiHandler, AcpiTables, mcfg::Mcfg};
 use alloc::{vec, vec::Vec};
-use volatile::{
-    VolatileFieldAccess, VolatilePtr,
-    access::{NoAccess, ReadOnly, WriteOnly},
-};
+use ez_pci::{PciAccess, get_phys_range_to_map};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
-use crate::{
-    ConfigurableFlags, Frame,
-    interrupt_vector::InterruptVector,
-    max_page_size,
-    memory::MEMORY,
-    pci::{
-        ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, PciAccess, get_phys_range_to_map,
-    },
-    pci_edu, xhci,
-};
+use crate::{ConfigurableFlags, Frame, max_page_size, memory::MEMORY, pci_edu, xhci};
 
 pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
     let memory = MEMORY.get().unwrap();
@@ -34,7 +19,11 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                 let range = get_phys_range_to_map(entry);
                 let page_size = max_page_size();
                 let offset_in_page = range.start.as_u64() % page_size.byte_len_u64();
-                let first_frame = Frame::new(range.start - offset_in_page, page_size).unwrap();
+                let first_frame = Frame::new(
+                    PhysAddr::new(range.start.as_u64() - offset_in_page),
+                    page_size,
+                )
+                .unwrap();
                 let n_pages = range.end.as_u64().div_ceil(page_size.byte_len_u64())
                     - range.start.as_u64() / page_size.byte_len_u64();
                 let mut pages = virt_mem

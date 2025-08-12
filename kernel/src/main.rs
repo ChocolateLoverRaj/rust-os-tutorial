@@ -51,7 +51,6 @@ pub mod memory;
 pub mod nmi_handler_states;
 mod paging;
 pub mod panic_handler;
-pub mod pci;
 mod pci_edu;
 mod pci_init;
 pub mod pic8259_interrupts;

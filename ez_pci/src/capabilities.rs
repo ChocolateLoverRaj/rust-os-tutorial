@@ -1,4 +1,4 @@
-use super::PciAccess;
+use super::*;
 
 pub struct Capabilities<'a> {
     pub(super) pci: &'a mut PciAccess,

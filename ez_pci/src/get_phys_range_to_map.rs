@@ -1,7 +1,7 @@
 use core::ops::Range;
 
-use acpi::mcfg::McfgEntry;
-use x86_64::PhysAddr;
+pub use acpi::mcfg::McfgEntry;
+pub use x86_64::PhysAddr;
 
 pub fn get_phys_range_to_map(mcfg_entry: &McfgEntry) -> Range<PhysAddr> {
     let n_buses = (mcfg_entry.bus_number_end - mcfg_entry.bus_number_start) as u64 + 1;

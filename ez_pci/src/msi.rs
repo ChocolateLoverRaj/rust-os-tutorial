@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use bitfield::bitfield;
 
-use super::{PciAccess, PciFunction};
+use super::*;
 
 pub struct Msi<'a> {
     pci: &'a mut PciAccess,

@@ -1,9 +1,4 @@
-use crate::pci::{
-    BarWithSize, IoBarInfo, MemoryBarAddrAndSize, MemoryBarAddrAndSizeU32, MemoryBarAddrAndSizeU64,
-    MemoryBarInfo, MemorySpaceBar,
-};
-
-use super::{BarCommon, HeaderType, HeaderTypeByte, Msi, PciAccess, capabilities::Capabilities};
+use super::*;
 
 #[derive(Debug)]
 pub struct PciFunction<'a> {
@@ -11,12 +6,6 @@ pub struct PciFunction<'a> {
     pub(super) bus_number: u8,
     pub(super) device_number: u8,
     pub(super) function_number: u8,
-    pub(super) command: u16,
-    pub(super) status: u16,
-    pub(super) cache_line_size: u8,
-    pub(super) latency_timer: u8,
-    pub(super) header_type: HeaderTypeByte,
-    pub(super) bist: u8,
 }
 
 impl PciFunction<'_> {
@@ -65,13 +54,22 @@ impl PciFunction<'_> {
         ) >> 8) as u8
     }
 
-    /// Returns `None` if the header type is not known
-    pub fn header_type(&self) -> Option<HeaderType> {
-        self.header_type.header_type().try_into().ok()
+    pub fn header_type_byte(&mut self) -> HeaderTypeByte {
+        HeaderTypeByte(self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0xE,
+        ) as u8)
     }
 
     /// Returns `None` if the header type is not known
-    pub fn max_bars(&self) -> Option<u8> {
+    pub fn header_type(&mut self) -> Option<HeaderType> {
+        self.header_type_byte().header_type().try_into().ok()
+    }
+
+    /// Returns `None` if the header type is not known
+    pub fn max_bars(&mut self) -> Option<u8> {
         Some(match self.header_type()? {
             HeaderType::GeneralDevice => 6,
             HeaderType::PciToPciBridge => 2,
@@ -168,11 +166,12 @@ impl PciFunction<'_> {
 
     /// Returns `None` if header type is unknown
     pub fn interrupt_info(&mut self) -> Option<InterruptInfo> {
+        let register_offset = self.header_type()?.interrupt_reg_addr();
         let reg = self.pci.read_u32(
             self.bus_number,
             self.device_number,
             self.function_number,
-            self.header_type()?.interrupt_reg_addr(),
+            register_offset,
         );
         Some(InterruptInfo {
             interrupt_pin: (reg >> 8) as u8,
@@ -182,6 +181,11 @@ impl PciFunction<'_> {
 
     /// Returns `None` if the header type is unknown
     pub fn capabilities(&mut self) -> Option<Capabilities> {
+        let register_offset = match self.header_type()? {
+            HeaderType::GeneralDevice => 0x34,
+            HeaderType::PciToPciBridge => 0x34,
+            HeaderType::PciToCardBusBridge => 0x14,
+        };
         Some(Capabilities {
             bus_number: self.bus_number,
             device_number: self.device_number,
@@ -190,11 +194,7 @@ impl PciFunction<'_> {
                 self.bus_number,
                 self.device_number,
                 self.function_number,
-                match self.header_type()? {
-                    HeaderType::GeneralDevice => 0x34,
-                    HeaderType::PciToPciBridge => 0x34,
-                    HeaderType::PciToCardBusBridge => 0x14,
-                },
+                register_offset,
             ) as u8,
             pci: self.pci,
         })

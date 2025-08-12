@@ -1,16 +1,13 @@
 use core::num::NonZero;
 
 use common::PageSize;
+use ez_pci::{BarWithSize, PciFunction};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
-use xhci_driver::{
-    AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse, ScratchpadPages,
-    SetUpDcbaaInput, XhciPage,
-};
+use xhci_driver::{AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse, XhciPage};
 
 use crate::{
     ConfigurableFlags, Frame, max_page_size,
     memory::{MEMORY, MemoryType},
-    pci::{BarWithSize, PciFunction},
     translate_addr::TranslateToVirt,
 };
 

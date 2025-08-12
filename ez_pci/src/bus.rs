@@ -1,6 +1,4 @@
-use crate::pci::HeaderTypeByte;
-
-use super::{PciAccess, PciDevice};
+use super::*;
 
 pub struct PciBus<'a> {
     pub(super) pci: &'a mut PciAccess,

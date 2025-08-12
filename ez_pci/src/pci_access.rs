@@ -4,7 +4,7 @@ use acpi::mcfg::McfgEntry;
 use volatile::VolatilePtr;
 use x86_64::instructions::port::Port;
 
-use super::{PciBus, PciConfig};
+use super::*;
 
 #[derive(Debug)]
 pub struct Pci {
