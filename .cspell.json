@@ -64,6 +64,7 @@
         "Uncacheable",
         "uninit",
         "virt",
+        "xhci",
         "xorriso",
         "zerocopy"
     ],

@@ -52,6 +52,7 @@ pub mod nmi_handler_states;
 mod paging;
 pub mod panic_handler;
 pub mod pci;
+mod pci_edu;
 mod pci_init;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
@@ -68,6 +69,7 @@ pub mod translate_addr;
 mod try_access_user_mem;
 pub mod user_mode_program_path;
 pub mod writer_with_cr;
+pub mod xhci;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_from_limine() -> ! {

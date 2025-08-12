@@ -11,14 +11,8 @@ pub struct PciFunction<'a> {
     pub(super) bus_number: u8,
     pub(super) device_number: u8,
     pub(super) function_number: u8,
-    pub(super) vendor_id: u16,
-    pub(super) device_id: u16,
     pub(super) command: u16,
     pub(super) status: u16,
-    pub(super) revision_id: u8,
-    pub(super) prog_if: u8,
-    pub(super) sub_class: u8,
-    pub(super) class_code: u8,
     pub(super) cache_line_size: u8,
     pub(super) latency_timer: u8,
     pub(super) header_type: HeaderTypeByte,
@@ -26,12 +20,49 @@ pub struct PciFunction<'a> {
 }
 
 impl PciFunction<'_> {
-    pub fn vendor_id(&self) -> u16 {
-        self.vendor_id
+    pub fn vendor_id(&mut self) -> u16 {
+        self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0x0,
+        )
     }
 
-    pub fn device_id(&self) -> u16 {
-        self.device_id
+    pub fn device_id(&mut self) -> u16 {
+        self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0x2,
+        )
+    }
+
+    pub fn class_code(&mut self) -> u8 {
+        (self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0xA,
+        ) >> 8) as u8
+    }
+
+    pub fn sub_class(&mut self) -> u8 {
+        self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0xA,
+        ) as u8
+    }
+
+    pub fn prog_if(&mut self) -> u8 {
+        (self.pci.read_u16(
+            self.bus_number,
+            self.device_number,
+            self.function_number,
+            0x8,
+        ) >> 8) as u8
     }
 
     /// Returns `None` if the header type is not known

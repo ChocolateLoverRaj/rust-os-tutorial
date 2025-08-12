@@ -18,29 +18,15 @@ impl PciDevice<'_> {
 
     pub fn function(&mut self, function_number: u8) -> Option<PciFunction> {
         assert!((0..=7).contains(&function_number));
-        let (vendor_id, device_id) = {
-            let reg = self
-                .pci
-                .read_u32(self.bus_number, self.device_number, function_number, 0x0);
-            (reg as u16, (reg >> 16) as u16)
-        };
+        let vendor_id =
+            self.pci
+                .read_u16(self.bus_number, self.device_number, function_number, 0x0);
         if vendor_id != u16::MAX {
             let (command, status) = {
                 let reg =
                     self.pci
                         .read_u32(self.bus_number, self.device_number, function_number, 0x4);
                 (reg as u16, (reg >> 16) as u16)
-            };
-            let (revision_id, prog_if, sub_class, class_code) = {
-                let reg =
-                    self.pci
-                        .read_u32(self.bus_number, self.device_number, function_number, 0x8);
-                (
-                    reg as u8,
-                    (reg >> 8) as u8,
-                    (reg >> 16) as u8,
-                    (reg >> 24) as u8,
-                )
             };
             let (cache_line_size, latency_timer, header_type, bist) = {
                 let reg =
@@ -58,14 +44,8 @@ impl PciDevice<'_> {
                 bus_number: self.bus_number,
                 device_number: self.device_number,
                 function_number,
-                vendor_id,
-                device_id,
                 command,
                 status,
-                revision_id,
-                prog_if,
-                sub_class,
-                class_code,
                 cache_line_size,
                 latency_timer,
                 header_type,
