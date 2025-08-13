@@ -226,25 +226,3 @@ impl Driver {
         driver_virt_dcbaa
     }
 }
-
-/// A physical frame that is also mapped in virtual memory as uncacheable.
-#[derive(Debug)]
-pub struct XhciPage {
-    pub phys_addr: u64,
-    pub virt_addr: NonZero<usize>,
-}
-
-#[derive(Debug)]
-pub struct ScratchpadPages {
-    // TODO: Since the scratchpad array could be <1 page, we could save memory by sharing a page with other xHCI memory.
-    /// A page used for the array of pointers to scratchpad pages
-    pub scratchpad_array_page: XhciPage,
-    /// The scratchpad pages themselves
-    pub scratchpad_pages: Box<[XhciPage]>,
-}
-
-#[derive(Debug)]
-pub struct SetUpDcbaaInput {
-    pub dcbaa_page: XhciPage,
-    pub scratchpad_pages: Option<ScratchpadPages>,
-}

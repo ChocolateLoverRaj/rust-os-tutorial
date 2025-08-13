@@ -1,4 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["runner", "kernel", "user_mode_program", "common", "user_mode_program_2", "user_lib", "user_mode_program_3", "xhci_driver", "ez_pci"]
+members = [
+    "runner",
+    "kernel",
+    "user_mode_program",
+    "common",
+    "user_mode_program_2",
+    "user_lib",
+    "user_mode_program_3",
+    "xhci_driver",
+]
 default-members = ["runner"]
