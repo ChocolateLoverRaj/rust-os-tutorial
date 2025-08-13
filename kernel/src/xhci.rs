@@ -1,9 +1,8 @@
 use core::num::NonZero;
 
-use common::PageSize;
 use ez_pci::{BarWithSize, PciFunction};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
-use xhci_driver::{AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse, XhciPage};
+use xhci_driver::{AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse};
 
 use crate::{
     ConfigurableFlags, Frame, max_page_size,
@@ -82,30 +81,6 @@ pub fn init(mut function: PciFunction) {
         "xHCI op regs: {:#X?}",
         xhci_driver.debug_operational_registers()
     );
-}
-
-pub fn allocate_xhci_page() -> XhciPage {
-    let memory = MEMORY.get().unwrap();
-    let mut virt_mem = memory.virtual_memory.lock();
-    let mut phys_mem = memory.physical_memory.lock();
-    let frame = phys_mem
-        .allocate_frame_with_type(PageSize::_4KiB, MemoryType::UsedByXhci)
-        .unwrap();
-    let mut pages = virt_mem
-        .allocate_contiguous_pages_2(PageSize::_4KiB, NonZero::new(1).expect("1 != 0"))
-        .unwrap();
-    let page = pages.start_page();
-    let flags = ConfigurableFlags {
-        writable: true,
-        executable: false,
-        pat_memory_type: PatMemoryType::StrongUncacheable,
-    };
-    let mut frame_allocator = phys_mem.get_kernel_frame_allocator();
-    unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
-    XhciPage {
-        phys_addr: frame.start_addr().as_u64(),
-        virt_addr: NonZero::new(page.start_addr().as_u64() as usize).expect("ptr is not null"),
-    }
 }
 
 pub fn allocate(request: &AllocRequest) -> AllocResponse {

@@ -54,6 +54,15 @@ impl Driver {
         unsafe { VolatilePtr::new(pointer) }
     }
 
+    fn runtime_regs(&mut self) -> VolatilePtr<RuntimeRegisters> {
+        let pointer = NonNull::new(
+            (self.cap_regs.as_raw_ptr().addr().get() + self.cap_regs.rts_off().read() as usize)
+                as *mut RuntimeRegisters,
+        )
+        .expect("ptr is not null");
+        unsafe { VolatilePtr::new(pointer) }
+    }
+
     pub fn debug_capability_registers(&mut self) -> impl Debug {
         self.cap_regs.read()
     }
@@ -224,5 +233,47 @@ impl Driver {
         });
 
         driver_virt_dcbaa
+    }
+
+    pub fn configure_runtime_registers(&mut self) {
+        // Get the primary interrupter registers
+        let interrupter_regs = self
+            .runtime_regs()
+            .interrupter_register_sets()
+            .as_slice()
+            .index(0);
+
+        // Enable interrupts
+        interrupter_regs.iman().update(|mut iman| {
+            iman.set_interrupt_enable(true);
+            iman
+        });
+
+        // Set up the event ring and write to the interrupter
+        // Registers to set: ERSTSZ, ERDP, ERSTBA
+        // TO-DO
+
+        // Clear any pending interrupts for the primary interrupter
+        self.acknowledge_irq(0);
+    }
+
+    fn acknowledge_irq(&mut self, interrupter: u16) {
+        self.op_regs().usb_sts().write({
+            let mut usb_sts = UsbSts(0);
+            usb_sts.set_eint(true);
+            usb_sts
+        });
+
+        let interrupter_regs = self
+            .runtime_regs()
+            .interrupter_register_sets()
+            .as_slice()
+            .index(interrupter as usize);
+
+        interrupter_regs.iman().update(|mut iman| {
+            // To set this to false, you actually write true to this
+            iman.set_interrupt_pending(true);
+            iman
+        });
     }
 }
