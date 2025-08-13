@@ -4,7 +4,7 @@ use core::{
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
 
-use alloc::{boxed::Box, vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 use volatile::VolatilePtr;
 
 use crate::*;
@@ -19,7 +19,9 @@ pub struct DriverOp {
     command_ring: XhciCommandRing,
 }
 
+// These are configurable. These values are what the tutorial uses.
 const XHCI_COMMAND_RING_TRB_COUNT: NonZero<usize> = NonZero::new(256).unwrap();
+const XHCI_EVENT_RING_TRB_COUNT: NonZero<u32> = NonZero::new(256).unwrap();
 
 #[derive(Debug)]
 pub struct Driver {
@@ -27,6 +29,7 @@ pub struct Driver {
     /// The xHCI DCBAA is an array of physical addresses.
     /// This driver also stores an array of virtual addresses.
     op: Option<DriverOp>,
+    event_ring: Option<XhciEventRing>,
 }
 
 impl Driver {
@@ -42,7 +45,26 @@ impl Driver {
                 unsafe { VolatilePtr::new(pointer) }
             },
             op: None,
+            event_ring: None,
         }
+    }
+
+    pub fn init_req(&mut self) -> Box<[Option<MultiAllocRequest>]> {
+        let mut requests = Vec::new();
+        requests.extend_from_slice(&self.configure_operational_registers_req());
+        requests.extend_from_slice(&self.configure_runtime_registers_req());
+        requests.into_boxed_slice()
+    }
+
+    /// Before calling this function, call [`Self::init_req`] so you can allocate memory.
+    ///
+    /// # Safety
+    /// The pages must be valid and not used for anything else
+    pub unsafe fn init(&mut self, res: &[MultiAllocResponse]) {
+        assert_responses_match(&self.init_req(), &res);
+        self.reset_host_controller();
+        self.configure_operational_registers((&res[0..4]).try_into().unwrap());
+        self.configure_runtime_registers((&res[4..6]).try_into().unwrap());
     }
 
     fn op_regs(&mut self) -> VolatilePtr<OperationalRegs> {
@@ -106,7 +128,7 @@ impl Driver {
         }
     }
 
-    pub fn configure_operational_registers_req(&mut self) -> [Option<MultiAllocRequest>; 4] {
+    fn configure_operational_registers_req(&mut self) -> [Option<MultiAllocRequest>; 4] {
         let scratchpad_buffers = NonZero::new(self.required_scratchpad_buffers() as u64);
         [
             // For the DCBAA
@@ -151,7 +173,7 @@ impl Driver {
     ///
     /// # Safety
     /// The pages must be valid and not used for anything else
-    pub unsafe fn configure_operational_registers(&mut self, res: [MultiAllocResponse; 4]) {
+    fn configure_operational_registers(&mut self, res: &[MultiAllocResponse; 4]) {
         // Enable device notifications
         self.op_regs().dn_ctrl().update(|mut dn_ctrl| {
             dn_ctrl.set_notification_enable(u16::MAX);
@@ -235,7 +257,11 @@ impl Driver {
         driver_virt_dcbaa
     }
 
-    pub fn configure_runtime_registers(&mut self) {
+    fn configure_runtime_registers_req(&self) -> [Option<MultiAllocRequest>; 2] {
+        XhciEventRing::new_req(XHCI_EVENT_RING_TRB_COUNT)
+    }
+
+    fn configure_runtime_registers(&mut self, res: &[MultiAllocResponse; 2]) {
         // Get the primary interrupter registers
         let interrupter_regs = self
             .runtime_regs()
@@ -251,7 +277,11 @@ impl Driver {
 
         // Set up the event ring and write to the interrupter
         // Registers to set: ERSTSZ, ERDP, ERSTBA
-        // TO-DO
+        let xhci_event_ring = XhciEventRing::new(XHCI_EVENT_RING_TRB_COUNT, res, interrupter_regs);
+        log::debug!("ERSTSZ : {:#X?}", interrupter_regs.erstsz().read());
+        log::debug!("ERSTBA : {:#X?}", interrupter_regs.erstba().read());
+        log::debug!("ERDP   : {:#X?}", interrupter_regs.erdp().read());
+        self.event_ring = Some(xhci_event_ring);
 
         // Clear any pending interrupts for the primary interrupter
         self.acknowledge_irq(0);

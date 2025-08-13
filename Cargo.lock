@@ -10,7 +10,7 @@ checksum = "94476c7ef97af4c4d998b3f422c1b01d5211aad57c80ed200baf148d1f1efab6"
 dependencies = [
  "bit_field",
  "bitflags 2.9.1",
- "log 0.4.27 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
 ]
 
 [[package]]
@@ -139,7 +139,7 @@ dependencies = [
  "elf",
  "embedded-graphics",
  "limine",
- "log 0.4.27 (git+https://github.com/ChocolateLoverRaj/log?branch=bincode)",
+ "log",
  "thiserror",
  "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
  "zerocopy",
@@ -371,7 +371,7 @@ dependencies = [
  "force-send-sync",
  "itertools 0.14.0",
  "limine",
- "log 0.4.27 (git+https://github.com/ChocolateLoverRaj/log?branch=bincode)",
+ "log",
  "nodit",
  "num_enum",
  "owo-colors",
@@ -411,12 +411,6 @@ dependencies = [
  "autocfg",
  "scopeguard",
 ]
-
-[[package]]
-name = "log"
-version = "0.4.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "log"
@@ -508,7 +502,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "polished_pci"
 version = "0.2.2"
 dependencies = [
- "log 0.4.27 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
 ]
 
 [[package]]
@@ -959,6 +953,7 @@ version = "0.1.0"
 dependencies = [
  "bitfield",
  "debug-ignore",
+ "log",
  "num_enum",
  "volatile 0.6.1",
 ]

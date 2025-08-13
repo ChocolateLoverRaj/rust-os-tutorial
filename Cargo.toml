@@ -11,3 +11,6 @@ members = [
     "xhci_driver",
 ]
 default-members = ["runner"]
+
+[patch.crates-io]
+log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode" }

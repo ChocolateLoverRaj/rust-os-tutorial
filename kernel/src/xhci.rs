@@ -1,5 +1,6 @@
 use core::num::NonZero;
 
+use alloc::boxed::Box;
 use ez_pci::{BarWithSize, PciFunction};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 use xhci_driver::{AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse};
@@ -58,29 +59,14 @@ pub fn init(mut function: PciFunction) {
         .unwrap()
     };
     let mut xhci_driver = unsafe { xhci_driver::Driver::new(bar0) };
-    log::debug!(
-        "xHCI cap regs: {:#X?}",
-        xhci_driver.debug_capability_registers()
-    );
-    log::debug!(
-        "xHCI op regs: {:#X?}",
-        xhci_driver.debug_operational_registers()
-    );
     xhci_driver.reset_host_controller();
-    log::debug!(
-        "xHCI op regs: {:#X?}",
-        xhci_driver.debug_operational_registers()
-    );
     let res = xhci_driver
-        .configure_operational_registers_req()
-        .map(allocate_multi);
+        .init_req()
+        .into_iter()
+        .map(allocate_multi)
+        .collect::<Box<_>>();
     // Safety: pages are properly allocated
-    unsafe { xhci_driver.configure_operational_registers(res) };
-    log::debug!("xHCI driver: {xhci_driver:X?}");
-    log::debug!(
-        "xHCI op regs: {:#X?}",
-        xhci_driver.debug_operational_registers()
-    );
+    unsafe { xhci_driver.init(&res) };
 }
 
 pub fn allocate(request: &AllocRequest) -> AllocResponse {

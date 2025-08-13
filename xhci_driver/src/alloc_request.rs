@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 
 /// Requirements for kernel-specific allocation.
 /// Note that on x86_64 you should have the memory type be WB (write-back)
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct AllocRequest {
     /// Cannot be greater than the boundary.
     /// Does **not** have to be a multiple of align.
@@ -18,7 +18,7 @@ pub struct AllocRequest {
 }
 
 /// This basically tells the kernel, I want multiple of these memory regions, but they don't have to be contiguous.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MultiAllocRequest {
     pub request: AllocRequest,
     pub count: NonZero<usize>,
@@ -71,11 +71,12 @@ pub(crate) fn assert_multi_res_matches(
     }
 }
 
-pub(crate) fn assert_responses_match<const N: usize>(
-    requests: &[Option<MultiAllocRequest>; N],
-    responses: &[MultiAllocResponse; N],
+pub(crate) fn assert_responses_match(
+    requests: &[Option<MultiAllocRequest>],
+    responses: &[MultiAllocResponse],
 ) {
-    for i in 0..N {
+    assert_eq!(requests.len(), responses.len());
+    for i in 0..requests.len() {
         assert_multi_res_matches(&requests[i], &responses[i]);
     }
 }

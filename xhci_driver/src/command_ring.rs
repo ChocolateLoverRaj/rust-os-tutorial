@@ -20,7 +20,7 @@ impl XhciCommandRing {
             size: NonZero::new((max_trbs.get() * size_of::<TransferRequestBlock>()) as u64)
                 .expect("size > 0"),
             align: XHCI_COMMAND_RING_SEGMENTS_ALIGNMENT,
-            boundary: XHCI_EVENT_RING_SEGMENTS_BOUNDARY,
+            boundary: XHCI_COMMAND_RING_SEGMENTS_BOUNDARY,
         }
     }
 
