@@ -13,7 +13,7 @@ bitfield! {
     pub struct TrbControl(u32);
     impl Debug;
 
-    pub cycle_bit, set_cycle_bit: 1;
-    pub toggle_cycle, set_toggle_cycle: 2;
+    pub cycle_bit, set_cycle_bit: 0;
+    pub toggle_cycle, set_toggle_cycle: 1;
     u8; pub trb_type, set_trb_type: 15, 10;
 }

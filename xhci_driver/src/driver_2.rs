@@ -314,11 +314,10 @@ pub unsafe fn start_2(bar0: NonZero<usize>, allocate: impl Fn(AllocRequest) -> A
         parameter: 0,
         status: 0,
         control: {
-            // let mut control = TrbControl(0);
-            // control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
-            // control.set_cycle_bit(producer_cycle_state);
-            // control
-            TrbControl(u32::MAX)
+            let mut control = TrbControl(0);
+            control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
+            control.set_cycle_bit(producer_cycle_state);
+            control
         },
     };
     log::debug!("Command: {:#X?}", command_ring[0]);

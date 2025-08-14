@@ -66,35 +66,35 @@ pub fn init(mut function: PciFunction) {
         .unwrap()
     };
     if let Some(mut msi_x) = function.msi_x().expect("header type is known") {
-        // let table_location = msi_x.table_location();
-        // log::debug!("Table location : {table_location:#X?}");
-        // let pba_location = msi_x.pba_location();
-        // log::debug!("PBA location   : {pba_location:#X?}");
+        let table_location = msi_x.table_location();
+        log::debug!("Table location : {table_location:#X?}");
+        let pba_location = msi_x.pba_location();
+        log::debug!("PBA location   : {pba_location:#X?}");
 
-        // let mut table = unsafe { msi_x.table(bar0) };
-        // for i in 0..1 {
-        //     let entry = table.entry_mut(i);
-        //     entry.message_address().write({
-        //         let mut address = ApicMsiMessageAddress::default();
-        //         address.set_destination_id(0);
-        //         address.0 as u64
-        //     });
-        //     entry.message_data().write({
-        //         let mut data = ApicMsiMessageData(0);
-        //         data.set_vector(InterruptVector::Pci.into());
-        //         data.0 as u32
-        //     });
-        //     entry.vector_control().update(|mut vector_control| {
-        //         vector_control.set_mask(false);
-        //         vector_control
-        //     });
-        // }
-        // log::debug!("MSI-X table: {table:#X?}");
-        // {
-        //     let mut message_control = msi_x.message_control();
-        //     message_control.set_enable(true);
-        //     msi_x.set_message_control(message_control);
-        // }
+        let mut table = unsafe { msi_x.table(bar0) };
+        for i in 0..1 {
+            let entry = table.entry_mut(i);
+            entry.message_address().write({
+                let mut address = ApicMsiMessageAddress::default();
+                address.set_destination_id(0);
+                address.0 as u64
+            });
+            entry.message_data().write({
+                let mut data = ApicMsiMessageData(0);
+                data.set_vector(InterruptVector::Pci.into());
+                data.0 as u32
+            });
+            entry.vector_control().update(|mut vector_control| {
+                vector_control.set_mask(false);
+                vector_control
+            });
+        }
+        log::debug!("MSI-X table: {table:#X?}");
+        {
+            let mut message_control = msi_x.message_control();
+            message_control.set_enable(true);
+            msi_x.set_message_control(message_control);
+        }
     }
     log::info!("xHCI interrupt info: {:#?}", function.interrupt_info());
     // let mut xhci_driver = unsafe { xhci_driver::Driver::new(bar0) };
