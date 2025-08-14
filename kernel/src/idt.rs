@@ -17,6 +17,7 @@ use crate::{
     hlt_loop::hlt_loop,
     interrupt_vector::InterruptVector,
     nmi_handler_states::{NMI_HANDLER_STATES, NmiHandlerState},
+    xhci::XHCI_DRIVER,
 };
 
 mod check_tasks_ipi_handler;
@@ -54,7 +55,9 @@ extern "x86-interrupt" fn nmi_handler(_stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn pci_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    panic!("interrupt from a PCI function received");
+    if let Some(xhci_driver) = XHCI_DRIVER.get() {
+        xhci_driver.try_lock().unwrap().handle_interrupt();
+    }
     // We must notify the local APIC that it's the end of interrupt, otherwise we won't receive any more interrupts from it
     let mut local_apic = get_local().local_apic.get().unwrap().lock();
     // Safety: We are done with an interrupt triggered by the local APIC

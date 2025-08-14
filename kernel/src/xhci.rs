@@ -6,8 +6,9 @@ use ez_pci::{
     ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, MsiXTableEntryVolatileFieldAccess,
     PciFunction,
 };
+use spin::Once;
 use x86_64::{PhysAddr, instructions::interrupts, registers::model_specific::PatMemoryType};
-use xhci_driver::{AllocRequest, AllocResponse, MultiAllocRequest, MultiAllocResponse};
+use xhci_driver::{AllocRequest, AllocResponse, Driver2, MultiAllocRequest, MultiAllocResponse};
 
 use crate::{
     ConfigurableFlags, Frame,
@@ -17,6 +18,8 @@ use crate::{
     memory::{MEMORY, MemoryType},
     translate_addr::TranslateToVirt,
 };
+
+pub static XHCI_DRIVER: Once<spin::Mutex<xhci_driver::Driver2>> = Once::new();
 
 pub fn init(mut function: PciFunction) {
     let bar0 = {
@@ -107,10 +110,9 @@ pub fn init(mut function: PciFunction) {
     // // Safety: pages are properly allocated
     // unsafe { xhci_driver.init(&res) };
     // xhci_driver.start_device();
-    unsafe { xhci_driver::start_2(bar0, allocate) };
+    let driver = unsafe { xhci_driver::Driver2::new(bar0, allocate) };
+    XHCI_DRIVER.call_once(|| spin::Mutex::new(driver));
     log::info!("Started driver");
-    interrupts::enable();
-    hlt_loop()
 }
 
 pub fn allocate(request: AllocRequest) -> AllocResponse {
