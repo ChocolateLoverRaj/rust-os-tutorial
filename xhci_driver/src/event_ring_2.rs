@@ -11,7 +11,7 @@ use crate::*;
 
 pub struct EventRing2<'a> {
     mem: AllocResponse,
-    ring: &'a mut [TransferRequestBlock],
+    ring: &'a mut [AnyTrb],
     dequeue_pointer: usize,
     consumer_cycle_state: bool,
 }
@@ -19,7 +19,7 @@ pub struct EventRing2<'a> {
 impl EventRing2<'_> {
     pub fn new(len: usize, allocate: impl Fn(AllocRequest) -> AllocResponse) -> Self {
         let event_ring_len = len;
-        let event_ring_size = event_ring_len * size_of::<TransferRequestBlock>();
+        let event_ring_size = event_ring_len * size_of::<AnyTrb>();
         let event_ring_mem = allocate(AllocRequest {
             size: NonZero::new(event_ring_size as u64).unwrap(),
             align: XHCI_EVENT_RING_SEGMENTS_ALIGNMENT,
@@ -28,7 +28,7 @@ impl EventRing2<'_> {
         let event_ring = {
             {
                 let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                    event_ring_mem.virt_addr.get() as *mut MaybeUninit<TransferRequestBlock>,
+                    event_ring_mem.virt_addr.get() as *mut MaybeUninit<AnyTrb>,
                     event_ring_len,
                 ))
                 .unwrap();
@@ -37,7 +37,7 @@ impl EventRing2<'_> {
                 event_ring_uninit.fill(MaybeUninit::zeroed());
             }
             let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                event_ring_mem.virt_addr.get() as *mut TransferRequestBlock,
+                event_ring_mem.virt_addr.get() as *mut AnyTrb,
                 event_ring_len,
             ))
             .unwrap();
@@ -66,7 +66,7 @@ impl EventRing2<'_> {
         });
     }
 
-    pub fn peek(&self) -> SplitSlice<TransferRequestBlock> {
+    pub fn peek(&self) -> SplitSlice<AnyTrb> {
         for (i, trb) in self.ring[self.dequeue_pointer..].iter().enumerate() {
             if trb.control.cycle_bit() != self.consumer_cycle_state {
                 return SplitSlice(&self.ring[self.dequeue_pointer..i], &[]);
@@ -97,8 +97,7 @@ impl EventRing2<'_> {
             wrapping_add_custom(self.dequeue_pointer, advance_len, self.ring.len());
         erdp.update(|mut erdp| {
             erdp.set_event_ring_dequeue_pointer(
-                self.mem.phys_addr
-                    + self.dequeue_pointer as u64 * size_of::<TransferRequestBlock>() as u64,
+                self.mem.phys_addr + self.dequeue_pointer as u64 * size_of::<AnyTrb>() as u64,
             );
             // Tell the xHC that we can receive more interrupts
             erdp.set_event_handler_busy(true);

@@ -246,22 +246,22 @@ impl Driver2<'_> {
 
         // Send a command
         command_ring
-            .try_enqueue(TransferRequestBlock {
+            .try_enqueue(AnyTrb {
                 parameter: 0,
                 status: 0,
                 control: {
-                    let mut control = TrbControl(0);
+                    let mut control = AnyTrbControl(0);
                     control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
                     control
                 },
             })
             .expect("the command ring is currently empty");
         command_ring
-            .try_enqueue(TransferRequestBlock {
+            .try_enqueue(AnyTrb {
                 parameter: 0,
                 status: 0,
                 control: {
-                    let mut control = TrbControl(0);
+                    let mut control = AnyTrbControl(0);
                     control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
                     control
                 },

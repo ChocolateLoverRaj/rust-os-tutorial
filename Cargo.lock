@@ -961,6 +961,7 @@ dependencies = [
  "num_enum",
  "split_slice",
  "volatile 0.6.1",
+ "zerocopy",
 ]
 
 [[package]]

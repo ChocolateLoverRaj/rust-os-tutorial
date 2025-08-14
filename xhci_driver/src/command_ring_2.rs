@@ -5,6 +5,7 @@ use core::{
 };
 
 use volatile::VolatilePtr;
+use zerocopy::transmute;
 
 use crate::*;
 
@@ -12,7 +13,7 @@ use crate::*;
 #[derive(Debug)]
 pub struct CommandRing2<'a> {
     _ring_mem: AllocResponse,
-    ring: &'a mut [TransferRequestBlock],
+    ring: &'a mut [AnyTrb],
     /// This is a position in the ring that we are at
     enqueue_pointer: usize,
     producer_cycle_state: bool,
@@ -32,7 +33,7 @@ impl CommandRing2<'_> {
         allocate: impl Fn(AllocRequest) -> AllocResponse,
     ) -> Self {
         let command_ring_len = len;
-        let command_ring_size = command_ring_len * size_of::<TransferRequestBlock>();
+        let command_ring_size = command_ring_len * size_of::<AnyTrb>();
         let command_ring_mem = allocate(AllocRequest {
             size: NonZero::new(command_ring_size as u64).unwrap(),
             align: XHCI_COMMAND_RING_SEGMENTS_ALIGNMENT,
@@ -41,7 +42,7 @@ impl CommandRing2<'_> {
         let command_ring = {
             {
                 let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                    command_ring_mem.virt_addr.get() as *mut MaybeUninit<TransferRequestBlock>,
+                    command_ring_mem.virt_addr.get() as *mut MaybeUninit<AnyTrb>,
                     command_ring_len,
                 ))
                 .unwrap();
@@ -50,7 +51,7 @@ impl CommandRing2<'_> {
                 command_ring_uninit.fill(MaybeUninit::zeroed());
             }
             let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                command_ring_mem.virt_addr.get() as *mut TransferRequestBlock,
+                command_ring_mem.virt_addr.get() as *mut AnyTrb,
                 command_ring_len,
             ))
             .unwrap();
@@ -58,18 +59,11 @@ impl CommandRing2<'_> {
         };
         let initial_cycle_state = true;
         // Make the last TRB a link TRB
-        *command_ring.last_mut().unwrap() = TransferRequestBlock {
-            // Point to first TRB slot
-            parameter: command_ring_mem.phys_addr,
-            status: 0,
-            control: {
-                let mut control = TrbControl(0);
-                control.set_cycle_bit(initial_cycle_state);
-                control.set_toggle_cycle(true);
-                control.set_trb_type(XhciTrbType::Link.into());
-                control
-            },
-        };
+        *command_ring.last_mut().unwrap() = transmute!(LinkTrb::new(
+            command_ring_mem.phys_addr,
+            initial_cycle_state,
+            true
+        ));
 
         crcr.update(|mut crcr| {
             crcr.set_command_ring_ptr(command_ring_mem.phys_addr);
@@ -88,7 +82,7 @@ impl CommandRing2<'_> {
     }
 
     /// The cycle bit will be set by this function
-    pub fn try_enqueue(&mut self, mut trb: TransferRequestBlock) -> Result<(), EnqueueError> {
+    pub fn try_enqueue(&mut self, mut trb: AnyTrb) -> Result<(), EnqueueError> {
         let can_enqueue = if self.consumer_cycle_state == self.producer_cycle_state {
             self.enqueue_pointer >= self.dequeue_pointer
         } else {

@@ -10,3 +10,4 @@ log = "0.4.27"
 num_enum = { version = "0.7.4", default-features = false }
 split_slice = "1.0.0"
 volatile = { version = "0.6.1", features = ["derive"] }
+zerocopy = { version = "0.8.26", default-features = false, features = ["derive"] }
