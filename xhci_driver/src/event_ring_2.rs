@@ -4,6 +4,7 @@ use core::{
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
 
+use split_slice::SplitSlice;
 use volatile::VolatilePtr;
 
 use crate::*;
@@ -65,21 +66,21 @@ impl EventRing2<'_> {
         });
     }
 
-    pub fn peek(&self) -> (&[TransferRequestBlock], &[TransferRequestBlock]) {
+    pub fn peek(&self) -> SplitSlice<TransferRequestBlock> {
         for (i, trb) in self.ring[self.dequeue_pointer..].iter().enumerate() {
             if trb.control.cycle_bit() != self.consumer_cycle_state {
-                return (&self.ring[self.dequeue_pointer..i], &[]);
+                return SplitSlice(&self.ring[self.dequeue_pointer..i], &[]);
             }
         }
         // At this point we will loop around
         let next_cycle_state = !self.consumer_cycle_state;
         for (i, trb) in self.ring[..self.dequeue_pointer].iter().enumerate() {
             if trb.control.cycle_bit() != next_cycle_state {
-                return (&self.ring[self.dequeue_pointer..], &self.ring[..i]);
+                return SplitSlice(&self.ring[self.dequeue_pointer..], &self.ring[..i]);
             }
         }
         // At this point every single slot is full
-        (
+        SplitSlice(
             &self.ring[self.dequeue_pointer..],
             &self.ring[..self.dequeue_pointer],
         )
@@ -87,10 +88,7 @@ impl EventRing2<'_> {
 
     pub fn advance_dequeue_pointer(&mut self, advance_len: usize, erdp: VolatilePtr<Erdp>) {
         // Check that we aren't advancing to an invalid state
-        let max_advance_len = {
-            let (left, right) = self.peek();
-            left.len() + right.len()
-        };
+        let max_advance_len = self.peek().len();
         assert!(
             advance_len <= max_advance_len,
             "must advance only the amount that was consumed"
@@ -102,12 +100,8 @@ impl EventRing2<'_> {
                 self.mem.phys_addr
                     + self.dequeue_pointer as u64 * size_of::<TransferRequestBlock>() as u64,
             );
-            if advance_len == max_advance_len {
-                // Tell the xHC that we can receive more interrupts
-                erdp.set_event_handler_busy(true);
-            } else {
-                // All events should be eventually dequeued before "going to sleep" and waiting for interrupts
-            }
+            // Tell the xHC that we can receive more interrupts
+            erdp.set_event_handler_busy(true);
             erdp
         });
     }

@@ -218,7 +218,7 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "ez_pci"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "acpi",
  "bitfield",
@@ -642,6 +642,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "split_slice"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c81040a6bb0a063f81c818770d93676a953504741bcab617483ce36f708c14d"
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,6 +959,7 @@ dependencies = [
  "debug-ignore",
  "log",
  "num_enum",
+ "split_slice",
  "volatile 0.6.1",
 ]
 

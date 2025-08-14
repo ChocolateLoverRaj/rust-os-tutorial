@@ -256,6 +256,17 @@ impl Driver2<'_> {
                 },
             })
             .expect("the command ring is currently empty");
+        command_ring
+            .try_enqueue(TransferRequestBlock {
+                parameter: 0,
+                status: 0,
+                control: {
+                    let mut control = TrbControl(0);
+                    control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
+                    control
+                },
+            })
+            .expect("the command ring is currently empty");
 
         // Ring the doorbell
         doorbell_regs.as_mut_ptr().as_slice().index(0).write({
