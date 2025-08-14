@@ -5,14 +5,14 @@ use core::{
 };
 
 use volatile::VolatilePtr;
-use zerocopy::transmute;
+use zerocopy::{transmute, transmute_ref};
 
 use crate::*;
 
 /// 4.9 TRB Ring
 #[derive(Debug)]
 pub struct CommandRing2<'a> {
-    _ring_mem: AllocResponse,
+    ring_mem: AllocResponse,
     ring: &'a mut [AnyTrb],
     /// This is a position in the ring that we are at
     enqueue_pointer: usize,
@@ -72,7 +72,7 @@ impl CommandRing2<'_> {
         });
 
         Self {
-            _ring_mem: command_ring_mem,
+            ring_mem: command_ring_mem,
             ring: command_ring,
             enqueue_pointer: 0,
             producer_cycle_state: initial_cycle_state,
@@ -105,6 +105,32 @@ impl CommandRing2<'_> {
             Ok(())
         } else {
             Err(EnqueueError::IsFull)
+        }
+    }
+
+    /// We can update the dequeue pointer based on events from the event ring.
+    /// The command completion event tells us which command was completed.
+    /// So we can advance the dequeue pointer based on the physical address of the command that the xHC finished.
+    pub fn process_event(&mut self, event: &AnyTrb) {
+        // xHCI 4.9.3 Command Ring Management
+        // > The location of the Command Ring Dequeue Pointer is reported on the Event Ring in Command Completion Events.
+        // xHCI 3.3 Command Interface
+        // > Commands are executed by the xHC in the order that they are placed on the Command Ring.
+        if event.control.trb_type() == XhciTrbType::CmdCompletionEvent.into() {
+            let event: &XhciCommandCompletionEventTrb = transmute_ref!(event);
+            let command_index = (event.command_trb_pointer.command_trb_pointer()
+                - self.ring_mem.phys_addr) as usize
+                / size_of::<AnyTrb>();
+            // This could result in the dequeue pointer pointing to a Link TRB, which should be pretty instantly processed.
+            // But we can't assume that the xHC processed the Link TRB and we shouldn't overwrite it until we're sure.
+            // Since commands are executed in order, we don't need to worry about the dequeue pointer getting moved back because of out-of-order events.
+            let new_dequeue_pointer = command_index + 1;
+            log::debug!("Command ring dequeue pointer updated to {new_dequeue_pointer:X?}");
+            // If the consumer (xHC) looped around, it must have toggled its consumer cycle state
+            if new_dequeue_pointer < self.dequeue_pointer {
+                self.consumer_cycle_state = !self.consumer_cycle_state;
+            }
+            self.dequeue_pointer = new_dequeue_pointer;
         }
     }
 }

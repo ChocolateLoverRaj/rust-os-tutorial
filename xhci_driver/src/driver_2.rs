@@ -286,7 +286,9 @@ impl Driver2<'_> {
     /// Again, remember to disable interrupts while executing this fn
     pub fn handle_interrupt(&mut self) {
         let events = self.event_ring.peek();
-        // TODO: From the Command Completion Events, we can get the dequeue pointer of the command ring. Then we need to update our command ring dequeue pointer so it doesn't overflow.
+        for event in events {
+            self.command_ring.process_event(event);
+        }
         for event in events {
             if event.control.trb_type() == XhciTrbType::CmdCompletionEvent.into() {
                 let event: &XhciCommandCompletionEventTrb = transmute_ref!(event);
