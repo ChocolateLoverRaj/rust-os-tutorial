@@ -1,9 +1,10 @@
 use bitfield::bitfield;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::trb_type::XhciTrbType;
 
-#[derive(Debug, Clone, Copy, FromBytes, IntoBytes)]
+/// xHCI 4.11.1 TRB Template
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct AnyTrb {
     pub parameter: u64,
@@ -12,7 +13,7 @@ pub struct AnyTrb {
 }
 
 bitfield! {
-    #[derive(Clone, Copy, FromBytes, IntoBytes)]
+    #[derive(Clone, Copy, FromBytes, IntoBytes, Immutable)]
     pub struct AnyTrbControl(u32);
     impl Debug;
 

@@ -3,9 +3,11 @@ extern crate alloc;
 
 mod alloc_request;
 mod capability_regs;
+mod command_completion_trb;
 mod command_ring_2;
 mod doorbell;
 mod driver_2;
+mod enable_slot_command_trb;
 mod erst;
 mod event_ring_2;
 mod interrupter_regs;
@@ -16,8 +18,10 @@ mod trb;
 mod trb_type;
 
 use capability_regs::*;
+use command_completion_trb::*;
 use command_ring_2::*;
 use doorbell::*;
+use enable_slot_command_trb::*;
 use erst::*;
 use event_ring_2::*;
 use interrupter_regs::*;

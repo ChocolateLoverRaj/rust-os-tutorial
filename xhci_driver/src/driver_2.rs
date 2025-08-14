@@ -5,6 +5,7 @@ use core::{
 };
 
 use volatile::VolatileRef;
+use zerocopy::transmute_ref;
 
 use crate::*;
 
@@ -143,7 +144,7 @@ impl Driver2<'_> {
         // Software maintains an Event Ring Consumer Cycle State (CCS) bit, initializing it to ‘1’ and toggling it every time the Event Ring Dequeue Pointer wraps back to the beginning of the Event Ring.
 
         // Allocate and initialize the Event Ring Segment(s).
-        let mut event_ring = EventRing2::new(256, &allocate);
+        let event_ring = EventRing2::new(256, &allocate);
 
         // Allocate the Event Ring Segment Table (ERST) (section 6.5).
         // To keep things simple we'll only have a single segment
@@ -245,28 +246,11 @@ impl Driver2<'_> {
             });
 
         // Send a command
-        command_ring
-            .try_enqueue(AnyTrb {
-                parameter: 0,
-                status: 0,
-                control: {
-                    let mut control = AnyTrbControl(0);
-                    control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
-                    control
-                },
-            })
-            .expect("the command ring is currently empty");
-        command_ring
-            .try_enqueue(AnyTrb {
-                parameter: 0,
-                status: 0,
-                control: {
-                    let mut control = AnyTrbControl(0);
-                    control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
-                    control
-                },
-            })
-            .expect("the command ring is currently empty");
+        for _ in 0..6 {
+            command_ring
+                .try_enqueue(enable_slot_command_trb())
+                .expect("the command ring is currently empty");
+        }
 
         // Ring the doorbell
         doorbell_regs.as_mut_ptr().as_slice().index(0).write({
@@ -303,9 +287,16 @@ impl Driver2<'_> {
     pub fn handle_interrupt(&mut self) {
         let events = self.event_ring.peek();
         // TODO: From the Command Completion Events, we can get the dequeue pointer of the command ring. Then we need to update our command ring dequeue pointer so it doesn't overflow.
-        log::log!(log::Level::Debug, "New events: {:#X?}", events);
+        for event in events {
+            if event.control.trb_type() == XhciTrbType::CmdCompletionEvent.into() {
+                let event: &XhciCommandCompletionEventTrb = transmute_ref!(event);
+                log::debug!("Event: {event:#X?}");
+            } else {
+                panic!()
+            }
+        }
         self.event_ring.advance_dequeue_pointer(
-            events.0.len() + events.1.len(),
+            events.len(),
             self.runtime_regs
                 .as_mut_ptr()
                 .interrupter_register_sets()
