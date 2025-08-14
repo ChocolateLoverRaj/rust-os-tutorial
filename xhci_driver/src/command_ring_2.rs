@@ -95,10 +95,10 @@ impl CommandRing2<'_> {
             self.enqueue_pointer += 1;
             if self.enqueue_pointer == self.ring.len() - 1 {
                 // Update the producer cycle bit and also update the cycle bit in the Link TRB
-                self.producer_cycle_state = !self.producer_cycle_state;
                 self.ring[self.enqueue_pointer]
                     .control
                     .set_cycle_bit(self.producer_cycle_state);
+                self.producer_cycle_state = !self.producer_cycle_state;
                 self.enqueue_pointer = 0;
             }
 
