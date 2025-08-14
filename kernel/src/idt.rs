@@ -54,7 +54,7 @@ extern "x86-interrupt" fn nmi_handler(_stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn pci_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    log::debug!("interrupt from a PCI function received");
+    panic!("interrupt from a PCI function received");
     // We must notify the local APIC that it's the end of interrupt, otherwise we won't receive any more interrupts from it
     let mut local_apic = get_local().local_apic.get().unwrap().lock();
     // Safety: We are done with an interrupt triggered by the local APIC

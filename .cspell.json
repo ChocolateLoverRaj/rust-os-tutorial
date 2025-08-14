@@ -12,6 +12,7 @@
         "clac",
         "cpuid",
         "cpus",
+        "crcr",
         "EFLAGS",
         "ehdr",
         "futex",

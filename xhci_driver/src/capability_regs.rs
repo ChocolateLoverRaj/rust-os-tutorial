@@ -1,8 +1,7 @@
 use bitfield::bitfield;
-use debug_ignore::DebugIgnore;
 use volatile::{
     VolatileFieldAccess,
-    access::{NoAccess, ReadOnly, ReadWrite},
+    access::{NoAccess, ReadOnly},
 };
 
 #[derive(Debug, VolatileFieldAccess, Clone, Copy)]

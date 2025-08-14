@@ -4,7 +4,9 @@ extern crate alloc;
 mod alloc_request;
 mod capability_regs;
 mod command_ring;
+mod doorbell;
 mod driver;
+mod driver_2;
 mod event_ring;
 mod interrupter_regs;
 mod mem;
@@ -15,6 +17,7 @@ mod trb_type;
 
 use capability_regs::*;
 use command_ring::*;
+use doorbell::*;
 use event_ring::*;
 use interrupter_regs::*;
 use mem::*;
@@ -25,3 +28,4 @@ use trb_type::*;
 
 pub use alloc_request::*;
 pub use driver::*;
+pub use driver_2::*;

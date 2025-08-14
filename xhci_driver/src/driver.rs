@@ -62,6 +62,11 @@ impl Driver {
     /// The pages must be valid and not used for anything else
     pub unsafe fn init(&mut self, res: &[MultiAllocResponse]) {
         assert_responses_match(&self.init_req(), &res);
+
+        log::debug!("Requests: {:#X?} Allocations: {res:#X?}", self.init_req());
+
+        log::debug!("Capability regs: {:#X?}", self.cap_regs.read());
+
         self.reset_host_controller();
         self.configure_operational_registers((&res[0..4]).try_into().unwrap());
         self.configure_runtime_registers((&res[4..6]).try_into().unwrap());
@@ -85,6 +90,16 @@ impl Driver {
         unsafe { VolatilePtr::new(pointer) }
     }
 
+    fn doorbell_regs(&mut self) -> VolatilePtr<DoorbellArray> {
+        let pointer = NonNull::new(
+            (self.cap_regs.as_raw_ptr().addr().get()
+                + self.cap_regs.doorbell_offset().read() as usize)
+                as *mut DoorbellArray,
+        )
+        .expect("ptr is not null");
+        unsafe { VolatilePtr::new(pointer) }
+    }
+
     pub fn debug_capability_registers(&mut self) -> impl Debug {
         self.cap_regs.read()
     }
@@ -97,18 +112,21 @@ impl Driver {
         let op_regs = self.op_regs();
         // Reset the host controller
         op_regs.usb_cmd().update(|mut cmd| {
-            cmd.set_run(false);
+            cmd.set_run_stop(false);
             cmd
         });
         // TODO: Timeout after 200ms
-        while !op_regs.usb_sts().read().hch() {}
+        while !op_regs.usb_sts().read().hc_halted() {}
 
         op_regs.usb_cmd().update(|mut cmd| {
             cmd.set_host_controller_reset(true);
             cmd
         });
+
         // TODO: Timeout after 1000ms
-        while op_regs.usb_cmd().read().host_controller_reset() || op_regs.usb_sts().read().cnr() {}
+        while op_regs.usb_cmd().read().host_controller_reset()
+            || op_regs.usb_sts().read().controller_not_ready()
+        {}
 
         // TODO: On real hardware, wait for 50ms - https://youtu.be/9rI_fYvng6Q?list=PLATP7rOKo3E82tBnMp90B4zejpWeAKlxn&t=359
         if op_regs.usb_cmd().read().0 != 0 {
@@ -288,12 +306,6 @@ impl Driver {
     }
 
     fn acknowledge_irq(&mut self, interrupter: u16) {
-        self.op_regs().usb_sts().write({
-            let mut usb_sts = UsbSts(0);
-            usb_sts.set_eint(true);
-            usb_sts
-        });
-
         let interrupter_regs = self
             .runtime_regs()
             .interrupter_register_sets()
@@ -305,5 +317,70 @@ impl Driver {
             iman.set_interrupt_pending(true);
             iman
         });
+
+        // Clear the EINT bit in USBSTS by writing '1' to it
+        self.op_regs().usb_sts().write({
+            let mut usb_sts = UsbSts(0);
+            usb_sts.set_eint(true);
+            usb_sts
+        });
+    }
+
+    fn start_host_controller(&mut self) {
+        self.op_regs().usb_cmd().update(|mut usb_cmd| {
+            usb_cmd.set_interrupter_enable(true);
+            usb_cmd
+        });
+
+        self.op_regs().usb_cmd().update(|mut usb_cmd| {
+            usb_cmd.set_run_stop(true);
+            usb_cmd
+        });
+
+        // Ensure the controller transitions out of the halted state
+        // TODO: 1000ms timeout
+        while self.op_regs().usb_sts().read().hc_halted() {}
+
+        // Verify CNR (Controller Not Ready) bit is clear
+        if self.op_regs().usb_sts().read().controller_not_ready() {
+            panic!("Controller not ready. This is not expected.");
+        }
+    }
+
+    pub fn start_device(&mut self) {
+        self.start_host_controller();
+        // log::debug!("USBSTS after  : {:#X?}", self.op_regs().usb_sts().read());
+
+        self.op
+            .as_mut()
+            .expect("initialized")
+            .command_ring
+            .enqueue({
+                TransferRequestBlock {
+                    parameter: 0,
+                    status: 0,
+                    control: {
+                        let mut control = TrbControl(0);
+                        control.set_trb_type(XhciTrbType::EnableSlotCmd.into());
+                        control
+                    },
+                }
+            });
+
+        DoorbellManager::ring_command_doorbell(self.doorbell_regs());
+        log::debug!("Operational regs: {:#X?}", self.op_regs().read());
+        log::debug!(
+            "Interrupter[0] regs: {:#X?}",
+            self.runtime_regs()
+                .interrupter_register_sets()
+                .as_slice()
+                .index(0)
+                .read()
+        );
+        // loop {
+        //     if self.event_ring.as_mut().unwrap().has_unprocessed_events() {
+        //         log::debug!("Has unprocessed events");
+        //     }
+        // }
     }
 }

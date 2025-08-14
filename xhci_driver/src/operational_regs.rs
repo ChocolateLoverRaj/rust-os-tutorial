@@ -37,9 +37,35 @@ bitfield! {
     pub struct UsbCmd(u32);
     impl Debug;
 
-    pub run, set_run: 0;
+    pub run_stop, set_run_stop: 0;
+    /// Host Controller Reset (HCRST) – RW. Default = ‘0’. This control bit is used by software
+    /// to reset the host controller. The effects of this bit on the xHC and the Root Hub
+    /// registers are similar to a Chip Hardware Reset.
+    ///
+    /// When software writes a ‘1’ to this bit, the Host Controller resets its internal
+    /// pipelines, timers, counters, state machines, etc. to their initial value. Any
+    /// transaction currently in progress on the USB is immediately terminated. A USB reset
+    /// shall not be driven on USB2 downstream ports, however a Hot or Warm Reset shall be
+    /// initiated on USB3 Root Hub downstream ports.
+    ///
+    /// PCI Configuration registers are not affected by this reset. All operational registers,
+    /// including port registers and port state machines are set to their initial values.
+    /// Software shall reinitialize the host controller as described in Section 4.2 in order
+    /// to return the host controller to an operational state.
+    ///
+    /// This bit is cleared to ‘0’ by the Host Controller when the reset process is complete.
+    /// Software cannot terminate the reset process early by writing a ‘0’ to this bit and
+    /// shall not write any xHC Operational or Runtime registers while HCRST is ‘1’. Note,
+    /// the completion of the xHC reset process is not gated by the Root Hub port reset process.
+    ///
+    /// Software shall not set this bit to ‘1’ when the HCHalted (HCH) bit in the USBSTS
+    /// register is a ‘0’. Attempting to reset an actively running host controller may result
+    /// in undefined behavior.
+    ///
+    /// When this register is exposed by a Virtual Function (VF), this bit only resets the xHC
+    /// instance presented by the selected VF. Refer to section 8 for more information.
     pub host_controller_reset, set_host_controller_reset: 1;
-    pub inte, set_inte: 2;
+    pub interrupter_enable, set_interrupter_enable: 2;
     pub hsee, set_hsee: 3;
     pub lhcrst, set_lhcrst: 7;
     pub css, set_css: 8;
@@ -58,14 +84,14 @@ bitfield! {
     pub struct UsbSts(u32);
     impl Debug;
 
-    pub hch, _: 0;
+    pub hc_halted, _: 0;
     pub hse, set_hse: 2;
     pub eint, set_eint: 3;
     pub pcd, set_pcd: 4;
     pub sss, _: 8;
     pub rss, _: 9;
     pub sre, set_sre: 10;
-    pub cnr, _: 11;
+    pub controller_not_ready, _: 11;
     pub hce, _: 12;
 }
 

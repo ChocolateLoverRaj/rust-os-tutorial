@@ -9,12 +9,13 @@ use volatile::{VolatileFieldAccess, VolatilePtr};
 
 use crate::*;
 
+/// xHCI 6.5 Event Ring Segment Table
 #[derive(Debug, VolatileFieldAccess)]
 #[repr(C)]
-struct XhciErstEntry {
-    ring_segment_base_address: u64,
-    ring_segment_size: u32,
-    _reserved_0: u32,
+pub struct XhciErstEntry {
+    pub ring_segment_base_address: u64,
+    pub ring_segment_size: u16,
+    pub _reserved_0: [u8; 6],
 }
 
 // Event ring will only use 1 segment because QEMU probably only supports 1 segment
@@ -84,13 +85,15 @@ impl XhciEventRing {
         .unwrap();
         // Safety: mem is valid
         let segment_table = unsafe { segment_table_ptr.as_mut() };
-        segment_table[0].write(XhciErstEntry {
+        let table_entry = segment_table[0].write(XhciErstEntry {
             ring_segment_base_address: ring_mem.phys_addr,
-            ring_segment_size: max_trbs.get(),
-            _reserved_0: 0,
+            ring_segment_size: max_trbs.get() as u16,
+            _reserved_0: [0; 6],
         });
 
-        let mut s = Self {
+        log::debug!("Segment table: {table_entry:p}: {:#X?}", table_entry);
+
+        let mut s: XhciEventRing = Self {
             max_trbs,
             ring_mem,
             table_mem,
@@ -99,6 +102,7 @@ impl XhciEventRing {
         };
 
         // The order of the register configuring matters
+        // Configure the Event Ring Segment Table Size (ERSTSZ) register
         interrupter_regs.erstsz().write({
             let mut erstsz = Erstsz(0);
             erstsz.set_erstsz(1);
@@ -155,7 +159,7 @@ impl XhciEventRing {
         trb
     }
 
-    fn has_unprocessed_events(&mut self) -> bool {
+    pub fn has_unprocessed_events(&mut self) -> bool {
         let index = self.position as usize;
         let trb = self.ring_mut()[index];
         trb.control.cycle_bit() == self.ring_cycle_state
