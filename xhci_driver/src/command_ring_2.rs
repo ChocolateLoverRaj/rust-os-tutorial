@@ -4,12 +4,14 @@ use core::{
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
 
+use volatile::VolatilePtr;
+
 use crate::*;
 
 /// 4.9 TRB Ring
 #[derive(Debug)]
 pub struct CommandRing2<'a> {
-    ring_mem: AllocResponse,
+    _ring_mem: AllocResponse,
     ring: &'a mut [TransferRequestBlock],
     /// This is a position in the ring that we are at
     enqueue_pointer: usize,
@@ -23,7 +25,12 @@ pub struct CommandRing2<'a> {
 }
 
 impl CommandRing2<'_> {
-    pub fn new(len: usize, allocate: impl Fn(AllocRequest) -> AllocResponse) -> Self {
+    /// Also updates CRCR
+    pub fn new(
+        len: usize,
+        crcr: VolatilePtr<Crcr>,
+        allocate: impl Fn(AllocRequest) -> AllocResponse,
+    ) -> Self {
         let command_ring_len = len;
         let command_ring_size = command_ring_len * size_of::<TransferRequestBlock>();
         let command_ring_mem = allocate(AllocRequest {
@@ -63,22 +70,21 @@ impl CommandRing2<'_> {
                 control
             },
         };
+
+        crcr.update(|mut crcr| {
+            crcr.set_command_ring_ptr(command_ring_mem.phys_addr);
+            crcr.set_ring_cycle_state(initial_cycle_state);
+            crcr
+        });
+
         Self {
-            ring_mem: command_ring_mem,
+            _ring_mem: command_ring_mem,
             ring: command_ring,
             enqueue_pointer: 0,
             producer_cycle_state: initial_cycle_state,
             dequeue_pointer: 0,
             consumer_cycle_state: initial_cycle_state,
         }
-    }
-
-    pub fn phys_addr(&self) -> u64 {
-        self.ring_mem.phys_addr
-    }
-
-    pub fn producer_cycle_state(&self) -> bool {
-        self.producer_cycle_state
     }
 
     /// The cycle bit will be set by this function
@@ -91,6 +97,17 @@ impl CommandRing2<'_> {
         if can_enqueue {
             trb.control.set_cycle_bit(self.producer_cycle_state);
             self.ring[self.enqueue_pointer] = trb;
+
+            self.enqueue_pointer += 1;
+            if self.enqueue_pointer == self.ring.len() - 1 {
+                // Update the producer cycle bit and also update the cycle bit in the Link TRB
+                self.producer_cycle_state = !self.producer_cycle_state;
+                self.ring[self.enqueue_pointer]
+                    .control
+                    .set_cycle_bit(self.producer_cycle_state);
+                self.enqueue_pointer = 0;
+            }
+
             Ok(())
         } else {
             Err(EnqueueError::IsFull)

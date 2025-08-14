@@ -13,6 +13,8 @@ pub struct Driver2<'a> {
     operational_regs: VolatileRef<'a, OperationalRegs>,
     runtime_regs: VolatileRef<'a, RuntimeRegisters>,
     doorbell_regs: VolatileRef<'a, DoorbellArray>,
+    command_ring: CommandRing2<'a>,
+    event_ring: EventRing2<'a>,
 }
 
 impl Driver2<'_> {
@@ -133,44 +135,15 @@ impl Driver2<'_> {
         });
 
         // Define the Command Ring Dequeue Pointer by programming the Command Ring Control Register (5.4.5) with a 64-bit address pointing to the starting address of the first TRB of the Command Ring.
-        let mut command_ring = CommandRing2::new(256, &allocate);
-        operational_regs.as_mut_ptr().crcr().update(|mut crcr| {
-            crcr.set_command_ring_ptr(command_ring.phys_addr());
-            crcr.set_ring_cycle_state(command_ring.producer_cycle_state());
-            crcr
-        });
+        let mut command_ring =
+            CommandRing2::new(256, operational_regs.as_mut_ptr().crcr(), &allocate);
 
         // Initialize each active interrupter by:
         // Defining the Event Ring: (refer to section 4.9.4 for a discussion of Event Ring Management.)
         // Software maintains an Event Ring Consumer Cycle State (CCS) bit, initializing it to ‘1’ and toggling it every time the Event Ring Dequeue Pointer wraps back to the beginning of the Event Ring.
 
         // Allocate and initialize the Event Ring Segment(s).
-        let event_ring_consumer_cycle_state = true;
-        let event_ring_len = 256;
-        let event_ring_size = event_ring_len * size_of::<TransferRequestBlock>();
-        let event_ring_mem = allocate(AllocRequest {
-            size: NonZero::new(event_ring_size as u64).unwrap(),
-            align: XHCI_EVENT_RING_SEGMENTS_ALIGNMENT,
-            boundary: XHCI_EVENT_RING_SEGMENTS_BOUNDARY,
-        });
-        let event_ring = {
-            {
-                let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                    event_ring_mem.virt_addr.get() as *mut MaybeUninit<TransferRequestBlock>,
-                    event_ring_len,
-                ))
-                .unwrap();
-                let event_ring_uninit = unsafe { ptr.as_mut() };
-                // Initially when the TRB Ring is created in memory, or if it is ever re -initialized, all TRBs in the ring shall be cleared to ‘0’. This state represents an empty queue.
-                event_ring_uninit.fill(MaybeUninit::zeroed());
-            }
-            let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-                event_ring_mem.virt_addr.get() as *mut TransferRequestBlock,
-                event_ring_len,
-            ))
-            .unwrap();
-            unsafe { ptr.as_mut() }
-        };
+        let mut event_ring = EventRing2::new(256, &allocate);
 
         // Allocate the Event Ring Segment Table (ERST) (section 6.5).
         // To keep things simple we'll only have a single segment
@@ -192,8 +165,8 @@ impl Driver2<'_> {
         };
         // Initialize ERST table entries to point to and to define the size (in TRBs) of the respective Event Ring Segment.
         event_ring_segment_table[0].write(XhciErstEntry {
-            ring_segment_base_address: event_ring_mem.phys_addr,
-            ring_segment_size: event_ring_len as u16,
+            ring_segment_base_address: event_ring.phys_addr(),
+            ring_segment_size: event_ring.len() as u16,
             _reserved_0: [0; 6],
         });
 
@@ -210,16 +183,14 @@ impl Driver2<'_> {
             });
 
         // Program the Interrupter Event Ring Dequeue Pointer (ERDP) register (5.5.2.3.3) with the starting address of the first segment described by the Event Ring Segment Table.
-        runtime_regs
-            .as_mut_ptr()
-            .interrupter_register_sets()
-            .as_slice()
-            .index(0)
-            .erdp()
-            .update(|mut erdp| {
-                erdp.set_event_ring_dequeue_pointer(event_ring_mem.phys_addr);
-                erdp
-            });
+        event_ring.update_erdp(
+            runtime_regs
+                .as_mut_ptr()
+                .interrupter_register_sets()
+                .as_slice()
+                .index(0)
+                .erdp(),
+        );
 
         // Program the Interrupter Event Ring Segment Table Base Address (ERSTBA) register (5.5.2.3.2) with a 64-bit address pointer to where the Event Ring Segment Table is located.
         // Note that writing the ERSTBA enables the Event Ring. Refer to section 4.9.4 for more information on the Event Ring registers and their initialization.
@@ -312,10 +283,24 @@ impl Driver2<'_> {
             operational_regs,
             runtime_regs,
             doorbell_regs,
+            command_ring,
+            event_ring,
         }
     }
 
+    /// Again, remember to disable interrupts while executing this fn
     pub fn handle_interrupt(&mut self) {
-        log::debug!("TODO: Handle interrupt");
+        let events = self.event_ring.peek();
+        // TODO: From the Command Completion Events, we can get the dequeue pointer of the command ring. Then we need to update our command ring dequeue pointer so it doesn't overflow.
+        log::log!(log::Level::Debug, "New events: {:#X?}", events);
+        self.event_ring.advance_dequeue_pointer(
+            events.0.len() + events.1.len(),
+            self.runtime_regs
+                .as_mut_ptr()
+                .interrupter_register_sets()
+                .as_slice()
+                .index(0)
+                .erdp(),
+        );
     }
 }
