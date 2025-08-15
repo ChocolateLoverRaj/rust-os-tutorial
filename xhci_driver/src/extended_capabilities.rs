@@ -31,13 +31,6 @@ impl<'a> IntoIterator for XhciExtendedCapabilities<'a> {
     }
 }
 
-// impl Debug for XhciExtendedCapabilities<'_> {
-//     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-//         f.debug_list().entries(self.clone().into_iter()).finish()
-//     }
-// }
-
-// #[derive(Debug)]
 pub struct XhciExtendedCapabilitiesIterator<'a> {
     capabilities: XhciExtendedCapabilities<'a>,
     /// An offset in `u32`s from the base
