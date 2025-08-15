@@ -27,14 +27,10 @@ pub struct CommandRing2<'a> {
 
 impl CommandRing2<'_> {
     /// Also updates CRCR
-    pub fn new(
-        len: usize,
-        crcr: VolatilePtr<Crcr>,
-        allocate: impl Fn(AllocRequest) -> AllocResponse,
-    ) -> Self {
+    pub fn new(len: usize, crcr: VolatilePtr<Crcr>, allocator: &mut impl XhciMemAllocator) -> Self {
         let command_ring_len = len;
         let command_ring_size = command_ring_len * size_of::<AnyTrb>();
-        let command_ring_mem = allocate(AllocRequest {
+        let command_ring_mem = allocator.alloc(AllocRequest {
             size: NonZero::new(command_ring_size as u64).unwrap(),
             align: XHCI_COMMAND_RING_SEGMENTS_ALIGNMENT,
             boundary: XHCI_COMMAND_RING_SEGMENTS_BOUNDARY,

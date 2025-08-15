@@ -9,7 +9,7 @@ use zerocopy::transmute_ref;
 
 use crate::*;
 
-pub struct Driver2<'a> {
+pub struct Driver<'a> {
     capability_regs: VolatileRef<'a, CapabilityRegs>,
     operational_regs: VolatileRef<'a, OperationalRegs>,
     runtime_regs: VolatileRef<'a, RuntimeRegisters>,
@@ -18,19 +18,12 @@ pub struct Driver2<'a> {
     event_ring: EventRing2<'a>,
 }
 
-impl Driver2<'_> {
+impl Driver<'_> {
     /// Remember to have disable interrupts while this function is executing.
     /// Otherwise you could get an xHCI interrupt and cause a deadlock.
-    ///
-    /// # Safety
-    /// You must find the address and size of BAR 0, and then create a mapping for the entire BAR 0 with the correct memory type (caching behavior).
-    /// Then you input the virtual address that points to the start of BAR 0. The BAR should be an xHCI device's BAR.
-    pub unsafe fn new(
-        bar0: NonZero<usize>,
-        allocate: impl Fn(AllocRequest) -> AllocResponse,
-    ) -> Self {
+    pub fn new(mmio: XhciMmio, allocator: &mut impl XhciMemAllocator) -> Self {
         let capability_regs = {
-            let capability_regs_ptr = NonNull::new(bar0.get() as *mut CapabilityRegs).unwrap();
+            let capability_regs_ptr = NonNull::new(mmio.addr.get() as *mut CapabilityRegs).unwrap();
             unsafe { VolatileRef::new(capability_regs_ptr) }
         };
         log::debug!(
@@ -39,7 +32,7 @@ impl Driver2<'_> {
         );
         let mut operational_regs = {
             let ptr = NonNull::new(
-                (bar0.get() + capability_regs.as_ptr().cap_length().read() as usize)
+                (mmio.addr.get() + capability_regs.as_ptr().cap_length().read() as usize)
                     as *mut OperationalRegs,
             )
             .unwrap();
@@ -47,7 +40,7 @@ impl Driver2<'_> {
         };
         let mut runtime_regs = {
             let ptr = NonNull::new(
-                (bar0.get() + capability_regs.as_ptr().rts_off().read() as usize)
+                (mmio.addr.get() + capability_regs.as_ptr().rts_off().read() as usize)
                     as *mut RuntimeRegisters,
             )
             .unwrap();
@@ -55,7 +48,7 @@ impl Driver2<'_> {
         };
         let mut doorbell_regs = {
             let ptr = NonNull::new(
-                (bar0.get() + capability_regs.as_ptr().doorbell_offset().read() as usize)
+                (mmio.addr.get() + capability_regs.as_ptr().doorbell_offset().read() as usize)
                     as *mut DoorbellArray,
             )
             .unwrap();
@@ -101,7 +94,7 @@ impl Driver2<'_> {
         // The Device Context Base Address Array shall contain MaxSlotsEn + 1 entries.
         let dcbaa_len = max_slots as usize + 1;
         let dcbaa_size = dcbaa_len * size_of::<u64>();
-        let dcbaa_mem = allocate(AllocRequest {
+        let dcbaa_mem = allocator.alloc(AllocRequest {
             size: NonZero::new(dcbaa_size as u64).unwrap(),
             align: XHCI_DEVICE_CONTEXT_ALIGNMENT,
             boundary: XHCI_DEVICE_CONTEXT_BOUNDARY,
@@ -131,7 +124,7 @@ impl Driver2<'_> {
             // 2. Software allocates a Scratchpad Buffer Array with Max Scratchpad Buffers entries.
             let scratchpad_array_len = max_scratchpad_buffers.get() as usize;
             let scratchpad_array_size = scratchpad_array_len * size_of::<u64>();
-            let scratchpad_array_mem = allocate(AllocRequest {
+            let scratchpad_array_mem = allocator.alloc(AllocRequest {
                 size: NonZero::new(scratchpad_array_size as u64)
                     .expect("scratchpad array is not empty"),
                 align: XHCI_SCRATCHPAD_BUFFER_ARRAY_ALIGNMENT,
@@ -151,7 +144,7 @@ impl Driver2<'_> {
             for scratchpad_array_entry in scratchpad_array {
                 // a. Software allocates a PAGESIZE Scratchpad Buffer.
                 let scratchpad_buffer_size = PAGE_SIZE;
-                let scratchpad_buffer_mem = allocate(AllocRequest {
+                let scratchpad_buffer_mem = allocator.alloc(AllocRequest {
                     size: scratchpad_buffer_size,
                     align: XHCI_SCRATCHPAD_BUFFERS_ALIGNMENT,
                     boundary: XHCI_SCRATCHPAD_BUFFERS_BOUNDARY,
@@ -179,21 +172,21 @@ impl Driver2<'_> {
 
         // Define the Command Ring Dequeue Pointer by programming the Command Ring Control Register (5.4.5) with a 64-bit address pointing to the starting address of the first TRB of the Command Ring.
         let mut command_ring =
-            CommandRing2::new(256, operational_regs.as_mut_ptr().crcr(), &allocate);
+            CommandRing2::new(256, operational_regs.as_mut_ptr().crcr(), allocator);
 
         // Initialize each active interrupter by:
         // Defining the Event Ring: (refer to section 4.9.4 for a discussion of Event Ring Management.)
         // Software maintains an Event Ring Consumer Cycle State (CCS) bit, initializing it to ‘1’ and toggling it every time the Event Ring Dequeue Pointer wraps back to the beginning of the Event Ring.
 
         // Allocate and initialize the Event Ring Segment(s).
-        let event_ring = EventRing2::new(256, &allocate);
+        let event_ring = EventRing2::new(256, allocator);
 
         // Allocate the Event Ring Segment Table (ERST) (section 6.5).
         // To keep things simple we'll only have a single segment
         let event_ring_segment_table_len = 1;
         let event_ring_segment_table_size =
             event_ring_segment_table_len * size_of::<XhciErstEntry>();
-        let event_ring_segment_table_mem = allocate(AllocRequest {
+        let event_ring_segment_table_mem = allocator.alloc(AllocRequest {
             size: NonZero::new(event_ring_segment_table_size as u64).unwrap(),
             align: XHCI_EVENT_RING_SEGMENT_TABLE_ALIGNMENT,
             boundary: XHCI_EVENT_RING_SEGMENT_TABLE_BOUNDARY,
@@ -315,9 +308,7 @@ impl Driver2<'_> {
         //         .read()
         // );
 
-        let extended_capabilities = unsafe { XhciExtendedCapabilities::new(bar0) };
-        // log::debug!("Extended capabilities: {extended_capabilities:#X?}");
-        for capability in extended_capabilities
+        for capability in unsafe { XhciExtendedCapabilities::new(mmio.addr) }
             .into_iter()
             .filter_map(|capability| capability.supported_protocol())
         {

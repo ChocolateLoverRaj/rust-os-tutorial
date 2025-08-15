@@ -17,10 +17,10 @@ pub struct EventRing2<'a> {
 }
 
 impl EventRing2<'_> {
-    pub fn new(len: usize, allocate: impl Fn(AllocRequest) -> AllocResponse) -> Self {
+    pub fn new(len: usize, allocator: &mut impl XhciMemAllocator) -> Self {
         let event_ring_len = len;
         let event_ring_size = event_ring_len * size_of::<AnyTrb>();
-        let event_ring_mem = allocate(AllocRequest {
+        let event_ring_mem = allocator.alloc(AllocRequest {
             size: NonZero::new(event_ring_size as u64).unwrap(),
             align: XHCI_EVENT_RING_SEGMENTS_ALIGNMENT,
             boundary: XHCI_EVENT_RING_SEGMENTS_BOUNDARY,

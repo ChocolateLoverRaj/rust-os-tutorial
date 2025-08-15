@@ -1,25 +1,22 @@
 use core::num::NonZero;
 
-use alloc::boxed::Box;
 use common::PageSize;
 use ez_pci::{
     ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, MsiXTableEntryVolatileFieldAccess,
     PciFunction,
 };
 use spin::Once;
-use x86_64::{PhysAddr, instructions::interrupts, registers::model_specific::PatMemoryType};
-use xhci_driver::{AllocRequest, AllocResponse, Driver2, MultiAllocRequest, MultiAllocResponse};
+use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
+use xhci_driver::{AllocRequest, AllocResponse, XhciMemAllocator, XhciMmio};
 
 use crate::{
     ConfigurableFlags, Frame,
-    hlt_loop::hlt_loop,
     interrupt_vector::InterruptVector,
     max_page_size,
     memory::{MEMORY, MemoryType},
-    translate_addr::TranslateToVirt,
 };
 
-pub static XHCI_DRIVER: Once<spin::Mutex<xhci_driver::Driver2>> = Once::new();
+pub static XHCI_DRIVER: Once<spin::Mutex<xhci_driver::Driver>> = Once::new();
 
 pub fn init(mut function: PciFunction) {
     let bar0 = {
@@ -107,56 +104,54 @@ pub fn init(mut function: PciFunction) {
     // // Safety: pages are properly allocated
     // unsafe { xhci_driver.init(&res) };
     // xhci_driver.start_device();
-    let driver = unsafe { xhci_driver::Driver2::new(bar0, allocate) };
+    let xhci_mmio = unsafe { XhciMmio::new(bar0) };
+    let mut allocator = Allocator;
+    let driver = xhci_driver::Driver::new(xhci_mmio, &mut allocator);
     XHCI_DRIVER.call_once(|| spin::Mutex::new(driver));
     log::info!("Started driver");
 }
 
-pub fn allocate(request: AllocRequest) -> AllocResponse {
-    let memory = MEMORY.get().unwrap();
-    let mut phys_mem = memory.physical_memory.lock();
-    let mut virt_mem = memory.virtual_memory.lock();
-    let phys_addr = phys_mem
-        .allocate(
-            request.size,
-            request.align,
-            request.boundary,
-            MemoryType::UsedByXhci,
-        )
-        .unwrap();
-    let page_size = PageSize::_4KiB;
-    let n_pages = (phys_addr.as_u64() + request.size.get()).div_ceil(page_size.byte_len_u64())
-        - phys_addr.as_u64() / page_size.byte_len_u64();
-    let mut pages = virt_mem
-        .allocate_contiguous_pages_2(page_size, NonZero::new(n_pages).unwrap())
-        .unwrap();
-    let first_frame =
-        Frame::new(phys_addr.align_down(page_size.byte_len_u64()), page_size).unwrap();
-    let mut frame_allocator = phys_mem.get_kernel_frame_allocator();
-    for i in 0..n_pages {
-        let page = pages.start_page().offset(i).unwrap();
-        let frame = first_frame.offset(i).unwrap();
-        let flags = ConfigurableFlags {
-            writable: true,
-            executable: false,
-            pat_memory_type: PatMemoryType::StrongUncacheable,
-        };
-        unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
-    }
-    AllocResponse {
-        phys_addr: phys_addr.as_u64(),
-        virt_addr: NonZero::new(
-            (pages.start_addr().as_u64() + (phys_addr.as_u64() % page_size.byte_len_u64()))
-                as usize,
-        )
-        .expect("ptr is not null"),
+pub struct Allocator;
+
+unsafe impl XhciMemAllocator for Allocator {
+    fn alloc(&mut self, request: AllocRequest) -> AllocResponse {
+        let memory = MEMORY.get().unwrap();
+        let mut phys_mem = memory.physical_memory.lock();
+        let mut virt_mem = memory.virtual_memory.lock();
+        let phys_addr = phys_mem
+            .allocate(
+                request.size,
+                request.align,
+                request.boundary,
+                MemoryType::UsedByXhci,
+            )
+            .unwrap();
+        let page_size = PageSize::_4KiB;
+        let n_pages = (phys_addr.as_u64() + request.size.get()).div_ceil(page_size.byte_len_u64())
+            - phys_addr.as_u64() / page_size.byte_len_u64();
+        let mut pages = virt_mem
+            .allocate_contiguous_pages_2(page_size, NonZero::new(n_pages).unwrap())
+            .unwrap();
+        let first_frame =
+            Frame::new(phys_addr.align_down(page_size.byte_len_u64()), page_size).unwrap();
+        let mut frame_allocator = phys_mem.get_kernel_frame_allocator();
+        for i in 0..n_pages {
+            let page = pages.start_page().offset(i).unwrap();
+            let frame = first_frame.offset(i).unwrap();
+            let flags = ConfigurableFlags {
+                writable: true,
+                executable: false,
+                pat_memory_type: PatMemoryType::StrongUncacheable,
+            };
+            unsafe { pages.map_to(page, frame, flags, &mut frame_allocator) }.unwrap();
+        }
+        AllocResponse {
+            phys_addr: phys_addr.as_u64(),
+            virt_addr: NonZero::new(
+                (pages.start_addr().as_u64() + (phys_addr.as_u64() % page_size.byte_len_u64()))
+                    as usize,
+            )
+            .expect("ptr is not null"),
+        }
     }
 }
-
-// pub fn allocate_multi(request: Option<MultiAllocRequest>) -> MultiAllocResponse {
-//     request.map_or_else(Default::default, |request| {
-//         (0..request.count.get())
-//             .map(|_| allocate(&request.request))
-//             .collect()
-//     })
-// }
