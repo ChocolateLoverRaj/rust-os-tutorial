@@ -219,12 +219,28 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 [[package]]
 name = "ez_pci"
 version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fedea0e56de1ea2f5a09bb9cd27ba3f29d9d53dc83daaa4739252535fb6604b"
 dependencies = [
  "acpi",
  "bitfield",
  "num_enum",
  "volatile 0.6.1",
  "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "ez_xhci"
+version = "0.1.0"
+source = "git+https://github.com/ChocolateLoverRaj/ez_xhci#d6ff8dd8c4d547230174b1585630ba1eb03db203"
+dependencies = [
+ "bitfield",
+ "debug-ignore",
+ "log",
+ "num_enum",
+ "split_slice",
+ "volatile 0.6.1",
+ "zerocopy",
 ]
 
 [[package]]
@@ -366,6 +382,7 @@ dependencies = [
  "elf",
  "embedded-graphics",
  "ez_pci",
+ "ez_xhci",
  "force-send-sync",
  "itertools 0.14.0",
  "limine",
@@ -387,7 +404,6 @@ dependencies = [
  "volatile 0.6.1",
  "x2apic",
  "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
- "xhci_driver",
  "zerocopy",
 ]
 
@@ -949,19 +965,6 @@ dependencies = [
  "bitflags 2.9.1",
  "rustversion",
  "volatile 0.4.6",
-]
-
-[[package]]
-name = "xhci_driver"
-version = "0.1.0"
-dependencies = [
- "bitfield",
- "debug-ignore",
- "log",
- "num_enum",
- "split_slice",
- "volatile 0.6.1",
- "zerocopy",
 ]
 
 [[package]]

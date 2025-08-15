@@ -22,6 +22,7 @@ debug-ignore = "1.0.5"
 elf = { version = "0.8.0", default-features = false }
 embedded-graphics = "0.8.1"
 ez_pci = "1.0.0"
+ez_xhci = { git = "https://github.com/ChocolateLoverRaj/ez_xhci", version = "0.1.0" }
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
 itertools = { version = "0.14.0", default-features = false }
 limine = "0.5"
@@ -45,7 +46,6 @@ unicode-segmentation = "1.12.0"
 volatile = { version = "0.6.1", features = ["derive", "unstable"] }
 x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", branch = "main" }
 x86_64 = { git = "https://github.com/rust-osdev/x86_64", branch = "next" }
-xhci_driver = { version = "0.1.0", path = "../xhci_driver" }
 zerocopy = "0.8.26"
 
 [[bin]]

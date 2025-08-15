@@ -8,10 +8,9 @@ members = [
     "user_mode_program_2",
     "user_lib",
     "user_mode_program_3",
-    "xhci_driver",
 ]
 default-members = ["runner"]
 
 [patch.crates-io]
 log = { git = "https://github.com/ChocolateLoverRaj/log", branch = "bincode" }
-ez_pci = { path = "../../ez_pci" }
+# ez_pci = { path = "../../ez_pci" }

@@ -5,9 +5,9 @@ use ez_pci::{
     ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, MsiXTableEntryVolatileFieldAccess,
     PciFunction,
 };
+use ez_xhci::{AllocRequest, AllocResponse, XhciMemAllocator, XhciMmio};
 use spin::Once;
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
-use xhci_driver::{AllocRequest, AllocResponse, XhciMemAllocator, XhciMmio};
 
 use crate::{
     ConfigurableFlags, Frame,
@@ -16,7 +16,7 @@ use crate::{
     memory::{MEMORY, MemoryType},
 };
 
-pub static XHCI_DRIVER: Once<spin::Mutex<xhci_driver::Driver>> = Once::new();
+pub static XHCI_DRIVER: Once<spin::Mutex<ez_xhci::Driver>> = Once::new();
 
 pub fn init(mut function: PciFunction) {
     let bar0 = {
@@ -106,7 +106,7 @@ pub fn init(mut function: PciFunction) {
     // xhci_driver.start_device();
     let xhci_mmio = unsafe { XhciMmio::new(bar0) };
     let mut allocator = Allocator;
-    let driver = xhci_driver::Driver::new(xhci_mmio, &mut allocator);
+    let driver = ez_xhci::Driver::new(xhci_mmio, &mut allocator);
     XHCI_DRIVER.call_once(|| spin::Mutex::new(driver));
     log::info!("Started driver");
 }
