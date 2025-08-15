@@ -98,7 +98,11 @@ bitfield! {
     pub sec, _: 10;
     pub cfc, _: 11;
     u8; pub max_psa_size, _: 15, 12;
-    u16; pub xecp, _: 31, 16;
+    u16;
+    /// An offset in `u32`s from the base to the first extended capability.
+    /// So we can get the address by doing the value of this * size_of::<u32>().
+    /// If this is `0` that means there are no extended capabilities.
+    pub xhci_extended_capabilities_ptr, _: 31, 16;
 }
 
 bitfield! {

@@ -288,7 +288,7 @@ impl Driver2<'_> {
             });
 
         // Send a command
-        for _ in 0..6 {
+        for _ in 0..1 {
             command_ring
                 .try_enqueue(enable_slot_command_trb())
                 .expect("the command ring is currently empty");
@@ -301,19 +301,28 @@ impl Driver2<'_> {
             reg
         });
 
-        log::debug!(
-            "Operational registers: {:#X?}",
-            operational_regs.as_ptr().read()
-        );
-        log::debug!(
-            "Interrupter registers: {:#X?}",
-            runtime_regs
-                .as_mut_ptr()
-                .interrupter_register_sets()
-                .as_slice()
-                .index(0)
-                .read()
-        );
+        // log::debug!(
+        //     "Operational registers: {:#X?}",
+        //     operational_regs.as_ptr().read()
+        // );
+        // log::debug!(
+        //     "Interrupter registers: {:#X?}",
+        //     runtime_regs
+        //         .as_mut_ptr()
+        //         .interrupter_register_sets()
+        //         .as_slice()
+        //         .index(0)
+        //         .read()
+        // );
+
+        let extended_capabilities = unsafe { XhciExtendedCapabilities::new(bar0) };
+        // log::debug!("Extended capabilities: {extended_capabilities:#X?}");
+        for capability in extended_capabilities
+            .into_iter()
+            .filter_map(|capability| capability.supported_protocol())
+        {
+            log::debug!("{capability:#X?}");
+        }
 
         Self {
             capability_regs,
