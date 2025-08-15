@@ -119,15 +119,57 @@ impl Driver2<'_> {
 
         // If the Max Scratchpad Buffers field of the HCSPARAMS2 register is > ‘0’, then the first entry (entry_0) in the DCBAA shall contain a pointer to the Scratchpad Buffer Array.
         // If the Max Scratchpad Buffers field of the HCSPARAMS2 register is = ‘0’, then the first entry (entry_0) in the DCBAA is reserved and shall be cleared to ‘0’ by software.
-        // TODO: Scratchpad
-        assert_eq!(
+        // xHCI 4.20 Scratchpad Buffers
+        // 1. Software examines the Max Scratchpad Buffers Hi and Lo fields in the HCSPARAMS2 register.
+        if let Some(max_scratchpad_buffers) = NonZero::new(
             capability_regs
                 .as_ptr()
                 .hcs_params_2()
                 .read()
                 .max_scratchpad_buffers(),
-            0
-        );
+        ) {
+            // 2. Software allocates a Scratchpad Buffer Array with Max Scratchpad Buffers entries.
+            let scratchpad_array_len = max_scratchpad_buffers.get() as usize;
+            let scratchpad_array_size = scratchpad_array_len * size_of::<u64>();
+            let scratchpad_array_mem = allocate(AllocRequest {
+                size: NonZero::new(scratchpad_array_size as u64)
+                    .expect("scratchpad array is not empty"),
+                align: XHCI_SCRATCHPAD_BUFFER_ARRAY_ALIGNMENT,
+                boundary: XHCI_SCRATCHPAD_BUFFER_ARRAY_BOUNDARY,
+            });
+            let scratchpad_array = {
+                let mut ptr = NonNull::new(slice_from_raw_parts_mut(
+                    scratchpad_array_mem.virt_addr.get() as *mut MaybeUninit<u64>,
+                    scratchpad_array_len,
+                ))
+                .unwrap();
+                unsafe { ptr.as_mut() }
+            };
+            // 3. Software writes the base address of the Scratchpad Buffer Array to the DCBAA (Slot 0) entry.
+            dcbaa[0].write(scratchpad_array_mem.phys_addr);
+            // 4. For each entry in the Scratchpad Buffer Array:
+            for scratchpad_array_entry in scratchpad_array {
+                // a. Software allocates a PAGESIZE Scratchpad Buffer.
+                let scratchpad_buffer_size = PAGE_SIZE;
+                let scratchpad_buffer_mem = allocate(AllocRequest {
+                    size: scratchpad_buffer_size,
+                    align: XHCI_SCRATCHPAD_BUFFERS_ALIGNMENT,
+                    boundary: XHCI_SCRATCHPAD_BUFFERS_BOUNDARY,
+                });
+                let scratchpad_buffer = {
+                    let mut ptr = NonNull::new(slice_from_raw_parts_mut(
+                        scratchpad_buffer_mem.virt_addr.get() as *mut MaybeUninit<u8>,
+                        scratchpad_array_size,
+                    ))
+                    .unwrap();
+                    unsafe { ptr.as_mut() }
+                };
+                // b. Software clears the Scratchpad Buffer to ‘0’.
+                scratchpad_buffer.fill(MaybeUninit::zeroed());
+                // c. Software writes the base address of the allocated Scratchpad Buffer to associated entry in the Scratchpad Buffer Array.
+                scratchpad_array_entry.write(scratchpad_buffer_mem.phys_addr);
+            }
+        }
 
         // Program the Device Context Base Address Array Pointer (DCBAAP) register (5.4.6) with a 64-bit address pointing to where the Device Context Base Address Array is located.
         operational_regs.as_mut_ptr().dcbaap().update(|mut dcbaap| {
