@@ -99,6 +99,14 @@ pub fn init(apic: &Apic<impl Allocator>) {
                 unsafe { io_apic.enable_irq(irq) };
                 log::info!("Found I/O APIC for IRQ 11");
             }
+            {
+                let entry = {
+                    let mut entry = RedirectionTableEntry::default();
+                    entry.set_vector(InterruptVector::Hpet.into());
+                    entry
+                };
+                unsafe { io_apic.set_table_entry(23, entry) };
+            }
         }
     } else {
         log::info!("I/O APIC does not have legacy PICs");

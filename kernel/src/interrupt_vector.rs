@@ -16,4 +16,5 @@ pub enum InterruptVector {
     /// To maximize performance, more interrupt vectors should be used for PCI, and they should be distributed to multiple CPUs.
     /// However for now we will just use a single vector.
     Pci,
+    Hpet,
 }

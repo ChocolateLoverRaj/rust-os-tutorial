@@ -35,6 +35,7 @@ pub mod get_page_table;
 pub mod guarded_stack;
 pub mod hhdm_offset;
 pub mod hlt_loop;
+mod hpet;
 pub mod idt;
 pub mod init_ps2_mouse;
 pub mod interrupt_vector;
@@ -132,6 +133,7 @@ extern "sysv64" fn init_bsp() -> ! {
     syscalls::init();
 
     pci_init::init(&acpi_tables);
+    hpet::init(&acpi_tables);
 
     // mouse::init();
     // x86_64::instructions::interrupts::enable();

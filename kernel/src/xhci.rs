@@ -94,16 +94,7 @@ pub fn init(mut function: PciFunction) {
             function.interrupt_info()
         );
     }
-    // let mut xhci_driver = unsafe { xhci_driver::Driver::new(bar0) };
-    // xhci_driver.reset_host_controller();
-    // let res = xhci_driver
-    //     .init_req()
-    //     .into_iter()
-    //     .map(allocate_multi)
-    //     .collect::<Box<_>>();
-    // // Safety: pages are properly allocated
-    // unsafe { xhci_driver.init(&res) };
-    // xhci_driver.start_device();
+
     let xhci_mmio = unsafe { XhciMmio::new(bar0) };
     let mut allocator = Allocator;
     let driver = ez_xhci::Driver::new(xhci_mmio, &mut allocator);

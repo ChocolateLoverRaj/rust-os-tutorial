@@ -64,6 +64,14 @@ extern "x86-interrupt" fn pci_interrupt_handler(_stack_frame: InterruptStackFram
     unsafe { local_apic.end_of_interrupt() };
 }
 
+extern "x86-interrupt" fn hpet_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    log::info!("Received HPET interrupt");
+    // We must notify the local APIC that it's the end of interrupt, otherwise we won't receive any more interrupts from it
+    let mut local_apic = get_local().local_apic.get().unwrap().lock();
+    // Safety: We are done with an interrupt triggered by the local APIC
+    unsafe { local_apic.end_of_interrupt() };
+}
+
 pub fn init() {
     let local = get_local();
     let idt = local.idt.call_once(|| {
@@ -115,6 +123,7 @@ pub fn init() {
                 .set_handler_fn(pci_interrupt_handler)
                 .set_stack_index(NORMAL_STACK_INDEX)
         };
+        idt[u8::from(InterruptVector::Hpet)].set_handler_fn(hpet_interrupt_handler);
         idt
     });
     idt.load();
