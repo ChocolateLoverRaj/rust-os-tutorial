@@ -218,7 +218,9 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "ez_hpet"
-version = "0.1.0"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be2f7caa792fa8077ce28b248da357af8f1e269ce98700bd9861a25ce5ead97f"
 dependencies = [
  "bitfield",
  "volatile 0.6.1",
