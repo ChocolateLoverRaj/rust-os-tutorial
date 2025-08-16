@@ -43,6 +43,7 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
         )
         .expect("ptr not null");
         let mut hpet = unsafe { Hpet::new(hpet_addr) };
+        log::debug!("{hpet:#?}");
         hpet.set_main_counter_value(0);
         let main_counter_tick_period = hpet.main_counter_tick_period();
         for i in 0..3 {
