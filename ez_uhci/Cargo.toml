@@ -1,0 +1,9 @@
+[package]
+name = "ez_uhci"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitfield = "0.19.1"
+log = "0.4.27"
+x86_64 = { version = "0.15.2", default-features = false, features = ["instructions"] }

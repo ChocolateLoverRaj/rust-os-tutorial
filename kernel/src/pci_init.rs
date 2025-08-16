@@ -2,7 +2,7 @@ use core::ptr::{NonNull, slice_from_raw_parts_mut};
 
 use acpi::{AcpiHandler, AcpiTables, mcfg::Mcfg};
 use alloc::{vec, vec::Vec};
-use ez_pci::{PciAccess, get_phys_range_to_map};
+use ez_pci::{BarWithSize, PciAccess, get_phys_range_to_map};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{ConfigurableFlags, Frame, max_page_size, memory::MEMORY, pci_edu, xhci};
@@ -98,6 +98,24 @@ pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
                                     .collect::<Vec<_>>();
                                 log::debug!("Capabilities: {capabilities:X?}");
                                 xhci::init(function);
+                            } else if function.class_code() == 0xC
+                                && function.sub_class() == 0x3
+                                && function.prog_if() == 0x0
+                            {
+                                log::debug!("Found UHCI");
+                                let bar = match function
+                                    .read_bar_with_size(4)
+                                    .expect("header type is known")
+                                    .expect("expected I/O bar")
+                                {
+                                    BarWithSize::Io(bar) => bar,
+                                    _ => panic!("expected bar to be I/O"),
+                                };
+                                let mut command = function.command();
+                                command.set_bus_master(true);
+                                command.set_io_space(true);
+                                function.set_command(command);
+                                ez_uhci::init(bar.addr.try_into().expect("port should be a u16"));
                             }
                         }
                     }

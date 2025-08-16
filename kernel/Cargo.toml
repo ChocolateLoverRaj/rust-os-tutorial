@@ -23,6 +23,7 @@ elf = { version = "0.8.0", default-features = false }
 embedded-graphics = "0.8.1"
 ez_hpet = "1.0.0"
 ez_pci = "1.1.0"
+ez_uhci = { version = "0.1.0", path = "../ez_uhci" }
 ez_xhci = { git = "https://github.com/ChocolateLoverRaj/ez_xhci", version = "0.1.0" }
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }
 itertools = { version = "0.14.0", default-features = false }

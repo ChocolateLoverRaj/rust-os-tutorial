@@ -228,14 +228,21 @@ dependencies = [
 
 [[package]]
 name = "ez_pci"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fedea0e56de1ea2f5a09bb9cd27ba3f29d9d53dc83daaa4739252535fb6604b"
+version = "1.1.1"
 dependencies = [
  "acpi",
  "bitfield",
  "num_enum",
  "volatile 0.6.1",
+ "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "ez_uhci"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "log",
  "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -393,6 +400,7 @@ dependencies = [
  "embedded-graphics",
  "ez_hpet",
  "ez_pci",
+ "ez_uhci",
  "ez_xhci",
  "force-send-sync",
  "itertools 0.14.0",
