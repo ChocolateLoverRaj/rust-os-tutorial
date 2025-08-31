@@ -15,6 +15,7 @@
         "crcr",
         "EFLAGS",
         "ehdr",
+        "epoll",
         "futex",
         "hhdm",
         "inlateout",
