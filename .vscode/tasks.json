@@ -9,6 +9,8 @@
 				"-s",
 				"-S",
 				"--nographic",
+				"--smp",
+				"2",
 			],
 			"problemMatcher": [
 				"$rustc",

@@ -3,14 +3,17 @@
 
 use frame_buffer_embedded_graphics::*;
 use frame_buffer_info::*;
+use hlt_loop::*;
 use limine_requests::*;
 use rgb_pixel_info::*;
 use writer_with_cr::*;
 
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
+mod hlt_loop;
 mod limine_requests;
 mod logger;
+mod panic_handler;
 mod rgb_pixel_info;
 mod writer_with_cr;
 
@@ -22,19 +25,17 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
 
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
     logger::init(frame_buffer_response).unwrap();
-    log::info!("Hello World!");
+    log::info!("Hello from BSP");
 
-    hlt_loop();
-}
-
-#[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    log::error!("{info}");
-    hlt_loop();
-}
-
-fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
+    let mp_response = MP_REQUEST.get_response().unwrap();
+    for cpu in mp_response.cpus() {
+        cpu.goto_address.write(entry_point_ap);
     }
+
+    hlt_loop();
+}
+
+unsafe extern "C" fn entry_point_ap(_cpu: &limine::mp::Cpu) -> ! {
+    log::info!("Hello from AP");
+    hlt_loop()
 }
