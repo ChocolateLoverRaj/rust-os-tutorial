@@ -31,7 +31,9 @@ static CPU_LOCAL_DATA: Lazy<Box<[Once<CpuLocalData>]>> =
 
 /// This function makes sure that we are writing a valid pointer to CPU local data to GsBase
 fn write_gs_base(ptr: &'static CpuLocalData) {
-    GsBase::write(VirtAddr::from_ptr(ptr));
+    let address = VirtAddr::from_ptr(ptr);
+    // Safety: We are not using GS until now
+    unsafe { GsBase::write(address) };
 }
 
 /// Initializes the item in [`CPU_LOCAL_DATA`] and GS.Base
