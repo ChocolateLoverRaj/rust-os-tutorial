@@ -133,13 +133,13 @@ extern "sysv64" fn init_bsp() -> ! {
     syscalls::init();
 
     pci_init::init(&acpi_tables);
-    hpet::init(&acpi_tables);
+    // hpet::init(&acpi_tables);
 
     // mouse::init();
     // x86_64::instructions::interrupts::enable();
     // hlt_loop()
     let module_response = MODULE_REQUEST.get_response().unwrap();
-    // spawn_initial_process::spawn_initial_process(module_response);
+    spawn_initial_process::spawn_initial_process(module_response);
 
     run_threads()
 }

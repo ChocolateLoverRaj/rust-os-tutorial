@@ -32,9 +32,6 @@ log = { version = "0.4.27", features = ["bincode", "serde"] }
 nodit = "0.9.2"
 num_enum = { version = "0.7.3", default-features = false }
 owo-colors = "4.2.1"
-polished_pci = { path = "../../../polished-os/pci", default-features = false, features = [
-    "logger_log",
-] }
 ps2 = "0.2.0"
 raw-cpuid = "11.5.0"
 ron = { git = "https://github.com/ron-rs/ron", version = "0.10.1", default-features = false }
