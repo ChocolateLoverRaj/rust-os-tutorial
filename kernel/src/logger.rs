@@ -143,7 +143,7 @@ impl Log for KernelLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        let mut inner = self.inner.try_lock().unwrap();
+        let mut inner = self.inner.lock();
         let level = record.level();
         inner.write_with_color(
             match level {
