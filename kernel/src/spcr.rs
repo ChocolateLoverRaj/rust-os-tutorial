@@ -4,11 +4,11 @@ use acpi::{
     spcr::{Spcr, SpcrInterfaceType},
 };
 use alloc::boxed::Box;
+use ez_paging::{ConfigurableFlags, Frame, Page};
 use uart::{address::MmioAddress, writer::UartWriter};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, Page,
     logger::{self, AnyWriter},
     max_page_size,
     memory::MEMORY,

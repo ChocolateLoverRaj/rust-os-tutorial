@@ -6,6 +6,7 @@ use common::{
     STACK_ALIGNMENT,
 };
 use elf::{ElfBytes, endian::NativeEndian};
+use ez_paging::{ConfigurableFlags, Frame, MapPageError, Page};
 use limine::{file::File, response::ModuleResponse};
 use nodit::{Interval, NoditMap, OverlapError};
 use spin::RwLock;
@@ -18,7 +19,6 @@ use x86_64::{
 };
 
 use crate::{
-    ConfigurableFlags, Frame, MapPageError2, Page,
     capabilities::{CAPABILITIES, Capability, CapabilityId, CapabilityType},
     memory::{MEMORY, MemoryType},
     smep_smap::{clac, has_smap, stac},
@@ -47,7 +47,7 @@ enum LoadUserModeProgramError {
     #[error("ELF has overlapping loadable segments")]
     OverlappingElfSegments(OverlapError<UserVirtMem>),
     #[error("Error creating a page table mapping")]
-    MapPageError(MapPageError2),
+    MapPageError(MapPageError),
     #[error("ELF tried to use higher half virtual memory")]
     OutOfBoundsMemory,
     #[error("The ELF specified an invalid virtual address")]

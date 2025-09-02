@@ -1,12 +1,12 @@
 use acpi::platform::interrupt::Apic;
 use alloc::alloc::Allocator;
 use common::PageSize;
+use ez_paging::{ConfigurableFlags, Frame, Page};
 use x2apic::ioapic::{IoApic, RedirectionTableEntry};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, Page, interrupt_vector::InterruptVector, memory::MEMORY,
-    pic8259_interrupts::Pic8259Interrupts,
+    interrupt_vector::InterruptVector, memory::MEMORY, pic8259_interrupts::Pic8259Interrupts,
 };
 
 pub fn init(apic: &Apic<impl Allocator>) {

@@ -6,6 +6,7 @@ use common::{
     SpawnProcessRelativePriority, Syscall, SyscallSpawnProcess, SyscallSpawnProcessError,
     SyscallSpawnProcessInput,
 };
+use ez_paging::{ConfigurableFlags, Frame, MapPageError, Page};
 use itertools::Itertools;
 use nodit::{InclusiveInterval, Interval, NoditMap};
 use x2apic::lapic::IpiAllShorthand;
@@ -15,7 +16,7 @@ use x86_64::{
 use zerocopy::TryFromBytes;
 
 use crate::{
-    CAPABILITIES, ConfigurableFlags, Frame, MapPageError2, Page,
+    CAPABILITIES,
     cpu_local_data::get_local,
     interrupt_vector::InterruptVector,
     limine_requests::MODULE_REQUEST,
@@ -194,7 +195,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     };
                     if let Err(e) = &result {
                         match e {
-                            MapPageError2::FrameAllocationFailed => {
+                            MapPageError::FrameAllocationFailed => {
                                 return Err(SyscallSpawnProcessError::OutOfPhysMem);
                             }
                             _ => result.unwrap(),
@@ -306,7 +307,7 @@ impl GenericSyscallHandler for SyscallSpawnProcessHandler {
                     } {
                         Ok(_) => {}
                         Err(e) => match e {
-                            MapPageError2::FrameAllocationFailed => {
+                            MapPageError::FrameAllocationFailed => {
                                 return Err(SyscallSpawnProcessError::OutOfPhysMem);
                             }
                             e => unreachable!("{e:?}"),

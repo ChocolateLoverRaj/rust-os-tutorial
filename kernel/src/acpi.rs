@@ -1,10 +1,11 @@
 use core::{fmt::Debug, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
+use ez_paging::{ConfigurableFlags, Frame, Page};
 use limine::response::RsdpResponse;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
-use crate::{ConfigurableFlags, Frame, Page, max_page_size, memory::MEMORY};
+use crate::{max_page_size, memory::MEMORY};
 
 /// Note: this cannot be sent across CPUs because the other CPUs did not flush their cache for changes in page tables
 #[derive(Debug, Clone)]

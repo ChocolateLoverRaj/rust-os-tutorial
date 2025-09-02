@@ -1,9 +1,9 @@
 use alloc::collections::btree_map::BTreeMap;
 use common::PageSize;
+use ez_paging::{ConfigurableFlags, Page};
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Page,
     call_with_rsp::call_with_rsp,
     local_apic_id::LocalApicId,
     memory::{KernelMemoryUsageType, MEMORY, MemoryType},

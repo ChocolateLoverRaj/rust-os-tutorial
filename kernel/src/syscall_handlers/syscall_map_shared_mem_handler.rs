@@ -3,11 +3,11 @@ use core::num::NonZero;
 use common::{
     LOWER_HALF_END, PermissionFlags, SliceData, SyscallMapSharedMem, SyscallMapSharedMemError,
 };
+use ez_paging::{ConfigurableFlags, Frame, Page};
 use nodit::{InclusiveInterval, Interval};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, Page,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     memory::MEMORY,

@@ -1,14 +1,16 @@
 use core::sync::atomic::AtomicUsize;
 
 use common::{MemProt, Syscall, SyscallMemProt, SyscallMemProtError};
+use ez_paging::{
+    ConfigurableFlags, GetTableError, MapPageError, Page, SetFlagsError, UnmapPageError,
+    UpdateFlagsError,
+};
 use itertools::Itertools;
 use nodit::{InclusiveInterval, Interval};
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, GetTableError, MapPageError2, Page, SetFlagsError, UnmapPageError2,
-    UpdateFlagsError2,
     cpu_local_data::get_local,
     cpus_count,
     interrupt_vector::InterruptVector,
@@ -88,7 +90,7 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                     };
                     let result = unsafe { process_memory.l4.update_flags(page, flags) };
                     if let Err(e) = result {
-                        if let UpdateFlagsError2::SetFlags(SetFlagsError::NotPresent) = e {
+                        if let UpdateFlagsError::SetFlags(SetFlagsError::NotPresent) = e {
                             let mut phys_mem = MEMORY.get().unwrap().physical_memory.lock();
                             let frame = if let Some(frame) = phys_mem.allocate_frame_with_type(
                                 page_size,
@@ -106,7 +108,7 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                                     .l4
                                     .map_page(page, frame, flags, &mut frame_allocator)
                             };
-                            if let Err(MapPageError2::FrameAllocationFailed) = &result {
+                            if let Err(MapPageError::FrameAllocationFailed) = &result {
                                 // TODO: Cleanup
                                 return Err(SyscallMemProtError::OutOfPhysMem);
                             }
@@ -120,7 +122,7 @@ impl GenericSyscallHandler for SyscallMemProtHandler {
                 } else {
                     let result = unsafe { process_memory.l4.unmap_page(page) };
                     if let Err(e) = result {
-                        if matches!(e, UnmapPageError2::GetTable(GetTableError::NotMapped)) {
+                        if matches!(e, UnmapPageError::GetTable(GetTableError::NotMapped)) {
                             false
                         } else {
                             panic!("Unexpected error: {e:#?}");

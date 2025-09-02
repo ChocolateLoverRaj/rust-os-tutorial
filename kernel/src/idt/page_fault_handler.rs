@@ -3,6 +3,7 @@ use core::{
     sync::atomic::Ordering,
 };
 
+use ez_paging::Page;
 use x86_64::{
     PrivilegeLevel,
     registers::control::Cr2,
@@ -10,7 +11,6 @@ use x86_64::{
 };
 
 use crate::{
-    Page,
     cpu_local_data::get_local,
     guarded_stack::{STACK_GUARD_PAGES, STACK_PAGE_SIZE, StackType},
     smep_smap::{clac, has_smap},

@@ -1,5 +1,6 @@
 use core::{num::NonZero, ptr::NonNull};
 
+use ez_paging::{ConfigurableFlags, Frame};
 use ez_pci::{ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, PciFunction};
 use volatile::{
     VolatileFieldAccess, VolatilePtr,
@@ -7,9 +8,7 @@ use volatile::{
 };
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
-use crate::{
-    ConfigurableFlags, Frame, interrupt_vector::InterruptVector, max_page_size, memory::MEMORY,
-};
+use crate::{interrupt_vector::InterruptVector, max_page_size, memory::MEMORY};
 
 pub fn init(mut function: PciFunction) {
     let bar = function

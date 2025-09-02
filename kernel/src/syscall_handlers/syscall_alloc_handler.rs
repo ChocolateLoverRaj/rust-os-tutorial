@@ -1,12 +1,12 @@
 use core::num::NonZero;
 
 use common::{LOWER_HALF_END, MemProt, PageSize, SyscallAlloc, SyscallAllocError};
+use ez_paging::{ConfigurableFlags, MapPageError, Page};
 use nodit::interval::ee;
 use raw_cpuid::CpuId;
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, MapPageError2, Page,
     cpu_local_data::get_local,
     memory::{MEMORY, MemoryType},
     task::{THREADS, UserVirtMem},
@@ -101,7 +101,7 @@ impl GenericSyscallHandler for SyscallAllocHandler {
                             .map_page(page, frame, flags, frame_allocator)
                     }
                     .map_err(|e| match e {
-                        MapPageError2::FrameAllocationFailed => {
+                        MapPageError::FrameAllocationFailed => {
                             SyscallAllocError::OutOfPhysicalMemory
                         }
                         e => unreachable!("{:#?}", e),

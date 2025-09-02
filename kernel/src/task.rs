@@ -11,12 +11,12 @@ use alloc::{
     vec::Vec,
 };
 use common::{SliceData, Syscall, SyscallWaitUntilEvent};
+use ez_paging::ManagedL4PageTable;
 use nodit::{Interval, NoditMap};
 
 use crate::{
-    CapabilityId, ManagedL4PageTable, interrupted_context::InterruptedContext,
-    local_apic_id::LocalApicId, syscall_saved_regs::SyscallSavedRegs,
-    try_access_user_mem::try_access_user_mem,
+    CapabilityId, interrupted_context::InterruptedContext, local_apic_id::LocalApicId,
+    syscall_saved_regs::SyscallSavedRegs, try_access_user_mem::try_access_user_mem,
 };
 
 #[derive(Debug, Clone)]

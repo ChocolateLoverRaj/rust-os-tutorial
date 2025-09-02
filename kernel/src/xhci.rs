@@ -1,6 +1,7 @@
 use core::num::NonZero;
 
 use common::PageSize;
+use ez_paging::{ConfigurableFlags, Frame};
 use ez_pci::{
     ApicMsiMessageAddress, ApicMsiMessageData, BarWithSize, MsiXTableEntryVolatileFieldAccess,
     PciFunction,
@@ -10,7 +11,6 @@ use spin::Once;
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame,
     interrupt_vector::InterruptVector,
     max_page_size,
     memory::{MEMORY, MemoryType},

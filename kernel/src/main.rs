@@ -18,7 +18,6 @@ use local_apic_id::LocalApicId;
 pub use managed_pat::*;
 pub use max_page_size::*;
 use memory::MEMORY;
-pub use paging::*;
 use run_tasks::run_threads;
 use x86_64::registers::control::Cr3;
 
@@ -50,7 +49,6 @@ mod managed_pat;
 pub mod max_page_size;
 pub mod memory;
 pub mod nmi_handler_states;
-mod paging;
 pub mod panic_handler;
 mod pci_edu;
 mod pci_init;

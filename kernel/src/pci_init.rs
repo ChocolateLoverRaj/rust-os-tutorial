@@ -2,10 +2,11 @@ use core::ptr::{NonNull, slice_from_raw_parts_mut};
 
 use acpi::{AcpiHandler, AcpiTables, mcfg::Mcfg};
 use alloc::{vec, vec::Vec};
+use ez_paging::{ConfigurableFlags, Frame};
 use ez_pci::{BarWithSize, PciAccess, get_phys_range_to_map};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
-use crate::{ConfigurableFlags, Frame, max_page_size, memory::MEMORY, pci_edu, xhci};
+use crate::{max_page_size, memory::MEMORY, pci_edu, xhci};
 
 pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
     let memory = MEMORY.get().unwrap();

@@ -4,12 +4,12 @@ use common::{
     EventStreamMem, LOWER_HALF_END, PageSize, SyscallSubscribeToKeyboard,
     SyscallSubscribeToKeyboardError, SyscallSubscribeToKeyboardOutput,
 };
+use ez_paging::{ConfigurableFlags, MapPageError, Page};
 use nodit::{InclusiveInterval, Interval, interval::ee};
 use x86_64::{VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    Capability, CapabilityId, ConfigurableFlags, EventStream, EventStreamSource, MapPageError2,
-    Page,
+    Capability, CapabilityId, EventStream, EventStreamSource,
     capabilities::{CAPABILITIES, CapabilityType},
     cpu_local_data::get_local,
     memory::{MEMORY, MemoryType},
@@ -116,7 +116,7 @@ impl GenericSyscallHandler for SyscallSubscribeToKeyboardHandler {
                         unsafe { mem.l4.map_page(page, frame, flags, &mut frame_allocator) };
                     if let Err(e) = &result {
                         match e {
-                            MapPageError2::FrameAllocationFailed => {
+                            MapPageError::FrameAllocationFailed => {
                                 // TODO: Clean up previous
                                 return Err(SyscallSubscribeToKeyboardError::OutOfPhysMem);
                             }

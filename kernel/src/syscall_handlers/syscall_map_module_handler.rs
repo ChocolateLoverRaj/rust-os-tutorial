@@ -1,10 +1,10 @@
 use alloc::format;
 use common::{LOWER_HALF_END, PageSize, SliceData, SyscallMapModule, SyscallMapModuleError};
+use ez_paging::{ConfigurableFlags, Frame, MapPageError, Page};
 use nodit::interval::ee;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
     hhdm_offset::HhdmOffset,
     limine_requests::MODULE_REQUEST,
@@ -85,7 +85,7 @@ impl GenericSyscallHandler for SyscallMapModuleHandler {
                         .map_page(page, frame, flags, frame_allocator)
                 }
                 .map_err(|e| match e {
-                    MapPageError2::FrameAllocationFailed => {
+                    MapPageError::FrameAllocationFailed => {
                         SyscallMapModuleError::OutOfPhysicalMemory
                     }
                     e => unreachable!("{:#?}", e),

@@ -1,15 +1,13 @@
 use acpi::platform::interrupt::Apic;
 use alloc::alloc::Allocator;
 use common::PageSize;
+use ez_paging::{ConfigurableFlags, Frame};
 use force_send_sync::SendSync;
 use spin::Once;
 use x2apic::lapic::{LocalApicBuilder, cpu_has_x2apic};
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
-use crate::{
-    ConfigurableFlags, Frame, cpu_local_data::get_local, interrupt_vector::InterruptVector,
-    memory::MEMORY,
-};
+use crate::{cpu_local_data::get_local, interrupt_vector::InterruptVector, memory::MEMORY};
 
 #[derive(Debug)]
 pub enum LocalApicAccess {

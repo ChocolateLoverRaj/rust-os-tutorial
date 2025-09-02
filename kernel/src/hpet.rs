@@ -2,9 +2,10 @@ use core::num::NonZero;
 
 use acpi::{AcpiHandler, AcpiTables, HpetInfo};
 use ez_hpet::{HPET_MMIO_SIZE, Hpet, InterruptConfig};
+use ez_paging::{ConfigurableFlags, Frame};
 use x86_64::{PhysAddr, registers::model_specific::PatMemoryType};
 
-use crate::{ConfigurableFlags, Frame, max_page_size, memory::MEMORY};
+use crate::{max_page_size, memory::MEMORY};
 
 pub fn init(acpi_tables: &AcpiTables<impl AcpiHandler>) {
     if let Ok(hpet) = HpetInfo::new(acpi_tables) {

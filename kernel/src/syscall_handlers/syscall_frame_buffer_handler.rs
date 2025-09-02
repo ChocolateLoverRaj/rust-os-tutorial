@@ -2,11 +2,11 @@ use common::{
     HIGHER_HALF_START, PageSize, SyscallReleaseFrameBuffer, SyscallTakeFrameBuffer,
     SyscallTakeFrameBufferError, SyscallTakeFrameBufferOutput,
 };
+use ez_paging::{ConfigurableFlags, Frame, MapPageError, Page};
 use nodit::interval::ue;
 use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ConfigurableFlags, Frame, MapPageError2, Page,
     cpu_local_data::get_local,
     hhdm_offset::HhdmOffset,
     limine_requests::FRAME_BUFFER_REQUEST,
@@ -102,7 +102,7 @@ impl GenericSyscallHandler for SyscallTakeFrameBufferHandler {
                         .map_page(page, frame, flags, frame_allocator)
                 }
                 .map_err(|e| match e {
-                    MapPageError2::FrameAllocationFailed => {
+                    MapPageError::FrameAllocationFailed => {
                         SyscallTakeFrameBufferError::OutOfPhysicalMemory
                     }
                     e => unreachable!("{:#?}", e),

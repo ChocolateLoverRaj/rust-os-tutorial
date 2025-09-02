@@ -1,17 +1,16 @@
 use core::{num::NonZero, ops::RangeInclusive};
 
 use common::{HIGHER_HALF_START, PageSize};
+use ez_paging::{ConfigurableFlags, Frame, ManagedL4PageTable, MapPageError, Page};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     VirtAddr,
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
-use crate::{ConfigurableFlags, Frame, MANAGED_PAT, ManagedL4PageTable, MapPageError2, Page};
-
 pub struct VirtualMemory {
     pub(super) set: NoditSet<u64, Interval<u64>>,
-    pub(super) l4: ManagedL4PageTable,
+    pub(super) l4: ez_paging::ManagedL4PageTable,
 }
 
 impl VirtualMemory {
@@ -72,7 +71,7 @@ impl VirtualMemory {
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
     pub unsafe fn new_user_page_table(&mut self, frame: PhysFrame) -> ManagedL4PageTable {
-        unsafe { ManagedL4PageTable::new_user(&mut self.l4, frame, MANAGED_PAT) }
+        unsafe { self.l4.new_user(frame) }
     }
 }
 pub struct AllocatedPages<'a> {
@@ -121,7 +120,7 @@ impl AllocatedPages<'_> {
                 .l4
                 .map_page(page, frame, flags, frame_allocator)
         };
-        if let Err(MapPageError2::FrameAllocationFailed) = result {
+        if let Err(MapPageError::FrameAllocationFailed) = result {
             return Err(MapToError::OutOfPhysMem);
         } else {
             result.unwrap();

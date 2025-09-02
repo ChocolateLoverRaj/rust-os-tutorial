@@ -138,6 +138,7 @@ dependencies = [
  "bitflags 2.9.1",
  "elf",
  "embedded-graphics",
+ "ez_paging",
  "limine",
  "log",
  "thiserror",
@@ -224,6 +225,15 @@ checksum = "be2f7caa792fa8077ce28b248da357af8f1e269ce98700bd9861a25ce5ead97f"
 dependencies = [
  "bitfield",
  "volatile 0.6.1",
+]
+
+[[package]]
+name = "ez_paging"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "raw-cpuid 11.5.0",
+ "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
 ]
 
 [[package]]
@@ -399,6 +409,7 @@ dependencies = [
  "elf",
  "embedded-graphics",
  "ez_hpet",
+ "ez_paging",
  "ez_pci",
  "ez_uhci",
  "ez_xhci",

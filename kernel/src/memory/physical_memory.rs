@@ -2,13 +2,14 @@ use core::{mem, num::NonZero};
 
 use alloc::boxed::Box;
 use common::PageSize;
+use ez_paging::Frame;
 use nodit::{InclusiveInterval, Interval, NoditMap, interval::ie};
 use x86_64::{
     PhysAddr,
     structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
-use crate::{Frame, task::ProcessId};
+use crate::task::ProcessId;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum KernelMemoryUsageType {
