@@ -18,6 +18,7 @@ use translate_addr::*;
 use writer_with_cr::*;
 use x86_64_consts::*;
 
+mod acpi;
 mod call_with_rsp;
 mod cpu_local_data;
 mod frame_buffer_embedded_graphics;
@@ -68,6 +69,13 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
 extern "sysv64" fn init_bsp() -> ! {
     gdt::init();
     idt::init();
+
+    let rsdp = RSDP_REQUEST.get_response().unwrap();
+    let acpi_tables = acpi::parse(rsdp)
+        .table_headers()
+        .map(|(_, header)| header.signature)
+        .collect::<alloc::boxed::Box<[_]>>();
+    log::info!("ACPI Tables: {acpi_tables:?}");
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     for cpu in mp_response.cpus() {
