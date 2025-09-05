@@ -1,9 +1,12 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
+
 extern crate alloc;
 
 use frame_buffer_embedded_graphics::*;
 use frame_buffer_info::*;
+use gdt::*;
 use hhdm_offset::*;
 use hlt_loop::*;
 use limine_requests::*;
@@ -14,8 +17,10 @@ use writer_with_cr::*;
 mod cpu_local_data;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
+mod gdt;
 mod hhdm_offset;
 mod hlt_loop;
+mod idt;
 mod limine_requests;
 mod logger;
 mod memory;
@@ -43,6 +48,9 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
         cpu_local_data::init_bsp();
     }
 
+    gdt::init();
+    idt::init();
+
     let mp_response = MP_REQUEST.get_response().unwrap();
     for cpu in mp_response.cpus() {
         cpu.goto_address.write(entry_point_ap);
@@ -56,5 +64,9 @@ unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
     unsafe { cpu_local_data::init_ap(cpu) };
 
     log::info!("Hello from AP");
+
+    gdt::init();
+    idt::init();
+
     hlt_loop()
 }
