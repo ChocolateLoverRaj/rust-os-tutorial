@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+acpi = "6.0.1"
 embedded-graphics = "0.8.1"
 ez_paging = { git = "https://github.com/ChocolateLoverRaj/ez_paging", version = "0.1.0", default-features = false }
 limine = "0.4"
