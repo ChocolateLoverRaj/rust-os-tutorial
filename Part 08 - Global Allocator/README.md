@@ -34,19 +34,26 @@ pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 ```
 Let's create an `init` function in `memory.rs`:
 ```rs
+/// Finds unused physical memory for the global allocator and initializes the global allocator.
+/// Returns the start address of the physical memory used for the global allocator.  
+///
+/// # Safety
+/// This function must be called exactly once, and no page tables should be modified before calling this function.
 pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     let global_allocator_size = {
         // 4 MiB
         4 * 0x400 * 0x400
     };
-    let global_allocator_physical_start = memory_map
-        .entries()
-        .iter()
-        .find(|entry| {
-            entry.entry_type == EntryType::USABLE && entry.length >= global_allocator_size
-        })
-        .unwrap()
-        .base;
+    let global_allocator_physical_start = PhysAddr::new(
+        memory_map
+            .entries()
+            .iter()
+            .find(|entry| {
+                entry.entry_type == EntryType::USABLE && entry.length >= global_allocator_size
+            })
+            .unwrap()
+            .base,
+    );
 }
 ```
 
