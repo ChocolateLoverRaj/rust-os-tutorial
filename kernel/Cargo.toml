@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 acpi = "6.0.1"
+either = { version = "1.15.0", default-features = false }
 embedded-graphics = "0.8.1"
 ez_paging = { git = "https://github.com/ChocolateLoverRaj/ez_paging", version = "0.1.0", default-features = false }
 limine = "0.4"
@@ -15,6 +16,7 @@ num_enum = { version = "0.7.4", default-features = false }
 owo-colors = "4.2.1"
 spin = "0.10.0"
 talc = "4.4.3"
+uart = { git = "https://github.com/ChocolateLoverRaj/uart", branch = "send-sync", version = "2.0.0" }
 uart_16550 = "0.3.2"
 unicode-segmentation = "1.12.0"
 x86_64 = { git = "https://github.com/rust-osdev/x86_64", branch = "next" }

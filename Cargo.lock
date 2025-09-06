@@ -129,6 +129,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "either",
  "embedded-graphics",
  "ez_paging",
  "limine",
@@ -138,6 +139,7 @@ dependencies = [
  "owo-colors",
  "spin",
  "talc",
+ "uart",
  "uart_16550",
  "unicode-segmentation",
  "x86_64",
@@ -328,6 +330,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3ae828aa394de34c7de08f522d1b86bd1c182c668d27da69caadda00590f26d"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "uart"
+version = "2.0.0"
+source = "git+https://github.com/ChocolateLoverRaj/uart?branch=send-sync#75ca2ad84af6cfed2ae42ac5ed3da61e4cd1e20c"
+dependencies = [
+ "bitflags 2.9.1",
 ]
 
 [[package]]
