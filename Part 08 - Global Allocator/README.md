@@ -5,7 +5,7 @@ When we write Rust code in `std`, we have data types such as `Box`, `Vec`, `Rc`,
 
 An allocator basically has a pool of memory (think of it as a `&mut [MaybeUninit<u8>]`) which it allocates towards any data type used by any code. The allocator has to keep track of which parts of memory are allocated, and be able to allocate, deallocate, and (optional, but useful for performance) grow / shrink already allocated memory regions. We don't have to implement an allocator because there are many existing crates that do it for us. We will use the `talc` crate:
 ```toml
-talc = "4.4.2"
+talc = "4.4.3"
 ```
 To enable using `alloc`, we need to add in `main.rs`:
 ```rs
@@ -14,20 +14,15 @@ extern crate alloc;
 Create a file `memory.rs`:
 ```rs
 // This tells Rust that global allocations will use this static variable's allocation functions
+// Talck is talc's allocator, but behind a lock, so that it can implement `GlobalAlloc`
+// We tell talc to use a `spin::Mutex` as the locking method
+// If talc runs out of memory, it runs an OOM (out of memory) handler.
+// For now, we do not implement a method of allocating more memory for the global allocator, so we just error on OOM
 #[global_allocator]
-static GLOBAL_ALLOCATOR: 
-    // Talck is talc's allocator, but behind a lock, so that it can implement `GlobalAlloc`
-    Talck<
-        // This tells talc to use a `spin::Mutex` as the locking method
-        spin::Mutex<()>, 
-        // If talc runs out of memory, it runs an OOM (out of memory) handler. 
-        // For now, we do not implement a method of allocating more memory for the global allocator, so we just error on OOM
-        ErrOnOom
-    > =
-    Talck::new(
-        // Initially, there is no memory backing `Talc`. We will add memory at run time
-        Talc::new(ErrOnOom)
-    );
+static GLOBAL_ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = Talck::new({
+    // Initially, there is no memory backing `Talc`. We will add memory at run time
+    Talc::new(ErrOnOom)
+});
 ```
 
 ## Finding physical memory
@@ -91,12 +86,14 @@ impl From<&'static HhdmResponse> for HhdmOffset {
 ## Initializing the global allocator
 Let's add an input, `hhdm_offset: HhdmOffset` to our `init` function. Then, we can create a slice for our memory:
 ```rs
-// Safety: We've reserved the physical memory and it is already offset mapped
-let global_allocator_mem = unsafe {
-    slice::from_raw_parts_mut::<MaybeUninit<u8>>(
-        (u64::from(hhdm_offset) + global_allocator_physical_start) as *mut _,
+let global_allocator_mem = {
+    let mut ptr = NonNull::new(slice_from_raw_parts_mut(
+        (u64::from(hhdm_offset) + global_allocator_physical_start) as *mut MaybeUninit<u8>,
         global_allocator_size as usize,
-    )
+    ))
+    .unwrap();
+    // Safety: We've reserved the physical memory and it is already offset mapped
+    unsafe { ptr.as_mut() }
 };
 ```
 Then, we can give this slice to `talc` to use:

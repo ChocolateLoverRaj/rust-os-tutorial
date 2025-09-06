@@ -1,79 +1,117 @@
-# What CPU am I running on?
-## CPU-specific global variables
-In `entry_point_from_limine`, we know we are on the BSP (which stands for boot strap processor). In `entry_point_from_limine_mp`, we are given the `&Cpu` input, which tells us what CPU this function is running on. But there will be situations where we don't have an input which tells us our current CPU, such as in the logger. We need a way of saving the current CPU's index or ID. But we can't use a single global variable, since every CPU has a different ID. We'll store CPU-specific global variables in a `BTreeMap`, where the key is the Local APIC id (don't worry about what that is right now, you just need to know that this is a unique id associated with every CPU, and Limine provides a `bsp_lapic_id` method to get the Local APIC id of the BSP). Create a file `cpu_local_data.rs`. Let's make a struct for keeping CPU-specific global data:
+# CPU Local Data
+So far, we've used global variables, which are shared with all code running on every CPU, and variables inside functions (on the stack). In our kernel, we will need global variables that are unique to each CPU.
+
+We don't know how many CPUs our kernel will run on at compile time, so we will need to allocate and initialize our CPU-specific global variables at run time. Create a file `cpu_local_data.rs`. Let's make a struct for keeping CPU-specific global data:
 ```rs
 pub struct CpuLocalData {
-    pub cpu: &'static Cpu,
+    /// Similar to [Linux](https://elixir.bootlin.com/linux/v5.6.3/source/arch/x86/kernel/apic/apic.c#L2469), the we assign the BSP id `0`.
+    /// For the APs, they will have an id based on their position in the CPUs array given from Limine.
+    pub kernel_assigned_id: u32,
+    #[allow(unused)]
+    pub local_apic_id: u32,
 }
 ```
-For now, we can just have a reference to the CPU. Later, we'll add more data.
 
-We can't just use a `BTreeMap` as a global variable directly, since we'll need to initialize (which involves mutating) it at runtime. We could use a mutex for this, but there is a better data type. We'll use `spin::Once`. It's useful for global variables that will be initialized in run time and then never modified after that.
-```rs
-static CPU_LOCAL_DATA: Once<BTreeMap<u32, Box<CpuLocalData>>> = Once::new();
-```
-We use a `Box` to avoid stack overflows. As we add more members to `CpuLocalData`, it can get large and cause stack overflows it we move it around a lot. 
+We can keep the `CpuLocalData`s in an array. In Rust, we will use a boxed slice, which is basically an array allocated in run time. One question we have to answer is which CPU will have which index in the array? We can all this index in the array an ID. Limine gives us a list of CPUs, with a ACPI id and a local APIC id. However, we cannot use either of these ids as an index in an array, because these ids are not guaranteed to start with `0` and could have gaps. So we can make our own ids, which we will assign to CPUs. We can call this id `kernel_assigned_id`. In this tutorial, we will always give the BSP id `0`, to easily recognize the BSP. We will give the other CPUs an id based on their index in the array of CPUs that Limine gives us.
 
-Then let's create a function to initialize them:
+Create a file `cpu_local_data.rs`. Let's make a struct for keeping CPU-specific global data:
 ```rs
-pub fn init(mp_response: &'static MpResponse) {
-    CPU_LOCAL_DATA.call_once(|| {
-        mp_response
-            .cpus()
-            .iter()
-            .map(|cpu| (cpu.lapic_id, Box::new(CpuLocalData { cpu })))
-            .collect()
-    });
+pub struct CpuLocalData {
+    /// Similar to [Linux](https://elixir.bootlin.com/linux/v5.6.3/source/arch/x86/kernel/apic/apic.c#L2469), the we assign the BSP id `0`.
+    /// For the APs, they will have an id based on their position in the CPUs array given from Limine.
+    pub kernel_assigned_id: u32,
+    #[allow(unused)]
+    pub local_apic_id: u32,
 }
 ```
-Here we can use `collect` to conveniently create the `BTreeMap` from the existing iterator, because [`BTreeMap` implements `FromIterator`](https://doc.rust-lang.org/std/collections/struct.BTreeMap.html#impl-FromIterator%3C(K,+V)%3E-for-BTreeMap%3CK,+V%3E).
 
-Let's initialize the CPU local data in the entry function, before we set the `goto_address` for the other CPUs:
+For our convenience, create this helper function:
 ```rs
-cpu_local_data::init(mp_response);
+fn mp_response() -> &'static MpResponse {
+    MP_REQUEST.get_response().expect("expected MP response")
+}
 ```
-Now every CPU has it's own `CpuLocalData`. But we still need to know what the index is in the slice for the current CPU. For that, we'll use the `GsBase` register. This register, like other registers, is not shared between CPUs. It's used to store a pointer. So let's set the `GsBase` register to point to our specific CPU's data:
+
+Because we only know the number of CPUs at runtime, we cay use lazy initialization to initialize an array of CPU local data:
+```rs
+static CPU_LOCAL_DATA: Lazy<Box<[Once<CpuLocalData>]>> =
+    Lazy::new(|| mp_response().cpus().iter().map(|_| Once::new()).collect());
+```
+
+We also need a way to store the kernel assigned id of the current CPU. For this, we need to store it somewhere that is unique to a CPU. We will use the GS.Base register for this. GS.Base is supposed to store a pointer, and this register is not shared between CPUs. We can store a pointer to `CpuLocalData` in `GS.Base`:
 ```rs
 /// This function makes sure that we are writing a valid pointer to CPU local data to GsBase
 fn write_gs_base(ptr: &'static CpuLocalData) {
     GsBase::write(VirtAddr::from_ptr(ptr));
 }
+```
+
+Next let's create functions to initialize CPU local data for the current CPU, and store the pointer in GS.Base:
+```rs
+/// Initializes the item in [`CPU_LOCAL_DATA`] and GS.Base
+fn init_cpu(kernel_assigned_id: u32, local_apic_id: u32) {
+    write_gs_base(
+        CPU_LOCAL_DATA[kernel_assigned_id as usize].call_once(|| CpuLocalData {
+            kernel_assigned_id,
+            local_apic_id,
+        }),
+    );
+}
+
+/// Initialize CPU local data for the BSP
+///
+/// # Safety
+/// Must be called on the AP
+pub unsafe fn init_bsp() {
+    init_cpu(
+        // We always assign id 0 to the BSP
+        0,
+        mp_response().bsp_lapic_id(),
+    );
+}
 
 /// # Safety
-/// The Local APIC id must match the actual CPU that this function is called on
-pub unsafe fn init_cpu(local_apic_id: u32) {
-    write_gs_base(CPU_LOCAL_DATA.get().unwrap().get(&local_apic_id).unwrap());
+/// The CPU must match the actual CPU that this function is called on
+pub unsafe fn init_ap(cpu: &Cpu) {
+    let local_apic_id = cpu.lapic_id;
+    init_cpu(
+        // We get use the position of the CPU in the array, not counting the BSP and adding 1 because id `0` is the BSP.
+        mp_response()
+            .cpus()
+            .iter()
+            .filter(|cpu| cpu.lapic_id != mp_response().bsp_lapic_id())
+            .position(|cpu| cpu.lapic_id == local_apic_id)
+            .expect("CPUs array should contain this AP") as u32
+            + 1,
+        local_apic_id,
+    );
 }
 ```
-Converting references to and from raw pointers without mistakes can be really tricky, even in Rust. The `fn write_gs_base(ptr: &'static CpuLocalData) {}` will make it so we don't accidentally store a pointer to the *`Box<CpuLocalData>`* istead of a pointer to `CpuLocalData`. 
-
-Right away, let's call this function to initialize the BSP's CPU local data in `entry_point_from_limine`:
+In `entry_point_from_limine`, after `memory::init`, add:
 ```rs
 // Safety: We are calling this function on the BSP
 unsafe {
-    init_cpu(mp_response.bsp_lapic_id());
+    cpu_local_data::init_bsp();
 }
 ```
-
-Then let's also initialize it for the other CPUs, in `entry_point_from_limine_mp`:
+And in `entry_point_from_limine_mp` add:
 ```rs
-// Safety: We're inputting the correct CPU local APIC id
-unsafe { init_cpu(cpu.lapic_id) };
+// Safety: We're actually calling the function on this CPU
+unsafe { cpu_local_data::init_ap(cpu) };
 ```
 
-Let's also create wrappers for accessing the CPU local data:
+Now, let's create two helper functions in `cpu_local_data.rs`:
 ```rs
-pub fn get_local() -> &'static CpuLocalData {
-    try_get_local().unwrap()
+pub fn cpus_count() -> usize {
+    mp_response().cpus().len()
 }
 
 pub fn try_get_local() -> Option<&'static CpuLocalData> {
-    let ptr = GsBase::read().as_ptr::<CpuLocalData>();
+    let ptr = NonNull::new(GsBase::read().as_mut_ptr::<CpuLocalData>())?;
     // Safety: we only wrote to GsBase using `write_gs_base`, which ensures that the pointer is `&'static CpuLocalData`
-    unsafe { ptr.as_ref() }
+    unsafe { Some(ptr.as_ref()) }
 }
 ```
-Note that we check that if the CPU local data is not initialized, `GsBase` will be `0` (because Limine sets it to zero), and we return `None` since it's a null pointer.
 
 ## Showing the CPU in our logger
 It is useful to know which CPU logged what message. Let's prefix all of our log messages with the CPU id. Let's add `Color::Gray`, with
@@ -86,17 +124,43 @@ Color::Gray => Rgb888::new(128, 128, 128)
 ```
 for the screen. Then in the `log` method, add this before printing the log level:
 ```rs
-if let Some(cpu_local_data) = try_get_local() {
-    let cpu_id = cpu_local_data.cpu.id;
-    inner.write_with_color(Color::Gray, format_args!("[CPU {cpu_id}] "));
-} else {
-    inner.write_with_color(Color::Gray, "[BSP] ");
+let cpu_id = try_get_local().map_or(0, |data| data.kernel_assigned_id);
+let width = match cpus_count() {
+    1 => 1,
+    n => (n - 1).ilog(16) as usize + 1,
 };
+inner.write_with_color(Color::Gray, format_args!("[{cpu_id:0width$X}] "));
 ```
-Because we might want to log messages before initializing the `CPU_LOCAL_DATA`, we just print "BSP" instead of the CPU id if the cpu local data is not initialized. Now our kernel should log this:
+Here we print the id (in hex) of the CPU that logged the message. We adjust the number of digits in the CPU id to be the maximum number of digits needed.
+
+We can even try running our CPU with a ton of CPUs now. Add the following QEMU flags:
+
+For 300 CPUs:
 ```
-[BSP] INFO  Hello World!
-[BSP] INFO  CPU Count: 2
-[CPU 0] INFO  Hello from BSP
-[CPU 1] INFO  Hello from CPU 1
+--smp 300
+```
+
+To use a non-default QEMU machine which can support this many CPUs:
+```
+--machine q35
+```
+
+To enable X2APIC, which is needed for >255 CPUs:
+```
+--cpu qemu64,+x2apic
+```
+
+To increase the memory to 1 GiB instead of the default 128 MiB, since we need more memory for all those extra CPUs:
+```
+-m 1G
+```
+
+Now the output should look similar to this:
+```
+[000] INFO  Hello from BSP
+[0C1] INFO  Hello from AP
+[101] INFO  Hello from AP
+[0BF] INFO  Hello from AP
+[059] INFO  Hello from AP
+[0A0] INFO  Hello from AP
 ```

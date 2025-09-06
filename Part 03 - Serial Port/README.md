@@ -23,4 +23,4 @@ Now run it, and in the QEMU window, select `View` -> `serial0`. It should look l
 
 ![QEMU Screenshot with "Hello World!"](./QEMU_Screenshot.png)
 
-We can make QEMU not create a window and print COM1 to the terminal by using `-nographic`. Let's also update `tasks.json`. Note that when you specify `-nographic`, you can't close QEMU with `Ctrl + C` and instead have to use `Ctrl + A` and then press `X`.
+We can make QEMU not create a window and print COM1 to the terminal by using `--nographic`. Let's also update `tasks.json`. Note that when you specify `--nographic`, you can't close QEMU with `Ctrl + C` and instead have to use `Ctrl + A` and then press `X`.

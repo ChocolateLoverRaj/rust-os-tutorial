@@ -79,7 +79,7 @@ fn log(&self, record: &log::Record) {
     inner.write_with_color(Color::Default, "\n");
 }
 ```
-Mutexes can feel like an easy fix to the issue of having immutable variables, but whenever we use mutexes we have to keep in mind the possibility of a [deadlock](https://en.wikipedia.org/wiki/Deadlock_(computer_science)). This is why we use `.try_lock().unwrap()` instead of `.lock()`, so that we panic by default if the lock is busy, so we know for sure there won't be a deadlock.
+Mutexes can feel like an easy way to safety get a `&mut` to a global variable, but whenever we use mutexes we have to keep in mind the possibility of a [deadlock](https://en.wikipedia.org/wiki/Deadlock_(computer_science)). This is why we use `.try_lock().unwrap()` instead of `.lock()`, so that we panic by default if the lock is busy, so we know for sure there won't be a deadlock.
 
 ## Writing to serial
 Now let's implement the actual writing to serial inside `write_with_color`. To `Inner`, add:
@@ -89,6 +89,35 @@ serial_port: SerialPort
 We'll use `owo_colors` to handle the ANSI escape codes for us.
 ```toml
 owo-colors = "4.2.1"
+```
+We also need to convert LF to CRLF, so that the serial output looks as expected inside QEMU's `serial0` view. Doing this is simple with the `core::fmt::Write` trait. Create `writer_with_cr.rs`:
+```rs
+use core::fmt::Write;
+
+use unicode_segmentation::UnicodeSegmentation;
+
+/// A writer that writes to a writer, replacing `\n` with `\r\n`
+pub struct WriterWithCr<T> {
+    writer: T,
+}
+
+impl<T> WriterWithCr<T> {
+    pub const fn new(writer: T) -> Self {
+        Self { writer }
+    }
+}
+
+impl<T: Write> Write for WriterWithCr<T> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for c in s.graphemes(true) {
+            match c {
+                "\n" => self.writer.write_str("\r\n")?,
+                s => self.writer.write_str(s)?,
+            }
+        }
+        Ok(())
+    }
+}
 ```
 And then in `write_with_color`:
 ```rs
@@ -102,7 +131,8 @@ And then in `write_with_color`:
         Color::BrightCyan => &string.bright_cyan(),
         Color::BrightMagenta => &string.bright_magenta(),
     };
-    write!(self.serial_port, "{string}").unwrap();
+    let mut writer = WriterWithCr::new(&mut self.serial_port);
+    write!(writer, "{string}").unwrap();
 }
 ```
 
@@ -137,10 +167,8 @@ When we run out of vertical space on the screen, we'll shift everything that's o
 ```rs
 impl FrameBufferEmbeddedGraphics<'_> {
     /// Moves everything on the screen up, leaving the bottom the same as it was before
-    pub fn shift_up(&mut self, amount: u32) {
-        let pitch = self.frame_buffer.pitch();
-        let buffer = self.frame_buffer_mut();
-        buffer.copy_within(amount as usize * pitch as usize..buffer.len(), 0);
+    pub fn shift_up(&mut self, amount: usize) {
+        self.buffer.copy_within(amount * self.pixel_pitch.., 0);
     }
 }
 ```
@@ -160,7 +188,7 @@ impl Write for Writer<'_> {
             let height_not_seen = self.position.y + font.character_size.height as i32
                 - self.display.bounding_box().size.height as i32;
             if height_not_seen > 0 {
-                self.display.shift_up(height_not_seen as u32);
+                self.display.shift_up(height_not_seen as usize);
                 self.position.y -= height_not_seen;
             }
             match c {

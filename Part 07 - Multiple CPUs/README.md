@@ -8,37 +8,31 @@ Limine makes running code on all CPUs very easy. We just need to use [Limine's M
 ```rs
 #[used]
 #[unsafe(link_section = ".requests")]
-pub static MP_REQUEST: MpRequest = MpRequest::new();
+pub static MP_REQUEST: MpRequest = MpRequest::new().with_flags(RequestFlags::X2APIC);
 ```
-Now we can get information about the number of CPUs:
+We use the `X2APIC` request flag. This tutorial will explain more about what that is in a later part. For now, you just need to know that this flag is needed for Limine to boot our kernel when there are >256 CPUs.
+
+Up until now, our code has only been running on 1 CPU. This CPU is called the bootstrap processor (BSP). Let's change our hello world to say `"Hello from BSP"`.
+
+The other CPUs are called application processors (APs). Limine has already started the APs for us, and they are waiting to jump to a function.
+
+Let's make a function for the APs:
 ```rs
-let mp_response = MP_REQUEST.get_response().unwrap();
-let cpu_count = mp_response.cpus().len();
-log::info!("CPU Count: {cpu_count}");
-```
-We should see
-```
-INFO  CPU Count: 1
-```
-Let's try increasing the number of CPUs we have. We can tell QEMU to have 2 CPUs with `-smp 2`. Now we should see
-```
-INFO  CPU Count: 2
-```
-Now let's run some code on the other CPU. First we have to create a function which will act as an entry point for the other CPUs:
-```rs
-unsafe extern "C" fn entry_point_from_limine_mp(cpu: &limine::mp::Cpu) -> ! {
+unsafe extern "C" fn entry_point_from_limine_mp(_cpu: &limine::mp::Cpu) -> ! {
+    // log::info!("Hello from AP");
     hlt_loop()
 }
 ```
-Then in our initial CPU, we set write to the `goto_address` to make the other CPUs go to our function.
+
+Using the MP request, we can run the function in all of the APs:
 ```rs
+let mp_response = MP_REQUEST.get_response().unwrap();
 for cpu in mp_response.cpus() {
     cpu.goto_address.write(entry_point_from_limine_mp);
 }
 ```
-Note that even though we are writing to the `goto_address` of our own CPU, that's okay because it won't do anything on it.
 
-Now we can confirm with our debugger that the other CPU does execute our function:
+By default, QEMU only gives the VM 1 CPU. We can specify the number of CPUs using the `--smp` flag. Let's test it out by using `--smp 2` and using the debugger to confirm that the other CPU does execute our function:
 
 ![Screenshot of the call stack](./Call_Stack_Screenshot.png)
 
@@ -51,52 +45,42 @@ And in the way our kernel is right now, we could cause a panic inside of our pan
 ```rs
 log::error!("{}", info);
 ```
-And in fact, that does happen. If we add this to our `entry_point_from_limine_mp` function:
-```rs
-let cpu_id = cpu.id;
-log::info!("Hello from CPU {cpu_id}");
-```
-The first CPU will be printing its panic message while the second CPU also tries to print at the same time, causing a panic because we `.try_lock().unwrap()`. We can see the recursive panic with the debugger:
+And in fact, that does happen. Uncomment the `"Hello from AP"` and run it. The first CPU will be printing its panic message while the second CPU also tries to print at the same time, causing a panic because we `.try_lock().unwrap()`. We can see the recursive panic with the debugger:
 
 ![Screenshot of call stack](./Recursive_Panic_Screenshot.png)
 
 # Preventing recursive panics
-We're going to change our logger so it doesn't panic, but before that, let's change our panic handler to avoid inifinite recursive panics:
+We're going to change our logger so it doesn't panic, but before that, let's change our panic handler to avoid infinite recursive panics:
 ```rs
 static DID_PANIC: AtomicBool = AtomicBool::new(false);
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    match DID_PANIC.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
-        Ok(_) => {
-            log::error!("{info}");
-            hlt_loop();
-        }
-        Err(_) => {
-            hlt_loop();
-        }
+    if !DID_PANIC.swap(true, Ordering::Relaxed) {
+        log::error!("{info}");
+        hlt_loop();
+    } else {
+        hlt_loop();
     }
 }
 ```
 Let's also move our panic handler to a separate file, `panic_handler.rs`, and move `hlt_loop` to `hlt_loop.rs`. Now at most, we can have two panics. And the second panic is guaranteed not to cause further panics because the `hlt_loop` function cannot cause panics. This way, if we have another bug in the logger, we don't have recursive panics again.
 
 # Spinning to wait
-Now let's replace `self.inner.try_lock().unwrap()` with `self.inner.lock()`. Now instead of panicking if the lock is held by something else, it will continuously check if the lock is free, until it becomes free. This will solve our problem, but again, be aware that we could have deadlocks and the CPU will just spin forever and it will be harder to debug deadlocks.
+Now let's replace `self.inner.try_lock().unwrap()` with `self.inner.lock()`. Now instead of panicking if the lock is held by something else, it will continuously check if the lock is free, until it becomes free. This will solve our problem, but again, be aware that if a deadlock happens, the CPU will just spin forever and it will be harder to debug than a panic.
 
-Now we should see this:
+Now we should see this (the order can vary depending on which CPU gets the lock first):
 ```rs
-INFO  Hello World!
-INFO  CPU Count: 2
-INFO  Hello from CPU 1
+INFO  Hello from BSP
+INFO  Hello from AP
 ```
-But the order is not necessarily consistent. We can try using even more CPUs. This is what happened when I ran it with 8 CPUs:
-```rs
-INFO  Hello World!
-INFO  CPU Count: 8
-INFO  Hello from CPU 3
-INFO  Hello from CPU 6
-INFO  Hello from CPU 5
-INFO  Hello from CPU 7
-INFO  Hello from CPU 2
-INFO  Hello from CPU 1
-INFO  Hello from CPU 4
+And when running with `--smp 8`:
+```
+INFO  Hello from BSP
+INFO  Hello from AP
+INFO  Hello from AP
+INFO  Hello from AP
+INFO  Hello from AP
+INFO  Hello from AP
+INFO  Hello from AP
+INFO  Hello from AP
 ```

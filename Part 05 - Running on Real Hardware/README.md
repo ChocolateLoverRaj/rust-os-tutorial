@@ -10,9 +10,9 @@ We can write our file at `runner/out_dir/iso_root/os.iso` to a disk in any way w
 If you know what you are doing, you can use `dd` instead. You can also use [Ventoy](https://www.ventoy.net/en/doc_start.html), but it might not work on really old computers.
 
 ## Booting the OS
-Plug in your disk (most likely you are using a USB disk, so just plug it in). When turning on your computer, you have to press a certain key to enter the boot device selection menu. On the old Lenovo computer with Legacy BIOS that I'm using, this key is F12. On Chromebooks running [MrChromebox firmware (UEFI)](https://docs.mrchromebox.tech/docs/firmware/types.html#uefi-full-rom), you can press `Esc` or `Arrow Down`. Then choose the USB disk containing your OS.
+Plug in your disk (most likely you are using a USB disk, so just plug it in). When turning on your computer, you have to press a certain key to enter the boot device selection menu. On the old Lenovo computer with Legacy BIOS that I'm using, this key is F12. On Chromebooks running [MrChromebox firmware (UEFI)](https://docs.mrchromebox.tech/docs/firmware/types.html#uefi-full-rom), you can press `Esc` or `Arrow Down`. Then choose the USB disk containing your OS. If you don't know what this key is, you can usually just look it up online and you'll find the key based on the computer's brand.
 
-You should see the entire screen turn magneta!
+You should see the entire screen turn magenta!
 
 Here is a picture of it on a Jinlon, a Chromebook with UEFI.
 ![Picture of a Jinlon with a magenta screen](./Jinlon.jpg)

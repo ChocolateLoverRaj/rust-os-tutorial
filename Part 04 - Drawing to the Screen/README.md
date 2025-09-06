@@ -11,38 +11,113 @@ To draw shapes, text, and more, we'll use the `embedded-graphics` crate. Add it 
 ```toml
 embedded-graphics = "0.8.1"
 ```
-Then create a new file, `frame_buffer_embedded_graphics.rs`. Let's create a wrapper struct that will implement `DrawTarget`, which let's us draw to it with `embedded-graphics`.
-```rs
-use limine::framebuffer::Framebuffer;
 
-pub struct FrameBufferEmbeddedGraphics<'a> {
-    frame_buffer: Framebuffer<'a>,
+Next, let's make a struct for drawing a pixel using the Limine-provided pixel info. Create `rgb_pixel_info.rs`:
+```rs
+use embedded_graphics::{pixelcolor::Rgb888, prelude::RgbColor};
+
+#[derive(Debug, Clone, Copy)]
+pub struct RgbPixelInfo {
+    pub red_mask_size: u8,
+    pub red_mask_shift: u8,
+    pub green_mask_size: u8,
+    pub green_mask_shift: u8,
+    pub blue_mask_size: u8,
+    pub blue_mask_shift: u8,
 }
 
-impl<'a> FrameBufferEmbeddedGraphics<'a> {
-    pub fn new(frame_buffer: Framebuffer<'a>) -> Self {
-        let bits_per_pixel = frame_buffer.bpp();
-        if bits_per_pixel == 8 * 4 {
-            Self { frame_buffer }
+impl RgbPixelInfo {
+    /// Technically, Limine and this struct could have a pixel size other than u32, in which case you shouldn't use this method
+    pub fn build_pixel(&self, color: Rgb888) -> u32 {
+        let mut n = 0;
+        n |= ((color.r() as u32) & ((1 << self.red_mask_size) - 1)) << self.red_mask_shift;
+        n |= ((color.g() as u32) & ((1 << self.green_mask_size) - 1)) << self.green_mask_shift;
+        n |= ((color.b() as u32) & ((1 << self.blue_mask_size) - 1)) << self.blue_mask_shift;
+        n
+    }
+}
+```
+And also a struct that contains the information from Limine. `frame_buffer_info.rs`:
+```rs
+use crate::RgbPixelInfo;
+
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct FrameBufferInfo {
+    pub width: u64,
+    pub height: u64,
+    pub pitch: u64,
+    pub bits_per_pixel: u16,
+    pub pixel_info: RgbPixelInfo,
+}
+
+impl From<&limine::framebuffer::Framebuffer<'_>> for FrameBufferInfo {
+    fn from(framebuffer: &limine::framebuffer::Framebuffer) -> Self {
+        FrameBufferInfo {
+            width: framebuffer.width(),
+            height: framebuffer.height(),
+            pitch: framebuffer.pitch(),
+            bits_per_pixel: framebuffer.bpp(),
+            pixel_info: RgbPixelInfo {
+                red_mask_size: framebuffer.red_mask_size(),
+                red_mask_shift: framebuffer.red_mask_shift(),
+                green_mask_size: framebuffer.green_mask_size(),
+                green_mask_shift: framebuffer.green_mask_shift(),
+                blue_mask_size: framebuffer.blue_mask_size(),
+                blue_mask_shift: framebuffer.blue_mask_shift(),
+            },
+        }
+    }
+}
+```
+
+Then create a new file, `frame_buffer_embedded_graphics.rs`. Let's create a wrapper struct that will implement `DrawTarget`, which let's us draw to it with `embedded-graphics`.
+```rs
+pub struct FrameBufferEmbeddedGraphics<'a> {
+    buffer: &'a mut [u32],
+    info: FrameBufferInfo,
+    pixel_pitch: usize,
+    bounding_box: Rectangle,
+}
+
+impl FrameBufferEmbeddedGraphics<'_> {
+    /// # Safety
+    /// The frame buffer must be mapped at `addr`
+    pub unsafe fn new(addr: NonZero<usize>, info: FrameBufferInfo) -> Self {
+        if info.bits_per_pixel as u32 == u32::BITS {
+            Self {
+                buffer: {
+                    let mut ptr = NonNull::new(slice_from_raw_parts_mut(
+                        addr.get() as *mut u32,
+                        (info.pitch * info.height) as usize / size_of::<u32>(),
+                    ))
+                    .unwrap();
+                    // Safety: This memory is mapped
+                    unsafe { ptr.as_mut() }
+                },
+                info,
+                pixel_pitch: info.pitch as usize / size_of::<u32>(),
+                bounding_box: Rectangle {
+                    top_left: Point::zero(),
+                    size: Size {
+                        width: info.width.try_into().unwrap(),
+                        height: info.height.try_into().unwrap(),
+                    },
+                },
+            }
         } else {
             panic!("DrawTarget implemented for RGB888, but bpp doesn't match RGB888");
         }
     }
 }
 ```
-In the `new` function, we make sure that the bytes per pixel is 4 (R, G, B, and an unused byte). This is because in our drawing logic, we will store each pixel as `[u8; 4]`.
+In the `new` function, we make sure that the bytes per pixel is 4 (R, G, B, and an unused byte). This is because in our drawing logic, we will store each pixel as a `u32`.
 
 Now let's implement the `Dimensions` trait, which is needed for `DrawTarget`:
 ```rs
 impl Dimensions for FrameBufferEmbeddedGraphics<'_> {
     fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
-        Rectangle {
-            top_left: Point { x: 0, y: 0 },
-            size: Size {
-                width: self.frame_buffer.width().try_into().unwrap(),
-                height: self.frame_buffer.height().try_into().unwrap(),
-            },
-        }
+        self.bounding_box
     }
 }
 ```
@@ -58,68 +133,45 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
     where
         I: IntoIterator<Item = embedded_graphics::Pixel<Self::Color>>,
     {
-        let bytes_per_pixel = (self.frame_buffer.bpp() / 8) as usize;
-        pixels.into_iter().for_each(|pixel| {
-            let point = pixel.0;
-            if (0..self.frame_buffer.width()).contains(&(point.x as u64))
-                && (0..self.frame_buffer.height()).contains(&(point.y as u64))
-            {
-                let color = pixel.1;
-                let buffer_position = point.y as usize * self.frame_buffer.pitch() as usize
-                    + point.x as usize * bytes_per_pixel;
-                let pixel = self.get_pixel(color);
-                let buffer = self.frame_buffer_mut();
-                buffer[buffer_position..buffer_position + bytes_per_pixel].copy_from_slice(&pixel);
-            }
-        });
+        let bounding_box = self.bounding_box();
+        pixels
+            .into_iter()
+            .filter(|Pixel(point, _)| bounding_box.contains(*point))
+            .for_each(|Pixel(point, color)| {
+                let pixel_index = point.y as usize * self.pixel_pitch + point.x as usize;
+                self.buffer[pixel_index] = self.info.pixel_info.build_pixel(color);
+            });
         Ok(())
     }
-}
-```
-and to get the `[u8; 4]` for a pixel, let's add an internal method:
-```rs
-fn get_pixel(&self, color: Rgb888) -> [u8; 4] {
-    let mut n = 0;
-    n |= ((color.r() as u32) & ((1 << self.frame_buffer.red_mask_size()) - 1))
-        << self.frame_buffer.red_mask_shift();
-    n |= ((color.g() as u32) & ((1 << self.frame_buffer.green_mask_size()) - 1))
-        << self.frame_buffer.green_mask_shift();
-    n |= ((color.b() as u32) & ((1 << self.frame_buffer.blue_mask_size()) - 1))
-        << self.frame_buffer.blue_mask_shift();
-    n.to_ne_bytes()
 }
 ```
 Now in `main.rs`, let's use embedded graphics to draw to the screen:
 ```rs
 let frame_buffer = FRAME_BUFFER_REQUEST.get_response().unwrap();
 if let Some(frame_buffer) = frame_buffer.framebuffers().next() {
-    let mut frame_buffer = FrameBufferEmbeddedGraphics::new(frame_buffer);
+    let mut frame_buffer = {
+        let addr = frame_buffer.addr().addr().try_into().unwrap();
+        let info = (&frame_buffer).into();
+        unsafe { FrameBufferEmbeddedGraphics::new(addr, info) }
+    };
     frame_buffer.clear(Rgb888::MAGENTA).unwrap();
 }
 ```
-Limine gives us a slice or frame buffers, but here we only draw to the first frame buffer, if Limine has given us one.
+Limine gives us a slice of frame buffers, but here we only draw to the first frame buffer, if it exists.
 
 ![Screen Recording of making the Screen Magenta](./Screen_Recording.gif)
 
-Depending on your host computer, you might notice that this is pretty slow. `embedded-graphics` lets us implement more methods in `DrawTarget` to draw more efficiently. Let's implement `fill_solid`:
+Depending on your host computer, you might notice that this is pretty slow. Let's implement `fill_solid` so that `embedded_graphics` can draw certain shapes, such as rectangles, much faster:
 ```rs
 fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
-    let pixel = self.get_pixel(color);
-    let bytes_per_pixel = (self.frame_buffer.bpp() / 8) as usize;
-    let pitch = self.frame_buffer.pitch() as usize;
-    let buffer = self.frame_buffer_mut();
-    // Draw to the top row
-    for x in area.top_left.x..area.top_left.x + area.size.width as i32 {
-        let buffer_position = area.top_left.y as usize * pitch + x as usize * bytes_per_pixel;
-        buffer[buffer_position..buffer_position + bytes_per_pixel].copy_from_slice(&pixel);
-    }
-    // Copy the top row to all other rows
-    let top_row_start =
-        area.top_left.y as usize * pitch + area.top_left.x as usize * bytes_per_pixel;
-    let top_row = top_row_start..top_row_start + area.size.width as usize * bytes_per_pixel;
-    for y in area.top_left.y + 1..area.top_left.y + area.size.height as i32 {
-        let row_start = y as usize * pitch + area.top_left.x as usize * bytes_per_pixel;
-        buffer.copy_within(top_row.clone(), row_start);
+    let area = area.intersection(&self.bounding_box);
+    let pixel = self.info.pixel_info.build_pixel(color);
+    let width = area.size.width as usize;
+    let top_left_x = area.top_left.x as usize;
+    for y in area.top_left.y as usize..area.top_left.y as usize + area.size.height as usize {
+        let pixel_index = y * self.pixel_pitch + top_left_x;
+        let pixels = &mut self.buffer[pixel_index..pixel_index + width];
+        pixels.fill(pixel);
     }
     Ok(())
 }

@@ -1,9 +1,9 @@
 # Handling interrupts and exceptions
-An interrupt is when the CPU receives an external event. Like the word "interrupt", when the CPU receives the event, the CPU will interrupt your code and switch to executing some other code. The CPU sometimes switches stacks (by changing the `rsp` register), and basically "calls" the interrupt handler function with an interrupt stack frame. It is the interrupt handler function's responsibility to switch back to whatever the CPU was doing before.
+An interrupt is when the CPU receives an external event. When the CPU receives the event, the CPU will interrupt your code and call an interrupt handler function, inputting an interrupt stack frame. The interrupt stack frame contains info about what the CPU was doing before it was interrupted, and, depending on the exception, may also contain an error code. It is the interrupt handler function's responsibility to switch back to whatever the CPU was doing before.
 
 An exception is when the code tries to do something invalid. For example, a page fault is when code tries to access an invalid memory address. A double fault is when there is an exception that happens as the CPU tries to execute an exception handler. A triple fault happens if there is an exception as the CPU tries to execute the double fault handler. When a triple fault happens, the computer immediately reboots. Similar to interrupts, the CPU jumps to an exception handler function.
 
-As we write an OS, there **will** be exceptions because of some bug in our code. We'll define exception handlers for them, because if we don't, there will be a triple fault and that's hard to debug. We'll start by having a [breakpoint](https://wiki.osdev.org/Exceptions#Breakpoint) exception handler. Breakpoints aren't really errors, and this "exception" is convenient to check that our exception handlers are working.
+As we write an OS, there **will** be exceptions because of bugs in our code. We'll define exception handlers for them, because if we don't, there will be a triple fault, which is very hard to debug. We'll start by having a [breakpoint](https://wiki.osdev.org/Exceptions#Breakpoint) exception handler. Breakpoints aren't really errors, and this "exception" is convenient to check that our exception handlers are working.
 
 There are three things we need to set up: The GDT, TSS, and IDT. The IDT contains the handler functions that should be executed on different kinds of exceptions and interrupts. The TSS contains pointers to stacks when the CPU switches stacks before executing a handler. The GDT in modern times basically just contains a pointer to the TSS. Each CPU will have its own GDT, TSS, and IDT. Create a file `gdt.rs`:
 ```rs
@@ -22,15 +22,20 @@ pub tss: Once<TaskStateSegment>,
 pub gdt: Once<Gdt>,
 pub idt: Once<InterruptDescriptorTable>,
 ```
-And make them initially `Cell::new()`.
+And make them initially `Once::new()`.
 
 Now we create an `init` function in `gdt.rs`:
 ```rs
-/// # Safety
-/// This function must be called exactly once
-pub unsafe fn init() { }
+pub fn init() { }
 ```
-Because the GDT requires a pointer to the TSS, we first initialize the TSS:
+In `cpu_local_data.rs`, let's add a helper function to get the CPU's local data, panicking if it was not initialized:
+```rs
+pub fn get_local() -> &'static CpuLocalData {
+    try_get_local().unwrap()
+}
+```
+
+Now, back in the GDT init function. Because the GDT requires a pointer to the TSS, we first initialize the TSS:
 ```rs
 let local = get_local();
 let tss = local.tss.call_once(TaskStateSegment::new);
@@ -94,22 +99,24 @@ idt.breakpoint.set_handler_fn(breakpoint_handler);
 ```
 But later, we will add handlers for other exceptions and for interrupts.
 
-Finally, let's call the functions at the bottom of `entry_point_from_limine` and `entry_point_from_limine_mp`:
+Finally, let's call the function in `entry_point_bsp` after `cpu_local_data::init_bsp`, and in `entry_point_ap` after saying "Hello from AP":
 ```rs
-unsafe { gdt::init() };
+gdt::init();
 idt::init();
+```
+To test it out, also add
+```rs
 x86_64::instructions::interrupts::int3();
 ```
 The `int3` instruction triggers a breakpoint.
 
 Now when we run the OS, we'll see:
 ```
-[BSP] INFO  Hello World!
-[BSP] INFO  CPU Count: 2
-[CPU 1] INFO  Hello from CPU 1
-[CPU 0] INFO  Breakpoint! Stack frame: InterruptStackFrame {
+[0] INFO  Hello from BSP
+[1] INFO  Hello from AP
+[0] INFO  Breakpoint! Stack frame: InterruptStackFrame {
     instruction_pointer: VirtAddr(
-        0xffffffff80016141,
+        0xffffffff80013c01,
     ),
     code_segment: SegmentSelector {
         index: 1,
@@ -119,26 +126,26 @@ Now when we run the OS, we'll see:
         SIGN_FLAG | 0x2,
     ),
     stack_pointer: VirtAddr(
-        0xffff800003bc6e58,
+        0xffff800003ba4ee8,
     ),
     stack_segment: SegmentSelector {
         index: 2,
         rpl: Ring0,
     },
 }
-[CPU 1] INFO  Breakpoint! Stack frame: InterruptStackFrame {
+[1] INFO  Breakpoint! Stack frame: InterruptStackFrame {
     instruction_pointer: VirtAddr(
-        0xffffffff80016141,
+        0xffffffff80013c01,
     ),
     code_segment: SegmentSelector {
         index: 1,
         rpl: Ring0,
     },
     cpu_flags: RFlags(
-        SIGN_FLAG | PARITY_FLAG | 0x2,
+        SIGN_FLAG | 0x2,
     ),
     stack_pointer: VirtAddr(
-        0xffff800002655f18,
+        0xffff800002634f78,
     ),
     stack_segment: SegmentSelector {
         index: 2,
