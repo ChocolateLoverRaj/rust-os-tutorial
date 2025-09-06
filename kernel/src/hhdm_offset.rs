@@ -27,6 +27,14 @@ impl From<HhdmOffset> for u64 {
     }
 }
 
+impl From<HhdmOffset> for ez_paging::VirtualOffset {
+    fn from(value: HhdmOffset) -> Self {
+        let virtual_offset = value.into();
+        // Safety: The HhdmOffset struct guarantees the offset is correct
+        unsafe { Self::new(virtual_offset) }
+    }
+}
+
 pub fn hhdm_offset() -> HhdmOffset {
     HHDM_REQUEST.get_response().unwrap().into()
 }
