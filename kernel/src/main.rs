@@ -33,6 +33,7 @@ mod logger;
 mod memory;
 mod panic_handler;
 mod rgb_pixel_info;
+mod spcr;
 mod translate_addr;
 mod writer_with_cr;
 mod x86_64_consts;
@@ -71,11 +72,8 @@ extern "sysv64" fn init_bsp() -> ! {
     idt::init();
 
     let rsdp = RSDP_REQUEST.get_response().unwrap();
-    let acpi_tables = acpi::parse(rsdp)
-        .table_headers()
-        .map(|(_, header)| header.signature)
-        .collect::<alloc::boxed::Box<[_]>>();
-    log::info!("ACPI Tables: {acpi_tables:?}");
+    let acpi_tables = acpi::parse(rsdp);
+    spcr::init(&acpi_tables);
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     for cpu in mp_response.cpus() {

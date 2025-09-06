@@ -1,5 +1,6 @@
 use core::fmt::{Display, Write};
 
+use either::Either;
 use embedded_graphics::{
     Drawable,
     mono_font::{MonoTextStyleBuilder, iso_8859_16::FONT_10X20},
@@ -11,6 +12,7 @@ use embedded_graphics::{
 use limine::response::FramebufferResponse;
 use log::{Level, LevelFilter, Log};
 use owo_colors::OwoColorize;
+use uart::{address::MmioAddress, writer::UartWriter};
 use uart_16550::SerialPort;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -25,7 +27,7 @@ struct DisplayData {
 }
 
 struct Inner {
-    serial_port: SerialPort,
+    serial_port: Either<SerialPort, UartWriter<MmioAddress>>,
     display: Option<DisplayData>,
 }
 
@@ -179,14 +181,16 @@ impl Log for KernelLogger {
 
 static LOGGER: KernelLogger = KernelLogger {
     inner: spin::Mutex::new(Inner {
-        serial_port: unsafe { SerialPort::new(0x3F8) },
+        serial_port: Either::Left(unsafe { SerialPort::new(0x3F8) }),
         display: None,
     }),
 };
 
 pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLoggerError> {
     let mut inner = LOGGER.inner.try_lock().unwrap();
-    inner.serial_port.init();
+    if let Either::Left(serial_port) = &mut inner.serial_port {
+        serial_port.init();
+    }
     inner.display = frame_buffer
         .framebuffers()
         .next()
@@ -200,4 +204,8 @@ pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLo
         });
     log::set_max_level(LevelFilter::max());
     log::set_logger(&LOGGER)
+}
+
+pub fn replace_serial_port(serial_port: UartWriter<MmioAddress>) {
+    LOGGER.inner.lock().serial_port = Either::Right(serial_port);
 }
