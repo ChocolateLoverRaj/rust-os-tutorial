@@ -29,6 +29,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 
 [[package]]
+name = "bit"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b645c5c09a7d4035949cfce1a915785aaad6f17800c35fda8a8c311c491f284"
+
+[[package]]
 name = "bit_field"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -103,7 +109,7 @@ version = "0.1.0"
 source = "git+https://github.com/ChocolateLoverRaj/ez_paging#00f8ff45e3d25660f10fc8c05234fd51bd85285a"
 dependencies = [
  "raw-cpuid 11.6.0",
- "x86_64",
+ "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
 ]
 
 [[package]]
@@ -114,6 +120,11 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 dependencies = [
  "num-traits",
 ]
+
+[[package]]
+name = "force-send-sync"
+version = "1.1.0"
+source = "git+https://github.com/ChocolateLoverRaj/force-send-sync?branch=no_std#54ea39719f53d725a3f030b6add9f7151d567a8d"
 
 [[package]]
 name = "itertools"
@@ -132,6 +143,7 @@ dependencies = [
  "either",
  "embedded-graphics",
  "ez_paging",
+ "force-send-sync",
  "limine",
  "log",
  "nodit",
@@ -142,7 +154,8 @@ dependencies = [
  "uart",
  "uart_16550",
  "unicode-segmentation",
- "x86_64",
+ "x2apic",
+ "x86_64 0.15.2 (git+https://github.com/rust-osdev/x86_64?branch=next)",
 ]
 
 [[package]]
@@ -222,6 +235,12 @@ name = "owo-colors"
 version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26995317201fa17f3656c36716aed4a7c81743a9634ac4c99c0eeda495db0cec"
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pci_types"
@@ -370,6 +389,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
 
 [[package]]
+name = "x2apic"
+version = "0.5.0"
+source = "git+https://github.com/ChocolateLoverRaj/x2apic-rs#9ba55d3956514b7be3c47463e76e9a1229c03bb7"
+dependencies = [
+ "bit",
+ "bitflags 1.3.2",
+ "paste",
+ "raw-cpuid 10.7.0",
+ "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "x86"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,6 +409,18 @@ dependencies = [
  "bit_field",
  "bitflags 1.3.2",
  "raw-cpuid 10.7.0",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f042214de98141e9c8706e8192b73f56494087cc55ebec28ce10f26c5c364ae"
+dependencies = [
+ "bit_field",
+ "bitflags 2.9.1",
+ "rustversion",
+ "volatile",
 ]
 
 [[package]]

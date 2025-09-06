@@ -12,6 +12,7 @@ use gdt::*;
 use guarded_stack::*;
 use hhdm_offset::*;
 use hlt_loop::*;
+use interrupt_vector::*;
 use limine_requests::*;
 use rgb_pixel_info::*;
 use translate_addr::*;
@@ -19,6 +20,7 @@ use writer_with_cr::*;
 use x86_64_consts::*;
 
 mod acpi;
+mod apic;
 mod call_with_rsp;
 mod cpu_local_data;
 mod frame_buffer_embedded_graphics;
@@ -28,6 +30,7 @@ mod guarded_stack;
 mod hhdm_offset;
 mod hlt_loop;
 mod idt;
+mod interrupt_vector;
 mod limine_requests;
 mod logger;
 mod memory;
@@ -74,6 +77,8 @@ extern "sysv64" fn init_bsp() -> ! {
     let rsdp = RSDP_REQUEST.get_response().unwrap();
     let acpi_tables = acpi::parse(rsdp);
     spcr::init(&acpi_tables);
+    apic::init_bsp(&acpi_tables);
+    apic::init_local_apic();
 
     let mp_response = MP_REQUEST.get_response().unwrap();
     for cpu in mp_response.cpus() {
@@ -104,6 +109,7 @@ unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
 extern "sysv64" fn init_ap() -> ! {
     gdt::init();
     idt::init();
+    apic::init_local_apic();
 
     hlt_loop()
 }
