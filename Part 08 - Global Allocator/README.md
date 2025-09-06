@@ -82,13 +82,38 @@ impl From<&'static HhdmResponse> for HhdmOffset {
     }
 }
 ```
+Now let's create a function to quickly get a `HhdmOffset`:
+```rs
+pub fn hhdm_offset() -> HhdmOffset {
+    HHDM_REQUEST.get_response().unwrap().into()
+}
+```
+
+## Address translation
+Create `translate_addr.rs`:
+```rs
+use x86_64::{PhysAddr, VirtAddr};
+use crate::hhdm_offset;
+pub trait OffsetMappedPhysAddr {
+    fn offset_mapped(self) -> VirtAddr;
+}
+impl OffsetMappedPhysAddr for PhysAddr {
+    fn offset_mapped(self) -> VirtAddr {
+        VirtAddr::new(self.as_u64() + u64::from(hhdm_offset()))
+    }
+}
+```
+Getting the offset mapped virtual address is as simple as adding the HHDM offset to the physical address.
+
 
 ## Initializing the global allocator
-Let's add an input, `hhdm_offset: HhdmOffset` to our `init` function. Then, we can create a slice for our memory:
+Back in our memory `init` function, we create a slice for our memory:
 ```rs
 let global_allocator_mem = {
     let mut ptr = NonNull::new(slice_from_raw_parts_mut(
-        (u64::from(hhdm_offset) + global_allocator_physical_start) as *mut MaybeUninit<u8>,
+        global_allocator_physical_start
+            .offset_mapped()
+            .as_mut_ptr::<MaybeUninit<u8>>(),
         global_allocator_size as usize,
     ))
     .unwrap();
@@ -106,9 +131,8 @@ unsafe { talc.claim(span) }.unwrap();
 Now in `main.rs`, after initializing the logger:
 ```rs
 let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
-let hhdm_offset = HHDM_REQUEST.get_response().unwrap().into();
-// Safety: we are initializing this for the first time
-unsafe { memory::init(memory_map, hhdm_offset) };
+// Safety: no page tables were modified before this
+unsafe { memory::init(memory_map) };
 ```
 
 ## Trying it out
