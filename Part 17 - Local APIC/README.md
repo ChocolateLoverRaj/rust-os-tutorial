@@ -1,17 +1,17 @@
 # Local APIC
-Each CPU has its own local APIC, which is a thing that sends interrupts the CPU. Local APICs can send interrupts to the Local APICs of other CPUs, which are called inter-processor interrupt, or IPIs. Local APICs themselves can receive interrupts from I/O APICs and then forward those interrupts to their CPU. A computer with APIC has to have at least 1 I/O APIC, and the I/O APIC can route interrupts to every local APIC. Most computers only have 1 I/O APIC, but technically, they can have more.
+Each CPU has its own local APIC (Advanced Programmable Interrupt Controller), which is a thing that sends interrupts the CPU. Local APICs can send interrupts to the Local APICs of other CPUs, which are called inter-processor interrupt, or IPIs. Local APICs themselves can receive interrupts from I/O APICs and then forward those interrupts to their CPU. A computer with APIC has to have at least 1 I/O APIC, and the I/O APIC can route interrupts to a local APIC. Most computers only have 1 I/O APIC, but technically, they can have more.
 
 In this part, we will configure and receive interrupts from the local APIC.
 
 ## APIC crate
 We will use this crate:
 ```toml
-x2apic = "0.5.0"
+x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", version = "0.5.0" }
 ```
 You may be wondering why it has an "x2" before APIC. APIC has 3 "versions": APIC (super old, we will not bother supporting), xAPIC (which QEMU has by default), and x2APIC (which is what modern computers have and). The `x2apic` crate works with both xAPIC and x2APIC.
 
-## Mapping the Local APIC (if needed)
-Create a file `local_apic.rs`:
+## Mapping the Local APIC if needed
+Create a file `apic.rs`:
 ```rs
 #[derive(Debug)]
 pub enum LocalApicAccess {
@@ -24,42 +24,44 @@ pub enum LocalApicAccess {
 pub static LOCAL_APIC_ACCESS: Once<LocalApicAccess> = Once::new();
 
 /// Maps the Local APIC memory if needed, and initializes LOCAL_APIC_ACCESS
-pub fn map_if_needed(acpi_tables: &AcpiTables<impl AcpiHandler>) {
+pub fn init_bsp(acpi_tables: &AcpiTables<impl acpi::Handler>) {
+    let apic = match InterruptModel::new(&acpi_tables).unwrap().0 {
+        InterruptModel::Apic(apic) => apic,
+        interrupt_model => panic!("Unknown interrupt model: {:#?}", interrupt_model),
+    };
     LOCAL_APIC_ACCESS.call_once(|| {
-        if CpuId::new().get_feature_info().unwrap().has_x2apic() {
+        if cpu_has_x2apic() {
             LocalApicAccess::RegisterBased
         } else {
-            let platform_info = acpi_tables.platform_info().unwrap();
-            let apic = match platform_info.interrupt_model {
-                InterruptModel::Apic(apic) => apic,
-                interrupt_model => panic!("Unknown interrupt model: {:#?}", interrupt_model),
-            };
-            let addr = PhysAddr::new(apic.local_apic_address);
+            let page_size = PageSize::_4KiB;
+            let frame = Frame::new(PhysAddr::new(apic.local_apic_address), page_size).unwrap();
             // Local APIC is always exactly 4 KiB, aligned to 4 KiB
-            let frame = PhysFrame::<Size4KiB>::from_start_address(addr).unwrap();
             let memory = MEMORY.get().unwrap();
             let mut physical_memory = memory.physical_memory.lock();
+            let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
             let mut virtual_memory = memory.virtual_memory.lock();
-            let mut pages = virtual_memory.allocate_contiguous_pages(1).unwrap();
-            let page = *pages.range().start();
+            let page = virtual_memory
+                .allocate_contiguous_pages(page_size, NonZero::new(1).unwrap())
+                .unwrap();
+            let flags = ConfigurableFlags {
+                writable: true,
+                executable: false,
+                // We use strong uncacheable memory type, because reads and writes have side effects
+                pat_memory_type: PatMemoryType::StrongUncacheable,
+            };
             // Safety: We map to the correct page for the Local APIC
             unsafe {
-                pages.map_to(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_CACHE
-                        | PageTableFlags::NO_EXECUTE,
-                    physical_memory.deref_mut(),
-                )
-            };
-            LocalApicAccess::Mmio(page.start_address())
+                virtual_memory
+                    .l4_mut()
+                    .map_page(page, frame, flags, &mut frame_allocator)
+            }
+            .unwrap();
+            LocalApicAccess::Mmio(page.start_addr())
         }
     });
 }
 ```
-and then in `main.rs`, after printing ACPI tables, add:
+and then in `main.rs`, after `spcr::init`, add:
 ```rs
 local_apic::map_if_needed(&acpi_tables);
 ```
@@ -85,13 +87,11 @@ pub enum InterruptVector {
     LocalApicError,
 }
 ```
-To convert an `InterruptVector` into a `u8`, we will use the `num_enum` crate:
-```toml
-num_enum = { version = "0.7.3", default-features = false }
-```
-Now, back in `local_apic.rs`, let's add a function that will get run on every CPU:
+Now, back in `apic.rs`, let's add a function that will get run on every CPU:
 ```rs
-pub fn init() {
+/// This function needs to be called on all CPUs.
+/// [`init_bsp`] must be called first.
+pub fn init_local_apic() {
     get_local().local_apic.call_once(|| {
         spin::Mutex::new({
             let local_apic = {
@@ -116,10 +116,11 @@ pub fn init() {
     });
 }
 ```
-Then in `main.rs`, for the BSP and APs, after initializing the idt, add:
+Then in `main.rs` add:
 ```rs
 local_apic::init();
 ```
+After `apic::init_bsp` in `init_bsp`, and after `idt::init()` in `init_ap`.
 
 ## Testing timer interrupts
 To test if our code successfully set up interrupt handlers, let's try receiving timer interrupts. In `idt.rs`, add:
@@ -127,7 +128,7 @@ To test if our code successfully set up interrupt handlers, let's try receiving 
 extern "x86-interrupt" fn apic_timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     log::info!("Received APIC timer interrupt");
     // We must notify the local APIC that it's the end of interrupt, otherwise we won't receive any more interrupts from it
-    let mut local_apic = get_local().local_apic.get().unwrap().lock();
+    let mut local_apic = get_local().local_apic.get().unwrap().try_lock().unwrap();
     // Safety: We are done with an interrupt triggered by the local APIC
     unsafe { local_apic.end_of_interrupt() };
 }
