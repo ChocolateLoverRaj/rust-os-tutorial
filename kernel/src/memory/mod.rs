@@ -1,6 +1,7 @@
 use create_page_tables::*;
 use limine::response::MemoryMapResponse;
 use physical_memory::PhysicalMemory;
+pub use physical_memory::*;
 use spin::Once;
 use virtual_memory::VirtualMemory;
 use x86_64::{

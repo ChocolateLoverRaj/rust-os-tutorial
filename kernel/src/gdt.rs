@@ -1,3 +1,4 @@
+use num_enum::IntoPrimitive;
 use x86_64::{
     instructions::tables::load_tss,
     registers::segmentation::{CS, SS, Segment},
@@ -7,7 +8,9 @@ use x86_64::{
     },
 };
 
-use crate::cpu_local_data::get_local;
+use crate::{
+    EXCEPTION_HANDLER_STACK_SIZE, GuardedStack, StackId, StackType, cpu_local_data::get_local,
+};
 
 pub struct Gdt {
     gdt: GlobalDescriptorTable,
@@ -16,9 +19,27 @@ pub struct Gdt {
     tss_selector: SegmentSelector,
 }
 
+#[derive(Debug, IntoPrimitive)]
+#[repr(u8)]
+pub enum IstStackIndexes {
+    Exception,
+}
+
 pub fn init() {
     let local = get_local();
-    let tss = local.tss.call_once(TaskStateSegment::new);
+    let tss = local.tss.call_once(|| {
+        let mut tss = TaskStateSegment::new();
+        tss.interrupt_stack_table[u8::from(IstStackIndexes::Exception) as usize] =
+            GuardedStack::new(
+                EXCEPTION_HANDLER_STACK_SIZE,
+                StackId {
+                    _type: StackType::ExceptionHandler,
+                    cpu_id: local.kernel_assigned_id,
+                },
+            )
+            .top();
+        tss
+    });
     let gdt = local.gdt.call_once(|| {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
