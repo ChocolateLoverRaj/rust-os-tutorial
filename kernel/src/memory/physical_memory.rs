@@ -12,6 +12,7 @@ use super::global_allocator;
 pub enum KernelMemoryUsageType {
     PageTables,
     GlobalAllocatorHeap,
+    Stack,
 }
 
 /// Note that there are other memory types (such as ACPI memory) that are not included here

@@ -4,20 +4,26 @@
 
 extern crate alloc;
 
+use call_with_rsp::*;
+use cpu_local_data::get_local;
 use frame_buffer_embedded_graphics::*;
 use frame_buffer_info::*;
 use gdt::*;
+use guarded_stack::*;
 use hhdm_offset::*;
 use hlt_loop::*;
 use limine_requests::*;
 use rgb_pixel_info::*;
 use translate_addr::*;
 use writer_with_cr::*;
+use x86_64_consts::*;
 
+mod call_with_rsp;
 mod cpu_local_data;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod gdt;
+mod guarded_stack;
 mod hhdm_offset;
 mod hlt_loop;
 mod idt;
@@ -28,6 +34,7 @@ mod panic_handler;
 mod rgb_pixel_info;
 mod translate_addr;
 mod writer_with_cr;
+mod x86_64_consts;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn entry_point_bsp() -> ! {
@@ -48,6 +55,17 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
         cpu_local_data::init_bsp();
     }
 
+    GuardedStack::new(
+        NORMAL_STACK_SIZE,
+        StackId {
+            _type: StackType::Normal,
+            cpu_id: get_local().kernel_assigned_id,
+        },
+    )
+    .switch(init_bsp)
+}
+
+extern "sysv64" fn init_bsp() -> ! {
     gdt::init();
     idt::init();
 
@@ -67,6 +85,17 @@ unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
 
     log::info!("Hello from AP");
 
+    GuardedStack::new(
+        NORMAL_STACK_SIZE,
+        StackId {
+            _type: StackType::Normal,
+            cpu_id: get_local().kernel_assigned_id,
+        },
+    )
+    .switch(init_ap)
+}
+
+extern "sysv64" fn init_ap() -> ! {
     gdt::init();
     idt::init();
 
