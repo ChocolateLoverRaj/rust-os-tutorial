@@ -40,8 +40,8 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
     log::info!("Hello from BSP");
 
     let memory_map = MEMORY_MAP_REQUEST.get_response().unwrap();
-    // Safety: we are initializing this for the first time
-    unsafe { memory::init(memory_map) };
+    // Safety: no page tables were modified before this
+    unsafe { memory::init_bsp(memory_map) };
 
     // Safety: We are calling this function on the BSP
     unsafe {
@@ -60,6 +60,8 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
 }
 
 unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
+    // Safety: we are calling this right away
+    unsafe { memory::init_ap() };
     // Safety: We're actually calling the function on this CPU
     unsafe { cpu_local_data::init_ap(cpu) };
 
