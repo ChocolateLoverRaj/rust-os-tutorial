@@ -1,8 +1,10 @@
 use core::ptr::NonNull;
 
 use alloc::boxed::Box;
+use force_send_sync::SendSync;
 use limine::{mp::Cpu, response::MpResponse};
 use spin::{Lazy, Once};
+use x2apic::lapic::LocalApic;
 use x86_64::{
     VirtAddr,
     registers::model_specific::GsBase,
@@ -20,6 +22,7 @@ pub struct CpuLocalData {
     pub tss: Once<TaskStateSegment>,
     pub gdt: Once<Gdt>,
     pub idt: Once<InterruptDescriptorTable>,
+    pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
 }
 
 fn mp_response() -> &'static MpResponse {
@@ -45,6 +48,7 @@ fn init_cpu(kernel_assigned_id: u32, local_apic_id: u32) {
             tss: Once::new(),
             gdt: Once::new(),
             idt: Once::new(),
+            local_apic: Once::new(),
         }),
     );
 }
