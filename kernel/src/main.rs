@@ -34,6 +34,7 @@ mod interrupt_vector;
 mod limine_requests;
 mod logger;
 mod memory;
+mod nmi_handler_states;
 mod panic_handler;
 mod rgb_pixel_info;
 mod spcr;
@@ -71,6 +72,8 @@ unsafe extern "C" fn entry_point_bsp() -> ! {
 }
 
 extern "sysv64" fn init_bsp() -> ! {
+    nmi_handler_states::init();
+
     gdt::init();
     idt::init();
 

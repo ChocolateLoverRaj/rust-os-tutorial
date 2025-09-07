@@ -17,6 +17,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic_enum"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99e1aca718ea7b89985790c94aad72d77533063fe00bc497bb79a7c2dae6a661"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -140,6 +151,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "atomic_enum",
  "either",
  "embedded-graphics",
  "ez_paging",
