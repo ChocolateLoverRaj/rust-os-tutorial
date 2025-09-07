@@ -6,11 +6,6 @@ Right now, in our panic handler, we stop the CPU from executing any code by call
 
 This should be simple. We can just tell the Local APIC on the CPU that the panic happened on to send an IPI to all other CPUs, right? Well, there is one thing we need to consider. The other CPUs might not have their IDT set up to handle NMIs. In this scenario, they will receive an NMI, but since the IDT is not set up, a triple fault will happen on the other CPU, causing a system reset (and then we can't see the panic message!). We'll make it so that in this scenario, we won't send an NMI to the CPU which hasn't set up its IDT yet. We will instead leave a note saying "The kernel panicked before you set up your IDT. You should stop now." We can do this with the power of atomics!
 
-Important note: due to a bug in the `x2apic` crate, update your `Cargo.toml` to use a patched version:
-```rs
-x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", branch = "fix-id", version = "0.5.0" }
-```
-
 ### Atomically keep track of which CPUs loaded their IDT
 Create a file `nmi_handler_states.rs`. We will create an enum to represent whether a CPU has set its NMI handler or not (which is effectively the same as whether the CPU has loaded its IDT or not).
 ```rs
@@ -39,26 +34,19 @@ and above the enum, add
 ```
 Then let's create a global variable that will store the states for all CPUs, similar to how we store CPU local data.
 ```rs
-pub static NMI_HANDLER_STATES: Once<BTreeMap<u32, AtomicNmiHandlerState>> = Once::new();
+pub static NMI_HANDLER_STATES: Once<Box<[AtomicNmiHandlerState]>> = Once::new();
 
-pub fn init(mp_response: &MpResponse) {
+pub fn init() {
     NMI_HANDLER_STATES.call_once(|| {
-        mp_response
-            .cpus()
-            .iter()
-            .map(|cpu| {
-                (
-                    cpu.lapic_id,
-                    AtomicNmiHandlerState::new(NmiHandlerState::NmiHandlerNotSet),
-                )
-            })
+        (0..cpus_count())
+            .map(|_| AtomicNmiHandlerState::new(NmiHandlerState::NmiHandlerNotSet))
             .collect()
     });
 }
 ```
-And then in `main.rs` let's initialize it before we initialize CPU local data:
+And then in the top of `init_bsp`:
 ```rs
-nmi_handler_states::init(mp_response);
+nmi_handler_states::init();
 ```
 
 ### Updating the IDT code
@@ -78,18 +66,15 @@ idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
 ```
 After calling `idt.load()`, add
 ```rs
+let local = get_local();
 // Now that we loaded the IDT, we are ready to receive NMIs
 // Let's update our state to indicate that we are ready to receive NMIs
-if NMI_HANDLER_STATES
-    .get()
-    .unwrap()
-    .get(&local.cpu.lapic_id)
-    .unwrap()
+if NMI_HANDLER_STATES.get().unwrap()[local.kernel_assigned_id as usize]
     .compare_exchange(
         NmiHandlerState::NmiHandlerNotSet,
         NmiHandlerState::NmiHandlerSet,
-        Ordering::AcqRel,
-        Ordering::Acquire,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
     )
     .is_err()
 {
@@ -100,7 +85,7 @@ if NMI_HANDLER_STATES
 ```
 
 ### Updating the panic handler
-In the panic handler, before logging the panic message, add
+In the panic handler, before `hlt_loop()`, message, add
 ```rs
 // Since the OS panicked, we need to tell the other CPUs to stop immediately
 // However, if we send an NMI to a CPU that didn't load its IDT yet, the system will triple fault
@@ -109,34 +94,44 @@ if let Some(local) = try_get_local()
         .local_apic
         .get()
         .and_then(|local_apic| local_apic.try_lock())
+    && let Some(nmi_handler_states) = NMI_HANDLER_STATES.get()
 {
-    for (cpu_lapic_id, nmi_handler_state) in NMI_HANDLER_STATES
-        .get()
-        .unwrap()
+    for (cpu_id, nmi_handler_state) in nmi_handler_states
         .iter()
+        .enumerate()
         // Make sure to not send an NMI to our own CPU
-        .filter(|(cpu_lapic_id, _)| **cpu_lapic_id != local.cpu.lapic_id)
+        .filter(|(cpu_id, _)| *cpu_id as u32 != local.kernel_assigned_id)
     {
         if let NmiHandlerState::NmiHandlerSet =
             nmi_handler_state.swap(NmiHandlerState::KernelPanicked, Ordering::Release)
         {
             // Safety: since the kernel is panicking, we need to tell the other CPUs to hlt
-            unsafe { local_apic.send_nmi(*cpu_lapic_id) };
+            unsafe { local_apic.send_nmi(local_apic_id_of(cpu_id as u32)) };
         }
     }
 }
 ```
+Let's create `local_apic_id_of` in `cpu_local_data.rs`:
+```rs
+ /// Get the Local APIC id of a CPU from the CPU's kernel assigned id
+pub fn local_apic_id_of(kernel_assigned_id: u32) -> u32 {
+    CPU_LOCAL_DATA[kernel_assigned_id as usize]
+        .get()
+        .unwrap()
+        .local_apic_id
+}
+```
 
 ### Trying it out
-In `entry_point_from_limine_mp`, before `idt::init();` add
+In the top of `init_ap`, add
 ```rs
-if cpu_id == 2 {
+if get_local().kernel_assigned_id == 2 {
     for _ in 0..20000000 {}
 }
 ```
-and after `local_apic::init()`, add
+and after `apic::init_local_apic();`, add
 ```rs
-if cpu_id == 1 {
+if get_local().kernel_assigned_id == 1 {
     for _ in 0..10000000 {}
     panic!("test panic");
 }
