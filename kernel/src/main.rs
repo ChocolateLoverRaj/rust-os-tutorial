@@ -6,6 +6,9 @@ extern crate alloc;
 
 use call_with_rsp::*;
 use cpu_local_data::get_local;
+use elf_segment_flags::*;
+use elf_segment_type::*;
+use enter_user_mode::*;
 use frame_buffer_embedded_graphics::*;
 use frame_buffer_info::*;
 use gdt::*;
@@ -15,6 +18,7 @@ use hlt_loop::*;
 use interrupt_vector::*;
 use limine_requests::*;
 use rgb_pixel_info::*;
+use run_program_0::*;
 use translate_addr::*;
 use writer_with_cr::*;
 use x86_64_consts::*;
@@ -23,6 +27,9 @@ mod acpi;
 mod apic;
 mod call_with_rsp;
 mod cpu_local_data;
+mod elf_segment_flags;
+mod elf_segment_type;
+mod enter_user_mode;
 mod frame_buffer_embedded_graphics;
 mod frame_buffer_info;
 mod gdt;
@@ -37,6 +44,7 @@ mod memory;
 mod nmi_handler_states;
 mod panic_handler;
 mod rgb_pixel_info;
+mod run_program_0;
 mod spcr;
 mod translate_addr;
 mod writer_with_cr;
@@ -87,6 +95,8 @@ extern "sysv64" fn init_bsp() -> ! {
     for cpu in mp_response.cpus() {
         cpu.goto_address.write(entry_point_ap);
     }
+
+    run_program_0();
 
     hlt_loop();
 }

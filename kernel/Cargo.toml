@@ -7,7 +7,9 @@ publish = false
 [dependencies]
 acpi = "6.0.1"
 atomic_enum = "0.3.0"
+bitflags = "2.9.4"
 either = { version = "1.15.0", default-features = false }
+elf = { version = "0.8.0", default-features = false }
 embedded-graphics = "0.8.1"
 ez_paging = { git = "https://github.com/ChocolateLoverRaj/ez_paging", version = "0.1.0", default-features = false }
 force-send-sync = { git = "https://github.com/ChocolateLoverRaj/force-send-sync", branch = "no_std", version = "1.1.0" }

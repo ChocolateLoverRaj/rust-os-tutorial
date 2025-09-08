@@ -1,9 +1,12 @@
+use core::ffi::CStr;
+
 use limine::{
     BaseRevision,
+    modules::InternalModule,
     mp::RequestFlags,
     request::{
-        FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
-        RequestsStartMarker, RsdpRequest,
+        FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest,
+        RequestsEndMarker, RequestsStartMarker, RsdpRequest,
     },
 };
 
@@ -34,6 +37,12 @@ pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+pub const USER_MODE_PROGRAM_0_PATH: &CStr = c"/user_mode_program_0";
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new()
+    .with_internal_modules(&[&InternalModule::new().with_path(USER_MODE_PROGRAM_0_PATH)]);
 
 /// Define the stand and end markers for Limine requests.
 #[used]

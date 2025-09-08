@@ -13,6 +13,16 @@ impl OffsetMappedPhysAddr for PhysAddr {
     }
 }
 
+pub trait OffsetMappedVirtAddr {
+    fn offset_mapped(self) -> PhysAddr;
+}
+
+impl OffsetMappedVirtAddr for VirtAddr {
+    fn offset_mapped(self) -> PhysAddr {
+        PhysAddr::new(self.as_u64() - u64::from(hhdm_offset()))
+    }
+}
+
 pub trait OffsetMappedPhysFrame {
     fn offset_mapped(self) -> Page;
 }
