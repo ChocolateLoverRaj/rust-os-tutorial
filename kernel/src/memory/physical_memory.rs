@@ -21,6 +21,7 @@ pub enum MemoryType {
     Usable,
     UsedByLimine,
     UsedByKernel(KernelMemoryUsageType),
+    UsedByUserMode,
 }
 
 #[derive(Debug)]
@@ -103,6 +104,17 @@ impl PhysicalMemory {
             physical_memory: self,
             memory_type: MemoryType::UsedByKernel(KernelMemoryUsageType::PageTables),
         }
+    }
+
+    pub fn get_user_mode_program_frame_allocator(&mut self) -> PhysicalMemoryFrameAllocator<'_> {
+        PhysicalMemoryFrameAllocator {
+            physical_memory: self,
+            memory_type: MemoryType::UsedByUserMode,
+        }
+    }
+
+    pub fn map_mut(&mut self) -> &mut NoditMap<u64, Interval<u64>, MemoryType> {
+        &mut self.map
     }
 }
 
