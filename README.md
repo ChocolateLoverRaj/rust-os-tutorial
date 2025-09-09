@@ -20,6 +20,8 @@ This is a tutorial and meant to be a community project. Contributions are welcom
 `code` is the branch which contains the code that goes along with the tutorial. Each commit is 1 part of the tutorial. To edit `main` and `code` at the same time, you can use `git worktree add code --guess-remote`, and the `code` branch will be in the `code` folder.
 ming part number. `code-dev` is the corresponding development branch.
 
+`next` is an OS that is very similar to the tutorial OS where I try out implementing new things. It is kind of a preview of what will come to this tutorial. It is kind of messy because I might rebase `next` based on the tutorial, but right now it's based on an old tutorial version.
+
 ## Git and contributing
 ### Adding a new part (in the end)
 Pretty simple:
