@@ -1,7 +1,10 @@
 use num_enum::IntoPrimitive;
 use x86_64::{
     instructions::tables::load_tss,
-    registers::segmentation::{CS, SS, Segment},
+    registers::{
+        model_specific::Star,
+        segmentation::{CS, SS, Segment},
+    },
     structures::{
         gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
         tss::TaskStateSegment,
@@ -17,6 +20,8 @@ pub struct Gdt {
     kernel_code_selector: SegmentSelector,
     kernel_data_selector: SegmentSelector,
     tss_selector: SegmentSelector,
+    user_code_selector: SegmentSelector,
+    user_data_selector: SegmentSelector,
 }
 
 #[derive(Debug, IntoPrimitive)]
@@ -45,15 +50,27 @@ pub fn init() {
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
         let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());
         let tss_selector = gdt.append(Descriptor::tss_segment(tss));
+        let user_data_selector = gdt.append(Descriptor::user_data_segment());
+        let user_code_selector = gdt.append(Descriptor::user_code_segment());
         Gdt {
             gdt,
             kernel_code_selector,
             kernel_data_selector,
             tss_selector,
+            user_code_selector,
+            user_data_selector,
         }
     });
     gdt.gdt.load();
     unsafe { CS::set_reg(gdt.kernel_code_selector) };
     unsafe { SS::set_reg(gdt.kernel_data_selector) };
     unsafe { load_tss(gdt.tss_selector) };
+    // Writing to this register is necessary for the syscall and sysretq instructions
+    Star::write(
+        gdt.user_code_selector,
+        gdt.user_data_selector,
+        gdt.kernel_code_selector,
+        gdt.kernel_data_selector,
+    )
+    .unwrap();
 }
