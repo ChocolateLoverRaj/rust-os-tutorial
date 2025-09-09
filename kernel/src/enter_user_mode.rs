@@ -9,7 +9,7 @@ pub struct EnterUserModeInput {
 }
 
 /// # Safety
-/// Does sysret.
+/// Does `sysretq`.
 /// Make sure that you are not letting the user space program do things you don't want it to do.
 /// You must enable system call extensions first.
 pub unsafe fn enter_user_mode(EnterUserModeInput { rip, rsp, rflags }: EnterUserModeInput) -> ! {
