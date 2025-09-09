@@ -1,2 +1,4 @@
 # Git worktrees
-/part-*
+/next
+/code
+/code-dev
