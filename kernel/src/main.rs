@@ -46,6 +46,7 @@ mod panic_handler;
 mod rgb_pixel_info;
 mod run_program_0;
 mod spcr;
+mod syscall_handler;
 mod translate_addr;
 mod writer_with_cr;
 mod x86_64_consts;

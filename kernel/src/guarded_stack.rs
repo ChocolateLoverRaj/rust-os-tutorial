@@ -78,6 +78,7 @@ impl GuardedStack {
 pub enum StackType {
     Normal,
     ExceptionHandler,
+    SyscallHandler,
 }
 
 #[derive(Debug, Clone, Copy)]

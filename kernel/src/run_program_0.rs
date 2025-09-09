@@ -10,17 +10,14 @@ use ez_paging::{ConfigurableFlags, Frame, Page, PageSize};
 use nodit::interval::ie;
 use x86_64::{
     PhysAddr, VirtAddr,
-    registers::{
-        control::{Efer, EferFlags},
-        model_specific::PatMemoryType,
-        rflags::RFlags,
-    },
+    registers::{model_specific::PatMemoryType, rflags::RFlags},
 };
 
 use crate::{
     ElfSegmentFlags, ElfSegmentType, EnterUserModeInput, OffsetMappedVirtAddr, enter_user_mode,
     limine_requests::{MODULE_REQUEST, USER_MODE_PROGRAM_0_PATH},
     memory::{MEMORY, MemoryType},
+    syscall_handler,
     translate_addr::{OffsetMappedPhysAddr, OffsetMappedPhysFrame},
     x86_64_consts::LOWER_HALF_END,
 };
@@ -228,18 +225,14 @@ pub fn run_program_0() {
         }
     };
 
-    // Enable syscall in IA32_EFER
-    // https://shell-storm.org/x86doc/SYSCALL.html
-    // https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
-    unsafe {
-        Efer::update(|flags| {
-            *flags = flags.union(EferFlags::SYSTEM_CALL_EXTENSIONS);
-        })
-    };
+    // Drop the lock to the physical memory
+    drop(physical_memory);
 
     // Switch to the user address space
     // Safety: we can still reference kernel memory
     unsafe { user_l4.switch_to(memory.new_kernel_cr3_flags) };
+
+    syscall_handler::init();
 
     let input = EnterUserModeInput {
         rflags: RFlags::empty(),
