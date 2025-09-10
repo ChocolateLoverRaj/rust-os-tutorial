@@ -93,5 +93,5 @@ Page fault! Stack frame: InterruptStackFrame {
 Our kernel now catches and prints errors caused by accessing an invalid address. However, there is a common type of error that our kernel does not "catch" - a stack overflow. A stack overflow is when we run out of stack memory, causing the CPU to access memory that is outside of the stack. Often, what's called a "guard page" is placed at the end of the stack. A guard page is purposely unmapped memory, so that a page fault will be triggered when a stack overflow happens. However, Limine does not set up guard pages for our stacks. This means that if a stack overflow happens, the stack could overwrite other memory, causing all sorts of unexpected behavior, exceptions, and triple faults - all very annoying to debug. For this reason, we will set up a stack with a guard page in future parts.
 
 ## Learn More
-- https://en.wikipedia.org/wiki/Stack_Overflow
-- https://wiki.osdev.org/Stack
+- <https://en.wikipedia.org/wiki/Stack_Overflow>
+- <https://wiki.osdev.org/Stack>

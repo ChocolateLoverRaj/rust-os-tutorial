@@ -1,8 +1,8 @@
 # Managing Physical and Virtual Memory
 I will assume that you already know about physical and virtual memory, and how paging works on x86_64 to map virtual memory to physical memory. You can read the following to learn these things:
-- https://os.phil-opp.com/paging-introduction/
-- https://os.phil-opp.com/paging-implementation/
-- https://wiki.osdev.org/Paging
+- <https://os.phil-opp.com/paging-introduction/>
+- <https://os.phil-opp.com/paging-implementation/>
+- <https://wiki.osdev.org/Paging>
 
 So, what is the state of virtual and physical memory so far? Limine has given us a list of physical memory regions, which lets us know which ones are available for us to use. We've already used a region of physical memory for our global allocator heap. Limine set up page tables, and we have not modified them yet.
 

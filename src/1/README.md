@@ -26,7 +26,7 @@ There are many boot loaders and boot loader protocols. A boot loader protocol ba
 - [Multiboot](https://en.wikipedia.org/wiki/Multiboot_specification)
 - The Linux Boot Protocol
 - [Limine](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md)
-- [The Rust OSDev Bootloader](https://github.com/rust-osdev/bootloader), written for https://os.phil-opp.com/
+- [The Rust OSDev Bootloader](https://github.com/rust-osdev/bootloader), written for <https://os.phil-opp.com/>
 
 In this tutorial, we will use Limine, because it is modern, simple, and makes writing an OS easy for us.
 

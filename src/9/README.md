@@ -1,7 +1,7 @@
 # Global Allocator
-In `x86_64` (and pretty much every architecture), there is physical memory and virtual memory. Physical memory is the actual RAM, and also memory-mapped I/O (one example is the [HPET](https://wiki.osdev.org/HPET), which we will program later). Virtual memory is what our code references. Virtual memory is mapped to physical memory, and the mappings are programmed using page tables. See https://os.phil-opp.com/paging-introduction/ for a more in-depth explanation.
+In `x86_64` (and pretty much every architecture), there is physical memory and virtual memory. Physical memory is the actual RAM, and also memory-mapped I/O (one example is the [HPET](https://wiki.osdev.org/HPET), which we will program later). Virtual memory is what our code references. Virtual memory is mapped to physical memory, and the mappings are programmed using page tables. See <https://os.phil-opp.com/paging-introduction/> for a more in-depth explanation.
 
-When we write Rust code in `std`, we have data types such as `Box`, `Vec`, `Rc`, and `Arc`. However, in `no_std`, we need an allocator to use those types. In `no_std`, there is no allocator included, and we need to provide our own. See https://os.phil-opp.com/allocator-designs/ for more detailed information about what allocators are.
+When we write Rust code in `std`, we have data types such as `Box`, `Vec`, `Rc`, and `Arc`. However, in `no_std`, we need an allocator to use those types. In `no_std`, there is no allocator included, and we need to provide our own. See <https://os.phil-opp.com/allocator-designs/> for more detailed information about what allocators are.
 
 An allocator basically has a pool of memory (think of it as a `&mut [MaybeUninit<u8>]`) which it allocates towards any data type used by any code. The allocator has to keep track of which parts of memory are allocated, and be able to allocate, deallocate, and (optional, but useful for performance) grow / shrink already allocated memory regions. We don't have to implement an allocator because there are many existing crates that do it for us. We will use the `talc` crate:
 ```toml
@@ -171,7 +171,7 @@ INFO  Vec: 0xffff800000100410..0xffff800000100438. Contents: [
 We can see the pointers the `talc` assigned to our `Vec` and `Box`es.
 
 # Learn More
-- https://os.phil-opp.com/paging-introduction/
-- https://os.phil-opp.com/paging-implementation
-- https://os.phil-opp.com/heap-allocation/
-- https://os.phil-opp.com/allocator-designs/
+- <https://os.phil-opp.com/paging-introduction/>
+- <https://os.phil-opp.com/paging-implementation>
+- <https://os.phil-opp.com/heap-allocation/>
+- <https://os.phil-opp.com/allocator-designs/>
