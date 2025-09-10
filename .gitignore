@@ -2,3 +2,9 @@
 /next
 /code
 /code-dev
+
+# mdBook
+book
+
+# direnv
+.direnv

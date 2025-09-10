@@ -1,0 +1,13 @@
+[book]
+title = "Rust OS Tutorial"
+language = "en"
+authors = ["Rajas Paranjpe"]
+
+[rust]
+edition = "2024"
+
+[output.html]
+git-repository-url = "https://github.com/ChocolateLoverRaj/rust-os-tutorial"
+
+[build]
+create-missing = false

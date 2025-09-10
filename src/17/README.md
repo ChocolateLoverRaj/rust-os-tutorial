@@ -1,4 +1,4 @@
-# Serial Port Console Redirect (SPCR)
+# Serial Port Console Redirection (SPCR) Table
 It can be really hard to debug when things don't work on real devices. We can log things to the screen, but we are limited to what we can see on the screen. We already log to COM1, but we can only see the it in a virtual machine. Fortunately, some computers, such as Chromebooks, do have a "serial port". There is an ACPI table, [SPCR](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/serial-port-console-redirection-table), which defines how to access a serial port. 
 
 ## Chromebooks

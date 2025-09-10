@@ -1,10 +1,10 @@
-A walkthrough for making your own operating system in Rust, inspired by [Philipp Oppermann's blog "Writing an OS in Rust"](https://os.phil-opp.com/)
+A walkthrough for making your own operating system in Rust, inspired by [Philipp Oppermann's blog "Writing an OS in Rust"](https://os.phil-opp.com/).
 
 ## Version
 You are viewing `v2`.
 
 ## 🚧 In Construction 🚧
-Feel free to follow this tutorial. New parts will be added! Keep in mind that there might be changes made to existing parts, and you might have to 
+Feel free to follow this tutorial. New parts will be added! New parts might also come as a new tutorial version, in which case you might have to make some adjustments to your OS first before following the tutorial for new parts.
 
 ## Contribution Welcome
 This is a tutorial and meant to be a community project. Contributions are welcome. Some examples are:
@@ -39,6 +39,9 @@ If you are changing existing old part, or inserting a part before the latest par
   - Use `git rebase` to edit the commit for the part you are modifying
 
 Since this is full of rebasing, to save time, talk with me first before making a significant change, even if you are adding a new part (because someone else could also be adding a new part at the same time.)
+
+## Building the web page
+The tutorial uses [mdBook](https://github.com/rust-lang/mdBook). You can read about its [installation](https://rust-lang.github.io/mdBook/guide/installation.html) and the [commands to generate the book](https://rust-lang.github.io/mdBook/cli/index.html). 
 
 ## Viewing the old version
 If you started viewing the `v1` version and want to continue it, you can view the `v1` git tag. You can view the parts at `v1p<n>` where `n` is the part number. Still, I would recommend starting over from `v2`.
