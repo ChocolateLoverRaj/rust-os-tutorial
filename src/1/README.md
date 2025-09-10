@@ -24,8 +24,7 @@ The protocol for giving control of the computer to an operating system is differ
 There are many boot loaders and boot loader protocols. A boot loader protocol basically states "this bootloader will boot operating systems in this way", and specific boot loader implementations can implement common boot protocols. Some examples of boot loader protocols are:
 - [GRUB](https://en.wikipedia.org/wiki/GNU_GRUB)
 - [Multiboot](https://en.wikipedia.org/wiki/Multiboot_specification)
-- The Linux Boot Protocol
-- [Limine](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md)
+- [The Linux Boot Protocol](https://codeberg.org/Limine/limine-protocol/src/commit/fedf97facd1c473ee8720f8dfd5a71d03490d928/PROTOCOL.md)
 - [The Rust OSDev Bootloader](https://github.com/rust-osdev/bootloader), written for <https://os.phil-opp.com/>
 
 In this tutorial, we will use Limine, because it is modern, simple, and makes writing an OS easy for us.
@@ -42,7 +41,7 @@ We need two types of compiled files from Limine:
 - Files that are needed to boot Limine (including `BOOTX64.EFI`)
 - The actual `limine` executable, which we run on our host operating system (the operating system that you are writing the Rust code in)
 
-If you're on NixOS, you will already have Limine from `flake.nix`. If you're not on NixOS, you can download / install it with [Limine's instructions](https://github.com/limine-bootloader/limine/tree/v9.x?tab=readme-ov-file#binary-releases). Once you have the files, make sure that the environmental variable `LIMINE_PATH` is set to the folder containing `BOOTX64.EFI`, and the `limine` executable is in your `PATH`.
+If you're on NixOS, you will already have Limine from `flake.nix`. If you're not on NixOS, you can download / install it with [Limine's instructions](https://codeberg.org/Limine/Limine/src/branch/v9.x/INSTALL.md). Once you have the files, make sure that the environmental variable `LIMINE_PATH` is set to the folder containing `BOOTX64.EFI`, and the `limine` executable is in your `PATH`.
 
 # The `rust-toolchain.toml` file
 Writing an operating system in Rust requires using nightly features, so we will specify a nightly toolchain. So create a `rust-toolchain.toml` file:
@@ -200,7 +199,8 @@ assert!(status.success());
 
 Then we use the `limine` program to modify the ISO to work as a a hybrid ISO that boots on both BIOS and UEFI:
 ```rs
-// This is needed to create a hybrid ISO that boots on both BIOS and UEFI. See https://github.com/limine-bootloader/limine/blob/v9.x/USAGE.md#biosuefi-hybrid-iso-creation
+// This is needed to create a hybrid ISO that boots on both BIOS and UEFI.
+// See https://codeberg.org/Limine/Limine/src/branch/v9.x/USAGE.md#bios-uefi-hybrid-iso-creation
 let status = std::process::Command::new("limine")
     .arg("bios-install")
     .arg(&output_iso)

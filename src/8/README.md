@@ -4,7 +4,7 @@ We are in a state where we have a function that gets executed on boot. We have a
 You might be thinking, *don't most computers just have 1 CPU?*. But from the kernel's perspective, every core in the CPU is like its own CPU. And actually, every thread in a CPU with hyper-threading cores counts as a CPU from the kernel's perspective. For example, on a laptop with the [i7-10610U](https://www.intel.com/content/www/us/en/products/sku/201896/intel-core-i710610u-processor-8m-cache-up-to-4-90-ghz/specifications.html) processor, looking at the specs, we would say it's a laptop with 1 CPU, with 4 cores and 8 threads. From the kernel's perspective, it's a computer with 8 CPUs.
 
 # Limine MP Request
-Limine makes running code on all CPUs very easy. We just need to use [Limine's MP request](https://github.com/limine-bootloader/limine/blob/v9.x/PROTOCOL.md#mp-multiprocessor-feature).
+Limine makes running code on all CPUs very easy. We just need to use [Limine's MP request](https://codeberg.org/Limine/limine-protocol/src/commit/fedf97facd1c473ee8720f8dfd5a71d03490d928/PROTOCOL.md#mp-multiprocessor-feature).
 ```rs
 #[used]
 #[unsafe(link_section = ".requests")]
