@@ -165,6 +165,6 @@ You should see all of the CPUs receive a timer interrupt:
 and then, after some time, all CPUs will receive another timer interrupt, and they will continue to periodically receive them. The time between timer interrupts varies between computers. In qemu, it is a very short duration. On Jinlon, it is very long. On the Lenovo Z560, it is more often than Jinlon, but much less often than qemu.
 
 # Learn More
-- https://wiki.osdev.org/APIC
-- https://wiki.osdev.org/APIC_Timer
-- https://en.wikipedia.org/wiki/Advanced_Programmable_Interrupt_Controller
+- <https://wiki.osdev.org/APIC>
+- <https://wiki.osdev.org/APIC_Timer>
+- <https://en.wikipedia.org/wiki/Advanced_Programmable_Interrupt_Controller>

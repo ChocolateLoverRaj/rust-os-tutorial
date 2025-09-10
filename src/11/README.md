@@ -156,10 +156,10 @@ Now when we run the OS, we'll see:
 Now that we know breakpoint handling works, let's remove the `x86_64::instructions::interrupts::int3();`.
 
 # Learn more
-- https://os.phil-opp.com/cpu-exceptions/
-- https://os.phil-opp.com/double-fault-exceptions/
-- https://os.phil-opp.com/hardware-interrupts/
-- https://wiki.osdev.org/Exceptions
-- https://wiki.osdev.org/Global_Descriptor_Table
-- https://wiki.osdev.org/Task_State_Segment
-- https://wiki.osdev.org/Interrupt_Descriptor_Table
+- <https://os.phil-opp.com/cpu-exceptions/>
+- <https://os.phil-opp.com/double-fault-exceptions/>
+- <https://os.phil-opp.com/hardware-interrupts/>
+- <https://wiki.osdev.org/Exceptions>
+- <https://wiki.osdev.org/Global_Descriptor_Table>
+- <https://wiki.osdev.org/Task_State_Segment>
+- <https://wiki.osdev.org/Interrupt_Descriptor_Table>

@@ -204,9 +204,9 @@ The first time, we receive all of the expected numbers in the correct order, and
 This part demonstrates that we can pass up to 7 registers as inputs and up to 7 registers as outputs. As part of the process of designing an OS, we have to choose how we are going to use those registers, and how many out of the 7 we are going to use. Are we going to have 1 register to indicate the "syscall number"? What if our input cannot fit in the 7 registers? These are things to consider.
 
 # Learn more
-- https://nfil.dev/kernel/rust/coding/rust-kernel-to-userspace-and-back/. Warning: syscall handler implementation is unsound.
-- https://en.wikipedia.org/wiki/X86_calling_conventions#System_V_AMD64_ABI
-- https://wiki.osdev.org/System_Calls
-- https://en.wikipedia.org/wiki/System_call
-- https://www.felixcloutier.com/x86/syscall
-- https://www.felixcloutier.com/x86/sysret
+- <https://nfil.dev/kernel/rust/coding/rust-kernel-to-userspace-and-back/>. Warning: syscall handler implementation is unsound.
+- <https://en.wikipedia.org/wiki/X86_calling_conventions#System_V_AMD64_ABI>
+- <https://wiki.osdev.org/System_Calls>
+- <https://en.wikipedia.org/wiki/System_call>
+- <https://www.felixcloutier.com/x86/syscall>
+- <https://www.felixcloutier.com/x86/sysret>

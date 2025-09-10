@@ -330,5 +330,5 @@ We definitely will be using information from the `APIC` and `HPET` ACPI tables i
 - SSDT
 
 # Learn More
-- https://wiki.osdev.org/RSDP
-- https://wiki.osdev.org/ACPI
+- <https://wiki.osdev.org/RSDP>
+- <https://wiki.osdev.org/ACPI>

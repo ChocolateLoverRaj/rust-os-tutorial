@@ -181,5 +181,5 @@ Now when we fill the screen, it should draw much faster.
 ![Screen Recording of making the Screen Magenta, Much Faster after implementing `fill_solid`](./Screen_Recording_Faster.gif)
 
 # Learn more
-- https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer
-- https://wiki.osdev.org/GOP
+- <https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer>
+- <https://wiki.osdev.org/GOP>

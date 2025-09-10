@@ -624,15 +624,15 @@ Page fault! Stack frame: InterruptStackFrame {
 And this time, the error code contains the `USER_MODE` flag! This confirms it. We successfully loaded a user mode program and executed it.
 
 # Learn More
-- https://en.wikipedia.org/wiki/Kernel_(operating_system)
-- https://en.wikipedia.org/wiki/Executable
-- https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
-- https://offlinemark.com/kpti-the-virtual-memory-101-fact-thats-no-longer-true/
-- https://en.wikipedia.org/wiki/Kernel_page-table_isolation
-- https://medium.com/@boutnaru/the-linux-process-journey-pid-1-init-60765a069f17
-- https://nfil.dev/kernel/rust/coding/rust-kernel-to-userspace-and-back/. Warning: syscall handler implementation is unsound.
-- https://wiki.osdev.org/Getting_to_Ring_3
-- https://en.wikipedia.org/wiki/Protection_ring
-- https://www.felixcloutier.com/x86/iret:iretd:iretq
-- https://www.felixcloutier.com/x86/sysret
-- https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
+- <https://en.wikipedia.org/wiki/Kernel_(operating_system)>
+- <https://en.wikipedia.org/wiki/Executable>
+- <https://en.wikipedia.org/wiki/Executable_and_Linkable_Format>
+- <https://offlinemark.com/kpti-the-virtual-memory-101-fact-thats-no-longer-true/>
+- <https://en.wikipedia.org/wiki/Kernel_page-table_isolation>
+- <https://medium.com/@boutnaru/the-linux-process-journey-pid-1-init-60765a069f17>
+- <https://nfil.dev/kernel/rust/coding/rust-kernel-to-userspace-and-back/>. Warning: syscall handler implementation is unsound.
+- <https://wiki.osdev.org/Getting_to_Ring_3>
+- <https://en.wikipedia.org/wiki/Protection_ring>
+- <https://www.felixcloutier.com/x86/iret:iretd:iretq>
+- <https://www.felixcloutier.com/x86/sysret>
+- <https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER>
