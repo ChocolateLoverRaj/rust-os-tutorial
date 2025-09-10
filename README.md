@@ -1,5 +1,8 @@
 A walkthrough for making your own operating system in Rust, inspired by [Philipp Oppermann's blog "Writing an OS in Rust"](https://os.phil-opp.com/).
 
+## View the book
+The tutorial uses [mdBook](https://github.com/rust-lang/mdBook). The latest version of this tutorial, deployed from the `main` branch, is available at <https://rust-os-tutorial.netlify.app>.
+
 ## Version
 You are viewing `v2`.
 
