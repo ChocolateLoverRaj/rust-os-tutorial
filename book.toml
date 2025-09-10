@@ -8,6 +8,7 @@ edition = "2024"
 
 [output.html]
 git-repository-url = "https://github.com/ChocolateLoverRaj/rust-os-tutorial"
+edit-url-template = "https://github.com/ChocolateLoverRaj/rust-os-tutorial/edit/main/{path}"
 
 [build]
 create-missing = false
