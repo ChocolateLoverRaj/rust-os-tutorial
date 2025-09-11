@@ -20,4 +20,4 @@
 - [Sending IPIs](./19/README.md)
 - [User Mode](./20/README.md)
 - [System Calls](./21/README.md)
-- [Scheduler Designs]()
+- [Scheduler Concepts](./22/README.md)
