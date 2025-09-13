@@ -1,0 +1,65 @@
+digraph {
+    compound=true
+    node [shape=box style=rounded]
+
+    root_task [label = "Root Task"]
+
+    root_task -> service_manager [lhead=cluster_service_manager]
+
+
+    subgraph cluster_service_manager {
+        label = "Service Manager Container"
+        
+        service_manager [label = "Service Manager Thread"]
+
+        service_manager -> window_manager [lhead=cluster_window_manager]
+
+        subgraph cluster_window_manager {
+            label = "Window Manager Container"
+            
+            window_manager [label = "Window Manager Thread"]
+            window_manager -> active_window [lhead=cluster_active_window]
+
+            subgraph cluster_active_window {
+                label = "Active Window Container"
+                active_window [label = "Active Window"]
+            }
+
+            active_window -> visible_window_0 [ltail=cluster_active_window lhead=cluster_visible_windows]
+
+            subgraph cluster_visible_windows {
+                label = "Visible Window Container"
+
+                visible_window_0 [label = "Unfocused Visible Window"]
+            }
+
+            visible_window_0 -> chat_app [ltail=cluster_visible_windows lhead=cluster_notifications]
+
+            subgraph cluster_notifications {
+                subgraph cluster_chat_app {
+                    label = "Chat App Notifications Container"
+                    chat_app [label = "Chat App Background Notification Thread"]
+                }
+
+                chat_app -> email_app [ltail=cluster_chat_app lhead=cluster_email_app]
+
+                subgraph cluster_email_app {
+                    label = "Email Notifications Container"
+                    email_app [label = "Email Background Notification Thread"]
+                }
+            }
+        }
+
+        window_manager -> math_calculation [ltail=cluster_window_manager lhead=cluster_cpu_bound_tasks]
+
+        subgraph cluster_cpu_bound_tasks {
+            label = "CPU Bound Tasks Queue"
+
+            math_calculation [label = "Math Calculation"]
+            math_calculation -> video_rendering
+            video_rendering [label = "Video Rendering"]
+            video_rendering -> code_compiling
+            code_compiling [label = "Code Compiling"]
+        }
+    }
+}

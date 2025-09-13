@@ -23,6 +23,8 @@
           mkShell {
             buildInputs = [
               mdbook
+              mdbook-graphviz
+              graphviz
             ];
           };
       }

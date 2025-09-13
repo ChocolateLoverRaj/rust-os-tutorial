@@ -6,6 +6,10 @@ authors = ["Rajas Paranjpe"]
 [rust]
 edition = "2024"
 
+# [preprocessor.graphviz]
+# command = "mdbook-graphviz"
+# output-to-file = false
+
 [output.html]
 git-repository-url = "https://github.com/ChocolateLoverRaj/rust-os-tutorial"
 edit-url-template = "https://github.com/ChocolateLoverRaj/rust-os-tutorial/edit/main/{path}"
