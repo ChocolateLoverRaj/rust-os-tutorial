@@ -8,16 +8,13 @@ use core::{
 use elf::{ElfBytes, endian::AnyEndian};
 use ez_paging::{ConfigurableFlags, Frame, Page, PageSize};
 use nodit::interval::ie;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    registers::{model_specific::PatMemoryType, rflags::RFlags},
-};
+use x86_64::{PhysAddr, VirtAddr, registers::model_specific::PatMemoryType};
 
 use crate::{
-    ElfSegmentFlags, ElfSegmentType, EnterUserModeInput, OffsetMappedVirtAddr, enter_user_mode,
+    ElfSegmentFlags, ElfSegmentType, OffsetMappedVirtAddr, StartData, Thread, ThreadState,
+    init_root_task,
     limine_requests::{MODULE_REQUEST, USER_MODE_PROGRAM_0_PATH},
     memory::{MEMORY, MemoryType},
-    syscall_handler,
     translate_addr::{OffsetMappedPhysAddr, OffsetMappedPhysFrame},
     x86_64_consts::LOWER_HALF_END,
 };
@@ -225,19 +222,11 @@ pub fn run_program_0() {
         }
     };
 
-    // Drop the lock to the physical memory
-    drop(physical_memory);
-
-    // Switch to the user address space
-    // Safety: we can still reference kernel memory
-    unsafe { user_l4.switch_to(memory.new_kernel_cr3_flags) };
-
-    syscall_handler::init();
-
-    let input = EnterUserModeInput {
-        rflags: RFlags::empty(),
-        rip: entry_point.get(),
-        rsp,
-    };
-    unsafe { enter_user_mode(input) };
+    init_root_task(Thread {
+        address_space: user_l4,
+        state: spin::Mutex::new(ThreadState::ReadyToStart(StartData {
+            rip: entry_point.get(),
+            rsp,
+        })),
+    });
 }

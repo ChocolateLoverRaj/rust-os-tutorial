@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, never_type)]
 
 extern crate alloc;
 
@@ -19,6 +19,7 @@ use interrupt_vector::*;
 use limine_requests::*;
 use rgb_pixel_info::*;
 use run_program_0::*;
+use scheduler::*;
 use translate_addr::*;
 use writer_with_cr::*;
 use x86_64_consts::*;
@@ -45,6 +46,7 @@ mod nmi_handler_states;
 mod panic_handler;
 mod rgb_pixel_info;
 mod run_program_0;
+mod scheduler;
 mod spcr;
 mod syscall_handler;
 mod translate_addr;
@@ -99,7 +101,8 @@ extern "sysv64" fn init_bsp() -> ! {
 
     run_program_0();
 
-    hlt_loop();
+    scheduler::init();
+    scheduler::run_tasks()
 }
 
 unsafe extern "C" fn entry_point_ap(cpu: &limine::mp::Cpu) -> ! {
@@ -125,5 +128,6 @@ extern "sysv64" fn init_ap() -> ! {
     idt::init();
     apic::init_local_apic();
 
-    hlt_loop()
+    scheduler::init();
+    scheduler::run_tasks()
 }

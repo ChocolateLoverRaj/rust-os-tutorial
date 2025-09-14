@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+abi = { version = "0.1.0", path = "../abi" }
 acpi = "6.0.1"
 atomic_enum = "0.3.0"
 bitflags = "2.9.4"

@@ -3,6 +3,8 @@
 
 use core::{arch::asm, hint::black_box, sync::atomic::AtomicU8};
 
+use abi::{HELLO_WORLD_MAGIC, Syscall, SyscallError, decode_syscall_output};
+
 #[panic_handler]
 fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {
@@ -12,28 +14,26 @@ fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
 
 static TEST_VAR: AtomicU8 = AtomicU8::new(0);
 
-fn syscall(inputs_and_outputs: &mut [u64; 7]) {
+fn syscall(syscall_number: u32, input: usize) -> Result<(), SyscallError> {
+    let output: u32;
     unsafe {
         asm!("\
             syscall
             ",
-            inlateout("rdi") inputs_and_outputs[0],
-            inlateout("rsi") inputs_and_outputs[1],
-            inlateout("rdx") inputs_and_outputs[2],
-            inlateout("r10") inputs_and_outputs[3],
-            inlateout("r8") inputs_and_outputs[4],
-            inlateout("r9") inputs_and_outputs[5],
-            inlateout("rax") inputs_and_outputs[6],
+            in("rdi") syscall_number,
+            in("rsi") input,
+            lateout("rax") output,
+            clobber_abi("sysv64")
         );
-    }
+    };
+    decode_syscall_output(output).unwrap()
 }
 
 #[unsafe(no_mangle)]
 unsafe extern "sysv64" fn entry_point() -> ! {
     black_box(&TEST_VAR);
-    let mut inputs_and_outputs = [10, 20, 30, 40, 50, 60, 70];
-    syscall(&mut inputs_and_outputs);
-    syscall(&mut inputs_and_outputs);
+    syscall(Syscall::HelloWorld.into(), HELLO_WORLD_MAGIC).unwrap();
+    syscall(Syscall::HelloWorld.into(), 0).unwrap();
     loop {
         core::hint::spin_loop();
     }

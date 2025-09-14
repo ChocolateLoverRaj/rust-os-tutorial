@@ -8,3 +8,6 @@ publish = false
 name = "user_mode_program_0"
 test = false
 bench = false
+
+[dependencies]
+abi = { version = "0.1.0", path = "../abi" }

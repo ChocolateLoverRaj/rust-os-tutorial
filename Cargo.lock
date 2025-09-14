@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "abi"
+version = "0.1.0"
+dependencies = [
+ "num_enum",
+]
+
+[[package]]
 name = "acpi"
 version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -156,6 +163,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "acpi",
  "atomic_enum",
  "bitflags 2.9.4",
@@ -406,6 +414,9 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 [[package]]
 name = "user_mode_program_0"
 version = "0.1.0"
+dependencies = [
+ "abi",
+]
 
 [[package]]
 name = "volatile"

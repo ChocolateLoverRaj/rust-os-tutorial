@@ -23,7 +23,6 @@ pub struct CpuLocalData {
     pub idt: Once<InterruptDescriptorTable>,
     pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
     pub syscall_handler_stack_pointer: AtomicU64,
-    pub syscall_handler_scratch: AtomicU64,
 }
 
 fn mp_response() -> &'static MpResponse {
@@ -51,7 +50,6 @@ fn init_cpu(kernel_assigned_id: u32, local_apic_id: u32) {
             idt: Once::new(),
             local_apic: Once::new(),
             syscall_handler_stack_pointer: Default::default(),
-            syscall_handler_scratch: Default::default(),
         }),
     );
 }
