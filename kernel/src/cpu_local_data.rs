@@ -1,6 +1,6 @@
 use core::{ptr::NonNull, sync::atomic::AtomicU64};
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use force_send_sync::SendSync;
 use limine::{mp::Cpu, response::MpResponse};
 use spin::{Lazy, Once};
@@ -11,7 +11,7 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::{Gdt, limine_requests::MP_REQUEST};
+use crate::{Gdt, limine_requests::MP_REQUEST, scheduler::Thread};
 
 pub struct CpuLocalData {
     /// Similar to [Linux](https://elixir.bootlin.com/linux/v5.6.3/source/arch/x86/kernel/apic/apic.c#L2469), the we assign the BSP id `0`.
@@ -23,6 +23,7 @@ pub struct CpuLocalData {
     pub idt: Once<InterruptDescriptorTable>,
     pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
     pub syscall_handler_stack_pointer: AtomicU64,
+    pub running_thread: spin::Mutex<Option<Arc<Thread>>>,
 }
 
 fn mp_response() -> &'static MpResponse {
@@ -50,6 +51,7 @@ fn init_cpu(kernel_assigned_id: u32, local_apic_id: u32) {
             idt: Once::new(),
             local_apic: Once::new(),
             syscall_handler_stack_pointer: Default::default(),
+            running_thread: spin::Mutex::new(None),
         }),
     );
 }

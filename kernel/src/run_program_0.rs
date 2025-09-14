@@ -5,6 +5,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use alloc::sync::Arc;
 use elf::{ElfBytes, endian::AnyEndian};
 use ez_paging::{ConfigurableFlags, Frame, Page, PageSize};
 use nodit::interval::ie;
@@ -224,9 +225,9 @@ pub fn run_program_0() {
 
     init_root_task(Thread {
         address_space: user_l4,
-        state: spin::Mutex::new(ThreadState::ReadyToStart(StartData {
+        state: Arc::new(spin::Mutex::new(ThreadState::ReadyToStart(StartData {
             rip: entry_point.get(),
             rsp,
-        })),
+        }))),
     });
 }

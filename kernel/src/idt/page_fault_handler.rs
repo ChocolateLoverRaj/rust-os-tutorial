@@ -10,7 +10,8 @@ pub extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     let accessed_address = Cr2::read().unwrap();
-    if let Some(stack) = STACK_GUARD_PAGES
+    if error_code.contains(PageFaultErrorCode::USER_MODE) {
+    } else if let Some(stack) = STACK_GUARD_PAGES
         .lock()
         .iter()
         .find_map(|(page, stack_id)| {

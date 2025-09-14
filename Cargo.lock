@@ -173,6 +173,7 @@ dependencies = [
  "ez_paging",
  "force-send-sync",
  "limine",
+ "lock_api",
  "log",
  "nodit",
  "num_enum",

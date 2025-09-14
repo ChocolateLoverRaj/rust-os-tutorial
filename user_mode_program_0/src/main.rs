@@ -33,7 +33,7 @@ fn syscall(syscall_number: u32, input: usize) -> Result<(), SyscallError> {
 unsafe extern "sysv64" fn entry_point() -> ! {
     black_box(&TEST_VAR);
     syscall(Syscall::HelloWorld.into(), HELLO_WORLD_MAGIC).unwrap();
-    syscall(Syscall::HelloWorld.into(), 0).unwrap();
+    unsafe { (0x1 as *mut u8).read_volatile() };
     loop {
         core::hint::spin_loop();
     }

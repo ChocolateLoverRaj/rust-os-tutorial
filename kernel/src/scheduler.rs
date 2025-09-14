@@ -1,5 +1,6 @@
 use core::ops::Deref;
 
+use alloc::sync::Arc;
 use ez_paging::ManagedL4PageTable;
 use spin::Once;
 use x86_64::{instructions::interrupts, registers::rflags::RFlags};
@@ -27,7 +28,7 @@ pub enum ThreadState {
 
 pub struct Thread {
     // pub id: u32,
-    pub state: spin::Mutex<ThreadState>,
+    pub state: Arc<spin::Mutex<ThreadState>>,
     pub address_space: ManagedL4PageTable,
     // pub below: Option<Arc<Task>>,
 }
@@ -50,7 +51,7 @@ pub fn init_root_task(task: Thread) {
 
 pub fn run_tasks() -> ! {
     if let Some(thread) = ROOT_TASK.get() {
-        if let Some(state) = thread.state.try_lock() {
+        if let Some(state) = spin::Mutex::try_lock_arc(&thread.state) {
             match *state.deref() {
                 ThreadState::ReadyToStart(start_data) => {
                     // Switch to the user address space
@@ -60,9 +61,6 @@ pub fn run_tasks() -> ! {
                             .address_space
                             .switch_to(MEMORY.get().unwrap().new_kernel_cr3_flags)
                     };
-
-                    // TODO: Store the guard somewhere
-                    spin::MutexGuard::leak(state);
                     unsafe {
                         enter_user_mode(EnterUserModeInput {
                             rip: start_data.rip,
