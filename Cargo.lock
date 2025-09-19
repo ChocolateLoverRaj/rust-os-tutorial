@@ -14,6 +14,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "acpi"
+version = "5.2.0"
+source = "git+https://github.com/ChocolateLoverRaj/acpi?branch=tpm#2ed3d738b2668b64d3ea6a76a8a8b1eff0a091de"
+dependencies = [
+ "bit_field",
+ "bitflags 2.9.1",
+ "log",
+]
+
+[[package]]
 name = "atomic_enum"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -240,7 +250,7 @@ dependencies = [
 name = "ez_pci"
 version = "1.2.0"
 dependencies = [
- "acpi",
+ "acpi 5.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitfield",
  "num_enum",
  "volatile 0.6.1",
@@ -398,7 +408,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
- "acpi",
+ "acpi 5.2.0 (git+https://github.com/ChocolateLoverRaj/acpi?branch=tpm)",
  "atomic_enum",
  "bitfield",
  "bitflags 2.9.1",

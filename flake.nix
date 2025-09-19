@@ -25,7 +25,10 @@
         devShells.default =
           with pkgs;
           let
-            ovmf = OVMF.fd;
+            ovmf =
+              (OVMF.override {
+                tpmSupport = true;
+              }).fd;
             limine = pkgs.limine.override {
               enableAll = true;
             };

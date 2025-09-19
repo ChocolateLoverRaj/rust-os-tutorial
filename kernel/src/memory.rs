@@ -1,6 +1,6 @@
 use core::{mem::MaybeUninit, slice};
 
-use ez_paging::{ConfigurableFlags, Frame};
+use ez_paging::{ConfigurableFlags, Frame, Owned4KibFrame};
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use nodit::{Interval, NoditMap, NoditSet, interval::iu};
 pub use physical_memory::{KernelMemoryUsageType, MemoryType, PhysicalMemory};
@@ -123,7 +123,7 @@ pub unsafe fn init(memory_map: &'static MemoryMapResponse) {
     let mut frame_allocator = physical_memory.get_kernel_frame_allocator();
 
     let new_l4_frame = FrameAllocator::<Size4KiB>::allocate_frame(&mut frame_allocator).unwrap();
-    let mut l4 = unsafe { PAGING_CONFIG.new_kernel(new_l4_frame) };
+    let mut l4 = unsafe { PAGING_CONFIG.new_kernel(Owned4KibFrame::new(new_l4_frame)) };
 
     // Offset map everything that is currently offset mapped
     let mut last_mapped_address = None::<PhysAddr>;

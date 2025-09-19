@@ -1,7 +1,7 @@
 use core::{num::NonZero, ops::RangeInclusive};
 
 use common::{HIGHER_HALF_START, PageSize};
-use ez_paging::{ConfigurableFlags, Frame, ManagedL4PageTable, MapPageError, Page};
+use ez_paging::{ConfigurableFlags, Frame, ManagedL4PageTable, MapPageError, Owned4KibFrame, Page};
 use nodit::{Interval, NoditSet, interval::iu};
 use x86_64::{
     VirtAddr,
@@ -71,7 +71,7 @@ impl VirtualMemory {
     /// # Safety
     /// You must "own" the frame (nothing else can reference it)
     pub unsafe fn new_user_page_table(&mut self, frame: PhysFrame) -> ManagedL4PageTable {
-        unsafe { self.l4.new_user(frame) }
+        unsafe { self.l4.new_user(Owned4KibFrame::new(frame)) }
     }
 }
 pub struct AllocatedPages<'a> {

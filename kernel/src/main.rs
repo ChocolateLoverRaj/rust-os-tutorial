@@ -51,7 +51,7 @@ pub mod memory;
 pub mod nmi_handler_states;
 pub mod panic_handler;
 mod pci_edu;
-mod pci_init;
+// mod pci_init;
 pub mod pic8259_interrupts;
 pub mod ps2_interrupt_handler;
 pub mod run_tasks;
@@ -63,6 +63,7 @@ pub mod syscall_handlers;
 pub mod syscall_saved_regs;
 pub mod syscalls;
 pub mod task;
+mod tpm;
 pub mod translate_addr;
 mod try_access_user_mem;
 pub mod user_mode_program_path;
@@ -130,7 +131,8 @@ extern "sysv64" fn init_bsp() -> ! {
     local_apic::init();
     syscalls::init();
 
-    pci_init::init(&acpi_tables);
+    tpm::init(&acpi_tables);
+    // pci_init::init(&acpi_tables);
     // hpet::init(&acpi_tables);
 
     // mouse::init();
