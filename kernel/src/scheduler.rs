@@ -3,10 +3,12 @@ use core::ops::Deref;
 use alloc::sync::Arc;
 use ez_paging::ManagedL4PageTable;
 use spin::Once;
+use spinning_top::lock_api;
 use x86_64::{instructions::interrupts, registers::rflags::RFlags};
 
 use crate::{
-    EnterUserModeInput, enter_user_mode, hlt_loop::hlt_loop, memory::MEMORY, syscall_handler,
+    EnterUserModeInput, cpu_local_data::get_local, enter_user_mode, hlt_loop::hlt_loop,
+    memory::MEMORY, syscall_handler,
 };
 
 // pub struct Container {
@@ -24,11 +26,12 @@ pub struct StartData {
 #[derive(Debug, Clone, Copy)]
 pub enum ThreadState {
     ReadyToStart(StartData),
+    Ended,
 }
 
 pub struct Thread {
     // pub id: u32,
-    pub state: Arc<spin::Mutex<ThreadState>>,
+    pub state: Arc<spinning_top::Spinlock<ThreadState>>,
     pub address_space: ManagedL4PageTable,
     // pub below: Option<Arc<Task>>,
 }
@@ -51,7 +54,7 @@ pub fn init_root_task(task: Thread) {
 
 pub fn run_tasks() -> ! {
     if let Some(thread) = ROOT_TASK.get() {
-        if let Some(state) = spin::Mutex::try_lock_arc(&thread.state) {
+        if let Some(state) = lock_api::Mutex::try_lock_arc(&thread.state) {
             match *state.deref() {
                 ThreadState::ReadyToStart(start_data) => {
                     // Switch to the user address space
@@ -61,6 +64,7 @@ pub fn run_tasks() -> ! {
                             .address_space
                             .switch_to(MEMORY.get().unwrap().new_kernel_cr3_flags)
                     };
+                    *get_local().running_thread.try_lock().unwrap() = Some(state);
                     unsafe {
                         enter_user_mode(EnterUserModeInput {
                             rip: start_data.rip,
@@ -68,6 +72,10 @@ pub fn run_tasks() -> ! {
                             rflags: RFlags::empty(),
                         })
                     }
+                }
+                ThreadState::Ended => {
+                    // TODO: Check below
+                    no_tasks_to_run()
                 }
             }
         } else {

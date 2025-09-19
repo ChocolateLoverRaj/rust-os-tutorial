@@ -40,6 +40,7 @@ enum Color {
     BrightBlue,
     BrightCyan,
     BrightMagenta,
+    BrightGreen,
 }
 
 impl Inner {
@@ -54,6 +55,7 @@ impl Inner {
                 Color::BrightBlue => &string.bright_blue(),
                 Color::BrightCyan => &string.bright_cyan(),
                 Color::BrightMagenta => &string.bright_magenta(),
+                Color::BrightGreen => &string.bright_green(),
             };
             let mut writer = WriterWithCr::new(&mut self.serial_port);
             write!(writer, "{string}").unwrap();
@@ -135,6 +137,7 @@ impl Inner {
                     Color::BrightBlue => Rgb888::new(85, 85, 255),
                     Color::BrightCyan => Rgb888::new(85, 255, 255),
                     Color::BrightMagenta => Rgb888::new(255, 85, 255),
+                    Color::BrightGreen => Rgb888::GREEN,
                 },
             };
             write!(writer, "{string}").unwrap();
@@ -208,4 +211,18 @@ pub fn init(frame_buffer: &'static FramebufferResponse) -> Result<(), log::SetLo
 
 pub fn replace_serial_port(serial_port: UartWriter<MmioAddress>) {
     LOGGER.inner.lock().serial_port = Either::Right(serial_port);
+}
+
+/// Log a message which will be prefixed with a "U" indicating it's from user mode.
+/// Remember to clean / strip anything you don't want from the message, such as ANSI escape codes or new lines.
+pub fn log_for_user_mode(message: impl Display) {
+    let mut inner = LOGGER.inner.lock();
+    let cpu_id = try_get_local().map_or(0, |data| data.kernel_assigned_id);
+    let width = match cpus_count() {
+        1 => 1,
+        n => (n - 1).ilog(16) as usize + 1,
+    };
+    inner.write_with_color(Color::Gray, format_args!("[{cpu_id:0width$X}] "));
+    inner.write_with_color(Color::BrightGreen, "USER  ");
+    inner.write_with_color(Color::Default, format_args!("{message}\n"));
 }

@@ -1,6 +1,6 @@
 use core::{arch::naked_asm, mem::offset_of};
 
-use abi::Syscall;
+use abi::SyscallNumber;
 use num_enum::TryFromPrimitiveError;
 
 use crate::cpu_local_data::CpuLocalData;
@@ -36,7 +36,7 @@ unsafe extern "sysv64" fn syscall_handler(
         return_instruction_pointer,
         rflags,
     };
-    match Syscall::try_from(syscall_number) {
+    match SyscallNumber::try_from(syscall_number) {
         Ok(syscall_number) => {
             (get_handler(syscall_number))(data);
         }

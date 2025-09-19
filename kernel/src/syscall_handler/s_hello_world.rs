@@ -11,5 +11,5 @@ pub fn s_hello_world(data: SyscallData) -> ! {
             "User mode program did a syscall with the hello world syscall number, but the input 0x{input:X}, which is not the expected input: 0x{HELLO_WORLD_MAGIC:X}."
         );
     };
-    data.ret()
+    data.ret_ok()
 }

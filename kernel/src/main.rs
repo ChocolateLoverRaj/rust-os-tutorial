@@ -21,6 +21,7 @@ use rgb_pixel_info::*;
 use run_program_0::*;
 use scheduler::*;
 use translate_addr::*;
+use try_access_user_mem::*;
 use writer_with_cr::*;
 use x86_64_consts::*;
 
@@ -47,9 +48,11 @@ mod panic_handler;
 mod rgb_pixel_info;
 mod run_program_0;
 mod scheduler;
+mod smap;
 mod spcr;
 mod syscall_handler;
 mod translate_addr;
+mod try_access_user_mem;
 mod writer_with_cr;
 mod x86_64_consts;
 

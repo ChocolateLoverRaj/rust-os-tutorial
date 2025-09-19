@@ -1,9 +1,13 @@
-use core::{ptr::NonNull, sync::atomic::AtomicU64};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, AtomicUsize},
+};
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 use force_send_sync::SendSync;
 use limine::{mp::Cpu, response::MpResponse};
 use spin::{Lazy, Once};
+use spinning_top::{RawSpinlock, lock_api::ArcMutexGuard};
 use x2apic::lapic::LocalApic;
 use x86_64::{
     VirtAddr,
@@ -11,7 +15,10 @@ use x86_64::{
     structures::{idt::InterruptDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::{Gdt, limine_requests::MP_REQUEST, scheduler::Thread};
+use crate::{
+    Gdt, limine_requests::MP_REQUEST, scheduler::ThreadState,
+    try_access_user_mem::AccessUserMemError,
+};
 
 pub struct CpuLocalData {
     /// Similar to [Linux](https://elixir.bootlin.com/linux/v5.6.3/source/arch/x86/kernel/apic/apic.c#L2469), the we assign the BSP id `0`.
@@ -23,7 +30,9 @@ pub struct CpuLocalData {
     pub idt: Once<InterruptDescriptorTable>,
     pub local_apic: Once<spin::Mutex<SendSync<LocalApic>>>,
     pub syscall_handler_stack_pointer: AtomicU64,
-    pub running_thread: spin::Mutex<Option<Arc<Thread>>>,
+    pub running_thread: spin::Mutex<Option<ArcMutexGuard<RawSpinlock, ThreadState>>>,
+    pub try_access_user_mem_rsp: AtomicUsize,
+    pub try_access_user_mem_result: spin::Mutex<Option<Result<(), AccessUserMemError>>>,
 }
 
 fn mp_response() -> &'static MpResponse {
@@ -52,6 +61,8 @@ fn init_cpu(kernel_assigned_id: u32, local_apic_id: u32) {
             local_apic: Once::new(),
             syscall_handler_stack_pointer: Default::default(),
             running_thread: spin::Mutex::new(None),
+            try_access_user_mem_rsp: Default::default(),
+            try_access_user_mem_result: Default::default(),
         }),
     );
 }

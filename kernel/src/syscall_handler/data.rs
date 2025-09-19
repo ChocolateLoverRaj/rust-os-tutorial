@@ -33,11 +33,15 @@ impl SyscallData {
         }
     }
 
-    pub fn ret(self) -> ! {
+    pub fn ret_ok(self) -> ! {
         self.sysretq_result(Ok(()))
     }
 
     pub fn ret_no_exist(self) -> ! {
         self.sysretq_result(Err(SyscallError::SyscallNoExist))
+    }
+
+    pub fn ret_invalid_input(self) -> ! {
+        self.sysretq_result(Err(SyscallError::InvalidInput))
     }
 }
