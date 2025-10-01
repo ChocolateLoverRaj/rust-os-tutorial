@@ -242,7 +242,8 @@ let mut qemu = Command::new("qemu-system-x86_64");
 qemu.arg("-cdrom");
 qemu.arg(env!("ISO"));
 // For UEFI on qemu, the path to OVMF.fd is needed
-qemu.arg("-bios").arg(ovmf);
+qemu.arg("-drive")
+        .arg(format!("if=pflash,format=raw,file={ovmf},readonly=on"));
 
 // Pass any args to qemu
 env::args().skip(1).for_each(|arg| {
