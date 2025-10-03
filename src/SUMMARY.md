@@ -21,4 +21,6 @@
 - [User Mode](./20/README.md)
 - [System Calls](./21/README.md)
 - [Scheduler Concepts](./22/README.md)
-- [Our Scheduler](./23/README.md)
+- [Async Designs](./23/README.md)
+- [Our Scheduler](./trickle_down_scheduler/README.md)
+- [Scheduler Interfaces](./scheduler_interfaces/README.md)
