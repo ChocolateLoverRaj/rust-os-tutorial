@@ -1,37 +1,33 @@
-# What is a scheduler?
-Currently, we have 1 program, if we can even call it that. We will need our OS to be able to run multiple programs at the same time. We should be able to start, pause, resume, and terminate programs. There are two important concepts relating to this (that most Rust developers probably already know).
+The previous part told us what registers and instructions are available to us to implement syscalls.  But we don't need to use all of them.
 
-A thread is the smallest unit of execution. Threads can run in parallel to other threads. Each thread has its own stack and registers.
+In this OS, we will have every `syscall` instruction be like a request, which is followed by a response on `sysretq`. We need a way to differentiate each type of syscall. We will use a *syscall number* for this. Each syscall needs an input. The output can be specific to the syscall. 
 
-A process is a group of threads that share the same address space, and therefore the same permissions. Any thread within a process can access all data accessible to other threads within the process. Processes cannot access the memory of other processes. This way, processes are isolated. Usually, a process is the same as "a program". However, some programs can run multiple processes, such as a video-related program having a UI as well as ffmpeg commands running in the background.
+## Input
+The input can basically be a pointer to memory, so that the input can be the same size (`usize`) regardless of the syscall number. We need to know the syscall number so that we can correctly interpret the input pointer. So we have this data structure:
+```rs
+struct SyscallInput {
+    syscall_number: usize,
+    pointer: usize,
+} 
+```
+We need to pass this input when using the `syscall` instruction. The way that uses a minimal amount of registers would be to pass in a `*const SyscallInput` through a single register. Another way would be to use two registers, one for `syscall_number` and one for `pointer`.
 
-The *scheduler* is in charge of deciding which threads to run, which CPUs to run them on, and when to pause running a thread and run a different one. One of the things that a scheduler has to do is decide how to run threads when there are more threads than there are CPUs. More advanced schedulers will also consider CPU cache, and avoid sending threads across different CPUs often.
+When using the `syscall` and `sysretq` instructions, we can use up to 7 registers. But we don't have to use all 7. Depending on how many we use, both the user and kernel code can be optimized to only store and preserve certain registers. Certain syscalls might need more bytes to input data. If we pass data through registers, we might have some syscalls which use 1 register, and some that use 6 (in addition to 1 register for the syscall number). Right now our OS only runs on x86_64, which has up to 7 input and output registers for syscalls. Note that we could technically pass more `u64`s on the stack. 
 
-# Thread State
-When the scheduler switches the thread that it is running, it can't just change the instruction pointer. It has to save all registers from the current thread and then load the saved registers when switching to a different thread. The state can be obtained at the "entry points" of the scheduler - the syscall handler and interrupt handlers. It can then be restored before a `sysretq` or `iret` instruction.
+If we optimize around the magic number `7`, it might cause issues later on if other architectures have less than 7 registers. We can assume that a register holds a `usize`, since on pretty much all architectures, the size of a register is `usize`. And currently the only value of `usize` are `u32` and `u64`. We are not trying to make this OS run on ancient 16-bit computers. So if we don't want to optimize for a specific architecture, then we will have x amount of `u32`s available to pass through registers.
 
-# Yielding
-When a thread no longer has anything it needs to immediately do, it *yields*, letting the scheduler know that is is done for now, and the scheduler can run other threads while the thread that yielded is waiting. One example is if a thread calls `sleep` (waits for a certain amount of time to pass before doing the next step). In this case, the thread yields so that while it is waiting on `sleep`, other threads can run. 
+Even though only 7 registers are available, we could always extend this number at the cost of performance by sending additional variables on the stack. So if there is an architecture in the future that only has 6 registers available, we can still use 1 `usize` on the stack. We can always use less registers than there are available.
 
-Another example is if a thread is waiting on keyboard input, which is especially common for terminal apps. The thread will yield, and it will not be executed until keyboard input is ready for the thread to process.
+At minimum, we need the actual input size to be `[usize; 2]`. One for the syscall number, and one for a pointer, which can be used in any way. It could be used as `Option<NonZero<usize>>`, as `usize`, or `u32`.
 
-If all threads are waiting and no thread needs to be executed, the scheduler can tell the CPU to stop and enter a low-power state, such as with the `hlt` instruction (which we already used).
+If we do always allocate additional registers as additional input, we *could* have increased performance if those additional registers are the difference between a process having to access user pointers or not access user pointers. But unless we can get some noticeable benefits from this, this just adds complexity to our assembly code.
 
-# Collaborative multitasking
-Cooperative multitasking is a technique used to schedule threads. Threads have to *collaborate* with each other, and **must** yield in order for other threads to run. Threads need to be mindful that there are other threads that want to be scheduled, and should not hog the CPU. An advantage of cooperative multitasking is that it's easy to implement the scheduler. The scheduler does not have to forcefully take control of the CPU from the thread. It can just wait for the thread to yield. A huge disadvantage is that if a thread does not yield fast enough. The OS will be very unresponsive. Imagine alt-tabbing, but it takes 0.5s every time you alt-tab because the running thread took 0.5s to yield. If the thread never yields, which could be due to a malicious program or a bug, the OS is basically frozen. In modern times, it makes no sense to rely on collaborative multitasking, and the CPUs that our OS is targeting are not from the cooperative-multitasking time period.
+So I decided that our syscall-ing convention will use 2 registers (on all architectures). The first register will be the syscall number. We need to keep the syscall number within the size of a `u32` so that we can easily support 32-bit architectures as well. The second register will be a `usize`, which, as mentioned before, can be used as a `u32` or a `usize` (pointer).
 
-# Preempting
-Preemption is when the scheduler forcefully stops the running thread from running. With preemption, a thread can be stopped even if it doesn't yield. Preemption solves the problems of collaborative multitasking. If a program seems to be frozen, you can force close it. Even if a program is using the CPU, alt-tabbing can trigger scheduler to preempt the process and switch to a different process, making the OS feel much more responsive, no matter how much the current program hogs the CPU. Schedulers utilize interrupts to preempt threads. When the CPU receives an interrupt, control of the CPU is transferred from the running thread to the scheduler. The scheduler can then decide to not resume execution of the interrupted thread, and give control of the CPU to a different thread instead.
+## Output
+Some syscalls need an output. We need to send the output somehow. One way is to have the input pass in a pointer, and the output can just modify the memory. However, if the pointer itself is invalid (out of bounds or not mapped), then there may not be any way for the kernel to express the error.
 
-# Round robin scheduler
-A round-robin scheduler has a constant periodic timer interrupt that it uses to preempt threads. A thread is allowed to run up to a specified maximum amount of time. If the thread does not yield within that time, it gets preempted, and gets sent to the end of the line. Then the next thread in line is executed. See the [Wikipedia article](https://en.wikipedia.org/wiki/Round-robin_scheduling) for a more detailed explanation. Most hobby operating systems implement a round robin scheduler. An advantage of a round-robin scheduler is that no thread can hog the CPU, and CPU-time is shared pretty fairly between threads. The OS is generally responsive, especially if there are not a large number of threads ready to be run. Round robin schedulers don't have to give every thread an equal amount of CPU time. They can give some higher priority threads more CPU time and lower priority threads less CPU time.
+We will figure this out later.
 
-# Learn More
-- [Introduction to RTOS Part 3 - Task Scheduling | Digi-Key Electronics](https://www.youtube.com/watch?v=95yUbClyf3E&list=PLEBQazB0HUyQ4hAPU1cJED6t3DU0h34bz&index=3)
-- <https://en.wikipedia.org/wiki/Yield_(multithreading)>
-- <https://en.wikipedia.org/wiki/Cooperative_multitasking>
-- <https://en.wikipedia.org/wiki/Preemption_(computing)>
-- <https://en.wikipedia.org/wiki/Interrupt>
-- <https://wiki.osdev.org/Interrupts>
-- <https://en.wikipedia.org/wiki/Round-robin_scheduling>
-- <https://en.wikipedia.org/wiki/Scheduling_(computing)>
+## Invalid syscall number
+What happens if an invalid syscall is called? Do we return an error somehow?

@@ -1,30 +1,37 @@
-# Async Designs
-We are designing and writing an operating system. It's not just a kernel anymore. We will be writing the kernel and applications, and we will need to design a way for the kernel and application to communicate with each other.
+# What is a scheduler?
+Currently, we have 1 program, if we can even call it that. We will need our OS to be able to run multiple programs at the same time. We should be able to start, pause, resume, and terminate programs. There are two important concepts relating to this (that most Rust developers probably already know).
 
-A thread isn't always constantly executing code. Often, code is waiting for something to happen until it executes code. That thing that it is waiting for is either an interrupt, or some message from the kernel or another thread. In the previous section, we already talked about *yielding*. 
+A thread is the smallest unit of execution. Threads can run in parallel to other threads. Each thread has its own stack and registers.
 
-## `sched_yield`
-We could create a syscall similar to Linux's `sched_yield` that just tells the kernel, "you can execute other threads before coming back to me". However, this gives no indication to the kernel about what the thread is waiting for or *when* the kernel should execute the thread again. When there is only one thread, the kernel will instantly go back to executing this process, which is very inefficient because it will result in very high CPU usage when waiting for anything. 
+A process is a group of threads that share the same address space, and therefore the same permissions. Any thread within a process can access all data accessible to other threads within the process. Processes cannot access the memory of other processes. This way, processes are isolated. Usually, a process is the same as "a program". However, some programs can run multiple processes, such as a video-related program having a UI as well as ffmpeg commands running in the background.
 
-## `sleep`-based waiting
-We could create a syscall that just blocks execution of the calling thread for a specified amount of time, and the kernel can execute other threads while a thread is sleeping. This way, when we loop until something happens in a thread, we can just wait a certain amount of time until checking again. This will reduce the amount of CPU usage when waiting for things, but will increase the maximum (and average) latency between an event happening and the thread handling it.
+The *scheduler* is in charge of deciding which threads to run, which CPUs to run them on, and when to pause running a thread and run a different one. One of the things that a scheduler has to do is decide how to run threads when there are more threads than there are CPUs. More advanced schedulers will also consider CPU cache, and avoid sending threads across different CPUs often.
 
-## Event-based waiting
-All async events could be similar to a file descriptor in Linux. An event may be "ready" or "not ready". A thread can do a syscall to tell the kernel, "wake me up until one of these events happens". As a thread, this lets us be woken up exactly when we need to be woken up. Theoretically, we can achieve 0% CPU usage while waiting for events, and be able to wake up the thread as soon as we receive an interrupt (such as from a keyboard or a timer) or a message from another thread.
+# Thread State
+When the scheduler switches the thread that it is running, it can't just change the instruction pointer. It has to save all registers from the current thread and then load the saved registers when switching to a different thread. The state can be obtained at the "entry points" of the scheduler - the syscall handler and interrupt handlers. It can then be restored before a `sysretq` or `iret` instruction.
 
-The kernel would have to keep track of events and assign an id to each event. When an interrupt happens, the kernel needs to mark the associated events as "ready". If any threads were waiting for an event that just happened, the kernel can then execute that thread again.
+# Yielding
+When a thread no longer has anything it needs to immediately do, it *yields*, letting the scheduler know that is is done for now, and the scheduler can run other threads while the thread that yielded is waiting. One example is if a thread calls `sleep` (waits for a certain amount of time to pass before doing the next step). In this case, the thread yields so that while it is waiting on `sleep`, other threads can run. 
 
-A potential race condition is if a thread checks if an event is ready and then calls the wait for event syscall, but the event happens in between checking for the event and calling the syscall. We can fix this in the kernel by making sure that a wait for event syscall instantly returns if one of the events is already "ready", and always waking up the thread whenever one of the events happens. The kernel can keep track of "pending" events, and mark those events as processed after a thread gets woken up from that event.
+Another example is if a thread is waiting on keyboard input, which is especially common for terminal apps. The thread will yield, and it will not be executed until keyboard input is ready for the thread to process.
 
-While this method of doing async does achieve minimum CPU usage and latency, keeping track of pending, ready, and not ready events in the kernel can be complicated. The kernel also has to keep track of which threads are waiting on what event. And because the "wait for event" syscall can modify the list of pending events, it can cause problems when multiple threads want to wait for the same event.
+If all threads are waiting and no thread needs to be executed, the scheduler can tell the CPU to stop and enter a low-power state, such as with the `hlt` instruction (which we already used).
 
-## `futex`-based waiting
-`futex` is actually a Linux-specific term. It is meant to be used for "fast user-space locking". It works by sharing memory between two threads. A thread can tell the kernel, "wake me up when the `u32` value at this memory address changes to not be 0x123". The "fast" part of a futex is that in many cases, a syscall is not needed. Since the user-mode thread can directly access the memory, it can check its value without any syscalls.
+# Collaborative multitasking
+Cooperative multitasking is a technique used to schedule threads. Threads have to *collaborate* with each other, and **must** yield in order for other threads to run. Threads need to be mindful that there are other threads that want to be scheduled, and should not hog the CPU. An advantage of cooperative multitasking is that it's easy to implement the scheduler. The scheduler does not have to forcefully take control of the CPU from the thread. It can just wait for the thread to yield. A huge disadvantage is that if a thread does not yield fast enough. The OS will be very unresponsive. Imagine alt-tabbing, but it takes 0.5s every time you alt-tab because the running thread took 0.5s to yield. If the thread never yields, which could be due to a malicious program or a bug, the OS is basically frozen. In modern times, it makes no sense to rely on collaborative multitasking, and the CPUs that our OS is targeting are not from the cooperative-multitasking time period.
 
-Example: one thread is sending messages to another thread. It uses a shared `bool` (`pending_message`) to keep track of if a new message is available. The consuming thread will do an atomic swap from `true` to `false`. If the value was `true`, then that means there are message to process, and the consuming thread will process the messages, and then check again if there are new pending messages. If the value is `false`, the consuming thread will use the `futex` syscall to say to the kernel, "wake me up when the value at this address is not `false`". When the producing thread wants to change the value from `false` to `true`, it will also tell the kernel through a syscall to set that memory to `true`, and also check if the kernel should wake up the consuming thread.
+# Preempting
+Preemption is when the scheduler forcefully stops the running thread from running. With preemption, a thread can be stopped even if it doesn't yield. Preemption solves the problems of collaborative multitasking. If a program seems to be frozen, you can force close it. Even if a program is using the CPU, alt-tabbing can trigger scheduler to preempt the process and switch to a different process, making the OS feel much more responsive, no matter how much the current program hogs the CPU. Schedulers utilize interrupts to preempt threads. When the CPU receives an interrupt, control of the CPU is transferred from the running thread to the scheduler. The scheduler can then decide to not resume execution of the interrupted thread, and give control of the CPU to a different thread instead.
 
-We could use a similar method of checking if data is available and waiting for it to be available in our OS. Every source of data can be through memory, and we can wait until more data is available through a `futex`-like syscall.
+# Round robin scheduler
+A round-robin scheduler has a constant periodic timer interrupt that it uses to preempt threads. A thread is allowed to run up to a specified maximum amount of time. If the thread does not yield within that time, it gets preempted, and gets sent to the end of the line. Then the next thread in line is executed. See the [Wikipedia article](https://en.wikipedia.org/wiki/Round-robin_scheduling) for a more detailed explanation. Most hobby operating systems implement a round robin scheduler. An advantage of a round-robin scheduler is that no thread can hog the CPU, and CPU-time is shared pretty fairly between threads. The OS is generally responsive, especially if there are not a large number of threads ready to be run. Round robin schedulers don't have to give every thread an equal amount of CPU time. They can give some higher priority threads more CPU time and lower priority threads less CPU time.
 
-In Linux 6.17, you can only wait for 1 futex at a time. There are plans to have add support for waiting for any of the memory regions in a list of memory regions to change. In our OS, we can add support for waiting for multiple locations.
-
-A futex removes the confusion behind "pending events" because user-space manages how it will keep track of which events are pending. Different multi-thread data structures will have their own ways of synchronizing and signaling to other threads, all done through shared memory and futexes.
+# Learn More
+- [Introduction to RTOS Part 3 - Task Scheduling | Digi-Key Electronics](https://www.youtube.com/watch?v=95yUbClyf3E&list=PLEBQazB0HUyQ4hAPU1cJED6t3DU0h34bz&index=3)
+- <https://en.wikipedia.org/wiki/Yield_(multithreading)>
+- <https://en.wikipedia.org/wiki/Cooperative_multitasking>
+- <https://en.wikipedia.org/wiki/Preemption_(computing)>
+- <https://en.wikipedia.org/wiki/Interrupt>
+- <https://wiki.osdev.org/Interrupts>
+- <https://en.wikipedia.org/wiki/Round-robin_scheduling>
+- <https://en.wikipedia.org/wiki/Scheduling_(computing)>
