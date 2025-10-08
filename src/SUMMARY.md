@@ -20,10 +20,13 @@
 - [Sending IPIs](./19/README.md)
 - [User Mode](./20/README.md)
 - [System Calls](./21/README.md)
+- [Handles and permissions](./permissions/README.md)
 - [Our Syscalls Design](./22/README.md)
 - [Scheduler Concepts](./23/README.md)
 - [Async Designs](./24/README.md)
-- [Async Data Structures](./25/README.md)
-- [Our Round Robin Scheduler Implementation](./round_robin_implementation/README.md)
-- [Our Trickle Down Scheduler Design](./trickle_down_scheduler/README.md)
-- [Our Trickle Down Scheduler Implementation](./trickle_down_scheduler_impl/README.md)
+- [Our async data structures](./25/README.md)
+<!-- - [Our Round Robin Scheduler Implementation](./round_robin_implementation/README.md) -->
+- [Our scheduler design](./trickle_down_scheduler/README.md)
+- [Exceptions in user mode](./user_mode_exceptions/README.md)
+- [Our scheduler implementation](./trickle_down_scheduler_impl/README.md)
+

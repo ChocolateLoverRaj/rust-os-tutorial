@@ -1,4 +1,4 @@
-# Async data structures
+# Our async data structures
 In our OS, we will be using the memory condition (similar to `futex`) based method of waiting. An example of a wait syscall:
 ```rs
 struct Condition {

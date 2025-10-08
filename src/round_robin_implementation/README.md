@@ -36,5 +36,3 @@ If the thread is ready, you set your CPU state to be running that thread, and th
 A thread will call this syscall whenever it changes an address that is being watched by another thread.
 
 Whenever any watched address gets changed, you increment `UPDATE_COUNT`. You should also send an IPI to all other CPUs, since other CPUs might be sleeping and the scheduler might benefit from waking up other CPUs. This could be optimized by keeping track of which CPUs are sleeping and only sending an IPI to those CPUs. 
-
-## 
