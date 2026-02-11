@@ -10,3 +10,7 @@ test = false
 bench = false
 
 [dependencies]
+log = "0.4.29"
+portable-atomic = "1.13.1"
+riscv = { version = "0.16.0", features = ["s-mode"] }
+sbi-spec = "0.0.8"
