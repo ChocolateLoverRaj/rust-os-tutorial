@@ -10,6 +10,8 @@ test = false
 bench = false
 
 [dependencies]
+embedded-alloc = "0.7.0"
+fdt = "0.1.5"
 log = "0.4.29"
 portable-atomic = { version = "1.13.1", features = ["critical-section"] }
 riscv = { version = "0.16.0", features = ["critical-section-single-hart", "s-mode"] }

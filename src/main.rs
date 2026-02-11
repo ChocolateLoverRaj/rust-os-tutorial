@@ -1,5 +1,7 @@
 #![no_std]
 #![no_main]
+extern crate alloc;
+
 mod logger;
 mod sbi;
 
@@ -7,11 +9,15 @@ use core::{
     arch::{asm, naked_asm},
     panic::PanicInfo,
     ptr::write_bytes,
+    slice,
 };
 
-use log::error;
+use alloc::boxed::Box;
+use embedded_alloc::LlffHeap as Heap;
+use fdt::Fdt;
+use log::{error, info};
 use riscv::{
-    self as _, read_csr,
+    self as _,
     register::{
         scause, sepc, stval,
         stvec::{self, Stvec, TrapMode},
@@ -19,6 +25,9 @@ use riscv::{
 };
 
 use crate::sbi::shutdown;
+
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
 
 unsafe extern "C" {
     static __bss: usize;
@@ -38,7 +47,7 @@ extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) {
         logger::init();
     }
 
-    log::info!("Hello from Rust!. HART ID: {hart_id}. Device Tree pointer: {ftd_ptr:#X}.");
+    info!("Hello from Rust!. HART ID: {hart_id}. Device Tree pointer: {ftd_ptr:#X}.");
 
     unsafe {
         stvec::write(Stvec::new(
@@ -46,7 +55,55 @@ extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) {
             TrapMode::Direct,
         ))
     };
-    unsafe { asm!("unimp") };
+
+    // Initialize the allocator BEFORE you use it
+    unsafe {
+        embedded_alloc::init!(HEAP, 64 * 1024);
+    }
+
+    let fdt_len =
+        u32::from_be(unsafe { ((ftd_ptr + size_of::<u32>()) as *const u32).read() }) as usize;
+    let fdt_bytes = unsafe { slice::from_raw_parts(ftd_ptr as *const u8, fdt_len) };
+    let fdt = Fdt::new(fdt_bytes).unwrap();
+    let memory = fdt.memory();
+    for region in memory.regions() {
+        info!("memory region: {region:#X?}");
+    }
+    for memory_reservation in fdt.memory_reservations() {
+        info!("memory reservation: {memory_reservation:#X?}");
+    }
+    if fdt.memory_reservations().count() == 0 {
+        info!("NO MEMORY RESERVATIONS!");
+    }
+
+    for node in fdt.all_nodes() {
+        info!("node: {}", node.name);
+        if let Some(device_type) = node.property("device_type") {
+            info!("device type: {:?}", device_type.as_str());
+        }
+        let is_memory = node
+            .property("device_type")
+            .is_some_and(|device_type| device_type.as_str() == Some("memory"));
+        if !is_memory {
+            for memory_region in node
+                .reg()
+                .into_iter()
+                .flatten()
+                .filter(|region| region.size.is_some_and(|size| size > 0))
+            {
+                info!("MMIO region: {memory_region:#X?}");
+            }
+        }
+    }
+    info!("now finding memory reserved by OpenSBI");
+    for node in fdt.find_node("/reserved-memory").iter() {
+        for child in node.children() {
+            info!("child name: {:?}", child.name);
+            for memory_region in child.reg().into_iter().flatten() {
+                info!("memory region: {memory_region:#X?}");
+            }
+        }
+    }
 
     shutdown()
 }
