@@ -11,6 +11,7 @@ bench = false
 
 [dependencies]
 log = "0.4.29"
-portable-atomic = "1.13.1"
-riscv = { version = "0.16.0", features = ["s-mode"] }
-sbi-spec = "0.0.8"
+portable-atomic = { version = "1.13.1", features = ["critical-section"] }
+riscv = { version = "0.16.0", features = ["critical-section-single-hart", "s-mode"] }
+sbi-spec = { version = "0.0.8", features = ["legacy"] }
+spin = { version = "0.10.0", features = ["portable-atomic"] }
