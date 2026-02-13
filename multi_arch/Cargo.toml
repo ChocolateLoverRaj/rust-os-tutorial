@@ -1,0 +1,19 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+path = "./src/main.rs"
+name = "kernel"
+test = false
+bench = false
+
+[dependencies]
+portable-atomic = { version = "1.13.1", features = ["critical-section"], optional = true }
+riscv = { version = "0.16.0", features = ["s-mode", "critical-section-single-hart"], optional = true }
+sbi = "0.3.0"
+semihosting = { version = "0.1.24", features = ["panic-handler", "portable-atomic", "stdio"], optional = true }
+
+[features]
+semihosting = ["dep:semihosting", "dep:riscv", "dep:portable-atomic"]

@@ -1,5 +1,3 @@
-ENTRY(boot)
-
 SECTIONS {
     . = 0x80200000;
 
@@ -8,21 +6,21 @@ SECTIONS {
         *(.text .text.*);
     }
 
-    .rodata : ALIGN(4) {
+    .rodata :{
         *(.rodata .rodata.*);
     }
 
-    .data : ALIGN(4) {
+    .data :{
         *(.data .data.*);
     }
 
-    .bss : ALIGN(4) {
+    .bss :{
         __bss = .;
         *(.bss .bss.* .sbss .sbss.*);
         __bss_end = .;
     }
 
-    . = ALIGN(4);
+    . = ALIGN(16);
     . += 128 * 1024; /* 128KB */
     __stack_top = .;
 }
