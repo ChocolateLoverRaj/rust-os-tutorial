@@ -2,14 +2,10 @@
 #![no_main]
 
 use core::arch::naked_asm;
-#[cfg(not(feature = "semihosting"))]
 use core::panic::PanicInfo;
 
-#[cfg(feature = "semihosting")]
-use riscv as _;
-use sbi::legacy::shutdown;
-#[cfg(feature = "semihosting")]
-use semihosting as _;
+use defmt::global_logger;
+use sbi::legacy::{console_putchar, shutdown};
 
 // These variables are defined in the linker script
 unsafe extern "C" {
@@ -35,9 +31,9 @@ extern "C" fn _start() {
     )
 }
 
-#[cfg(not(feature = "semihosting"))]
 #[panic_handler]
 fn panic_handler(_panic_info: &PanicInfo) -> ! {
+    sbi::legacy::console_putchar(b'p');
     loop {}
 }
 
@@ -54,15 +50,38 @@ extern "C" fn kernel_main(_hart_id: usize, _ftd_ptr: usize) -> ! {
     let bss_len = bss_end - bss_start;
     unsafe { bss.write_bytes(0, bss_len) };
 
-    #[cfg(not(feature = "semihosting"))]
+    console_putchar(0);
+
     for byte in "Hello from sbi_console_put_char\n"
         .as_bytes()
         .iter()
         .copied()
     {
-        sbi::legacy::console_putchar(byte);
+        // sbi::legacy::console_putchar(byte);
     }
-    #[cfg(feature = "semihosting")]
-    semihosting::println!("Hello from semihosting");
+    defmt::info!("demft info!");
+    defmt::info!("demft info!");
     shutdown()
+}
+
+#[global_logger]
+struct L;
+unsafe impl defmt::Logger for L {
+    fn acquire() {
+        // todo!()
+    }
+
+    unsafe fn flush() {
+        // todo!()
+    }
+
+    unsafe fn release() {
+        // todo!()
+    }
+
+    unsafe fn write(bytes: &[u8]) {
+        for byte in bytes {
+            sbi::legacy::console_putchar(*byte);
+        }
+    }
 }
