@@ -5,14 +5,8 @@ extern crate alloc;
 mod logger;
 mod sbi;
 
-use core::{
-    arch::{asm, naked_asm},
-    panic::PanicInfo,
-    ptr::write_bytes,
-    slice,
-};
+use core::{arch::naked_asm, panic::PanicInfo, ptr::write_bytes, slice};
 
-use alloc::boxed::Box;
 use embedded_alloc::LlffHeap as Heap;
 use fdt::Fdt;
 use log::{error, info};
@@ -240,7 +234,7 @@ extern "C" fn kernel_entry() {
     );
 }
 
-extern "C" fn handle_trap(trap_frame: &TrapFrame) {
+extern "C" fn handle_trap(_trap_frame: &TrapFrame) {
     let scause = scause::read();
     let stval = stval::read();
     let user_pc = sepc::read();

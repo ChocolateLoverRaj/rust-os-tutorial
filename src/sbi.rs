@@ -13,59 +13,45 @@ pub struct SbiRet {
     pub a1: usize,
 }
 
-pub unsafe fn legacy_sbi_call(
-    mut arg0: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-    arg4: usize,
-    arg5: usize,
-    eid: usize,
-) -> usize {
+pub unsafe fn legacy_sbi_call(mut args: [usize; 6], eid: usize) -> usize {
     unsafe {
         asm!(
             "ecall",
-            inlateout("a0") arg0,
-            in("a1") arg1,
-            in("a2") arg2,
-            in("a3") arg3,
-            in("a4") arg4,
-            in("a5") arg5,
+            inlateout("a0") args[0],
+            inlateout("a1") args[1],
+            inlateout("a2") args[2],
+            inlateout("a3") args[3],
+            inlateout("a4") args[4],
+            inlateout("a5") args[5],
             in("a7") eid,
         );
     };
-    arg0
+    args[0]
 }
 
-pub unsafe fn sbi_call(
-    mut arg0: usize,
-    mut arg1: usize,
-    arg2: usize,
-    arg3: usize,
-    arg4: usize,
-    arg5: usize,
-    fid: usize,
-    eid: usize,
-) -> SbiRet {
+pub unsafe fn sbi_call(mut args: [usize; 6], fid: usize, eid: usize) -> SbiRet {
     unsafe {
         asm!(
             "ecall",
-            inlateout("a0") arg0,
-            inlateout("a1") arg1,
-            in("a2") arg2,
-            in("a3") arg3,
-            in("a4") arg4,
-            in("a5") arg5,
+            inlateout("a0") args[0],
+            inlateout("a1") args[1],
+            in("a2") args[2],
+            in("a3") args[3],
+            in("a4") args[4],
+            in("a5") args[5],
             in("a6") fid,
             in("a7") eid,
         );
     }
-    SbiRet { a0: arg0, a1: arg1 }
+    SbiRet {
+        a0: args[0],
+        a1: args[1],
+    }
 }
 
 pub fn probe_extension(extension_id: usize) -> Result<bool, usize> {
     let SbiRet { a0, a1: _ } =
-        unsafe { sbi_call(extension_id, 0, 0, 0, 0, 0, PROBE_EXTENSION, EID_BASE) };
+        unsafe { sbi_call([extension_id, 0, 0, 0, 0, 0], PROBE_EXTENSION, EID_BASE) };
     match a0 {
         0 => Ok(false),
         1 => Ok(true),
@@ -106,7 +92,7 @@ impl Write for Console {
             ConsoleMethod::LegacyConsole => {
                 for &char in s.as_bytes() {
                     let result = unsafe {
-                        legacy_sbi_call(char as usize, 0, 0, 0, 0, 0, LEGACY_CONSOLE_PUTCHAR)
+                        legacy_sbi_call([char as usize, 0, 0, 0, 0, 0], LEGACY_CONSOLE_PUTCHAR)
                     };
                     if result != 0 {
                         Err(core::fmt::Error)?;
@@ -118,12 +104,7 @@ impl Write for Console {
                 while bytes_written < s.len() {
                     let SbiRet { a0, a1 } = unsafe {
                         sbi_call(
-                            s.len(),
-                            s.as_ptr().addr(),
-                            0,
-                            0,
-                            0,
-                            0,
+                            [s.len(), s.as_ptr().addr(), 0, 0, 0, 0],
                             CONSOLE_WRITE,
                             EID_DBCN,
                         )
@@ -141,6 +122,6 @@ impl Write for Console {
 }
 
 pub fn shutdown() -> ! {
-    unsafe { legacy_sbi_call(0, 0, 0, 0, 0, 0, LEGACY_SHUTDOWN) };
+    unsafe { legacy_sbi_call([0, 0, 0, 0, 0, 0], LEGACY_SHUTDOWN) };
     unreachable!()
 }
