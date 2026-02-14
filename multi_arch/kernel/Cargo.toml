@@ -10,5 +10,11 @@ test = false
 bench = false
 
 [dependencies]
-defmt = "1.0.1"
+defmt = { version = "1.0.1", optional = true }
+defmt-or-log = "0.2.3"
+log = { version = "0.4.29", optional = true }
 sbi = "0.3.0"
+
+[features]
+defmt = ["dep:defmt", "defmt-or-log/defmt"]
+log = ["dep:log", "defmt-or-log/log"]

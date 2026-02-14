@@ -8,6 +8,7 @@
       "initialization_options": {
         "cargo": {
           "target": "riscv32imc-unknown-none-elf",
+          "features": ["log"],
         },
       },
     },

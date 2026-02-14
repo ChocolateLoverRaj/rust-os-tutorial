@@ -19,7 +19,13 @@ use tokio_util::codec::{AnyDelimiterCodec, FramedRead};
 async fn main() {
     let kernel_dir = current_dir().unwrap().parent().unwrap().join("kernel");
     let output = process::Command::new("cargo")
-        .args(["build", "--target", "riscv32imc-unknown-none-elf"])
+        .args([
+            "build",
+            "--target",
+            "riscv32imc-unknown-none-elf",
+            "--features",
+            "defmt",
+        ])
         .current_dir(&kernel_dir)
         .output()
         .await

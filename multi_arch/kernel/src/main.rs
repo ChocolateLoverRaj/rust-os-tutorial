@@ -1,10 +1,11 @@
 #![no_std]
 #![no_main]
 
+mod logger;
+
 use core::arch::naked_asm;
 use core::panic::PanicInfo;
 
-use defmt::global_logger;
 use sbi::legacy::{console_putchar, shutdown};
 
 // These variables are defined in the linker script
@@ -37,7 +38,7 @@ fn panic_handler(_panic_info: &PanicInfo) -> ! {
     loop {}
 }
 
-extern "C" fn kernel_main(_hart_id: usize, _ftd_ptr: usize) -> ! {
+extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) -> ! {
     let bss_start = {
         // Safety: it's const
         unsafe { __bss_start }
@@ -48,40 +49,18 @@ extern "C" fn kernel_main(_hart_id: usize, _ftd_ptr: usize) -> ! {
     };
     let bss = bss_start as *mut u8;
     let bss_len = bss_end - bss_start;
+    // Safety: we need to zero the BSS before using any static mut functions
     unsafe { bss.write_bytes(0, bss_len) };
 
-    console_putchar(0);
-
-    for byte in "Hello from sbi_console_put_char\n"
-        .as_bytes()
-        .iter()
-        .copied()
-    {
-        // sbi::legacy::console_putchar(byte);
+    // Safety: we're only calling this once
+    unsafe {
+        logger::init();
     }
-    defmt::info!("demft info!");
-    defmt::info!("demft info!");
+
+    defmt_or_log::info!(
+        "Hello from Rust kernel. HART ID: {}. FTD pointer: {:#X}",
+        hart_id,
+        ftd_ptr
+    );
     shutdown()
-}
-
-#[global_logger]
-struct L;
-unsafe impl defmt::Logger for L {
-    fn acquire() {
-        // todo!()
-    }
-
-    unsafe fn flush() {
-        // todo!()
-    }
-
-    unsafe fn release() {
-        // todo!()
-    }
-
-    unsafe fn write(bytes: &[u8]) {
-        for byte in bytes {
-            sbi::legacy::console_putchar(*byte);
-        }
-    }
 }
