@@ -2,7 +2,7 @@ use std::{env::current_dir, path::Path, process::Stdio};
 
 use bytes::{BufMut, BytesMut, buf};
 use defmt_decoder::{
-    Frame, Locations, Table,
+    DecodeError, Frame, Locations, Table,
     log::{
         format::{Formatter, FormatterConfig, HostFormatter},
         is_defmt_frame,
@@ -51,34 +51,99 @@ async fn main() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let child_stdout = c.stdout.take().unwrap();
-    let mut frames = FramedRead::new(
-        child_stdout,
-        AnyDelimiterCodec::new_with_max_length(vec![0], vec![], 1024 * 1024 * 1024),
-    );
-    let mut first_frame = frames.next().await.unwrap().unwrap();
-    stdout().write_all_buf(&mut first_frame).await.unwrap();
-    defmt_decoder::log::init_logger(
-        Formatter::new(FormatterConfig::default()),
-        HostFormatter::new(FormatterConfig::default()),
-        defmt_decoder::log::DefmtLoggerType::Stdout,
-        is_defmt_frame,
-    );
-    while let Some(frame) = frames.next().await {
-        let frame = frame.unwrap();
-        let mut frame = BytesMut::from(frame);
-        frame.reserve(frame.len() + 1);
-        frame.put_u8(0);
-        match table.decode(&frame) {
-            Ok((frame, _)) => forward_to_logger(
-                &frame,
-                location_info(&locs, &frame, &current_dir().unwrap()),
-            ),
-            Err(e) => {
-                println!("error");
-            }
+    let mut child_stdout = c.stdout.take().unwrap();
+    let mut buffer = [Default::default(); 1024 * 1024];
+    let leftover = loop {
+        let bytes_read = child_stdout.read(&mut buffer).await.unwrap();
+        if bytes_read == 0 {
+            break None;
+        }
+        let bytes = &buffer[..bytes_read];
+        let zero_pos = bytes.iter().copied().position(|byte| byte == 0);
+        let bytes_to_write = if let Some(zero_pos) = zero_pos {
+            &bytes[..zero_pos]
+        } else {
+            &bytes
         };
+        stdout().write_all(bytes_to_write).await.unwrap();
+        if let Some(zero_pos) = zero_pos {
+            break Some(&bytes[zero_pos + 1..]);
+        }
+    };
+    if let Some(leftover) = leftover {
+        println!("leftover: {leftover:?}");
+        let mut decoder = table.new_stream_decoder();
+        decoder.received(leftover);
+        loop {
+            loop {
+                match decoder.decode() {
+                    Ok(frame) => forward_to_logger(
+                        &frame,
+                        location_info(&locs, &frame, &current_dir().unwrap()),
+                    ),
+                    Err(DecodeError::UnexpectedEof) => {
+                        println!("unexpected eof");
+                        break;
+                    }
+                    Err(DecodeError::Malformed) => match table.encoding().can_recover() {
+                        // if recovery is impossible, abort
+                        // false => return Err(DecodeError::Malformed.into()),
+                        // if recovery is possible, skip the current frame and continue with new data
+                        true | false => {
+                            // bug: https://github.com/rust-lang/rust-clippy/issues/9810
+                            // #[allow(clippy::print_literal)]
+                            // if show_skipped_frames || verbose {
+                            println!("(HOST) malformed frame skipped");
+                            println!("└─ {} @ {}:{}", env!("CARGO_PKG_NAME"), file!(), line!());
+                            // }
+                            continue;
+                        }
+                    },
+                }
+            }
+            // while let Ok(frame) = decoder.decode() {
+            //     forward_to_logger(
+            //         &frame,
+            //         location_info(&locs, &frame, &current_dir().unwrap()),
+            //     )
+            // }
+            let bytes_read = child_stdout.read(&mut buffer).await.unwrap();
+            if bytes_read == 0 {
+                break;
+            }
+            let bytes = &buffer[..bytes_read];
+            decoder.received(bytes);
+            println!("received data: {bytes:?}");
+        }
     }
+
+    // let mut frames = FramedRead::new(
+    //     child_stdout,
+    //     AnyDelimiterCodec::new_with_max_length(vec![0], vec![], 1024 * 1024 * 1024),
+    // );
+    // let mut first_frame = frames.next().await.unwrap().unwrap();
+    // stdout().write_all_buf(&mut first_frame).await.unwrap();
+    // defmt_decoder::log::init_logger(
+    //     Formatter::new(FormatterConfig::default()),
+    //     HostFormatter::new(FormatterConfig::default()),
+    //     defmt_decoder::log::DefmtLoggerType::Stdout,
+    //     is_defmt_frame,
+    // );
+    // while let Some(frame) = frames.next().await {
+    //     let frame = frame.unwrap();
+    //     let mut frame = BytesMut::from(frame);
+    //     frame.reserve(frame.len() + 1);
+    //     frame.put_u8(0);
+    // match table.decode(&frame) {
+    //     Ok((frame, _)) => forward_to_logger(
+    //         &frame,
+    //         location_info(&locs, &frame, &current_dir().unwrap()),
+    //     ),
+    //     Err(e) => {
+    //         println!("error: {e}");
+    //     }
+    // };
+    // }
     // stdout();
     // let mut buffer = {
     //     let mut buffer = bytes::BytesMut::with_capacity(1024 * 1024);

@@ -1,26 +1,41 @@
 #[cfg(feature = "defmt")]
 mod defmt_logger {
-    use defmt::global_logger;
+    use core::mem;
+
+    use defmt::{Encoder, global_logger};
+    use spin::Mutex;
+
+    static ENCODER: Mutex<Encoder> = Mutex::new(Encoder::new());
+
+    fn write(bytes: &[u8]) {
+        for byte in bytes {
+            sbi::legacy::console_putchar(*byte);
+        }
+    }
 
     #[global_logger]
     struct DefmtLogger;
     unsafe impl defmt::Logger for DefmtLogger {
         fn acquire() {
-            // todo!()
+            let mut t = ENCODER.lock();
+            t.start_frame(write);
+            mem::forget(t);
         }
 
         unsafe fn flush() {
-            // todo!()
+            // No need to do anything
         }
 
         unsafe fn release() {
-            // todo!()
+            unsafe { ENCODER.force_unlock() };
+            let mut encoder = ENCODER.lock();
+            encoder.end_frame(write);
         }
 
         unsafe fn write(bytes: &[u8]) {
-            for byte in bytes {
-                sbi::legacy::console_putchar(*byte);
-            }
+            unsafe { ENCODER.force_unlock() };
+            let mut encoder = ENCODER.lock();
+            encoder.write(bytes, write);
         }
     }
 }

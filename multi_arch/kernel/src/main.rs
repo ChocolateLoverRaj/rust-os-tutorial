@@ -6,6 +6,8 @@ mod logger;
 use core::arch::naked_asm;
 use core::panic::PanicInfo;
 
+#[cfg(feature = "defmt")]
+use riscv as _;
 use sbi::legacy::{console_putchar, shutdown};
 
 // These variables are defined in the linker script
