@@ -31,6 +31,7 @@
               qemu
               cargo-binutils
               llvm
+              just
             ];
           };
       }

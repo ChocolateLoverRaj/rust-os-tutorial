@@ -1,0 +1,15 @@
+build_riscv32:
+    cargo build --target riscv32imc-unknown-none-elf --features log
+
+run_riscv32: build_riscv32
+    qemu-system-riscv32 --machine virt --nographic --serial mon:stdio --no-reboot --kernel target/riscv32imc-unknown-none-elf/debug/kernel
+
+build_riscv64:
+    cargo build --target riscv64gc-unknown-none-elf --features log
+
+run_riscv64: build_riscv64
+    qemu-system-riscv64 --machine virt --nographic --serial mon:stdio --no-reboot --kernel target/riscv64gc-unknown-none-elf/debug/kernel
+
+clippy:
+    cargo clippy --target riscv32imc-unknown-none-elf --features log
+    cargo clippy --target riscv64gc-unknown-none-elf --features log
