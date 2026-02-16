@@ -1,4 +1,5 @@
 // AArch32 mode
+.arch armv6k
 
 // To keep this in the first portion of the binary.
 .section ".text.boot"
@@ -28,7 +29,7 @@ _start:
 
 1:
 	// store multiple at r4.
-	stmia r4!, {r5-r8}
+	stmia r4!, {{r5-r8}}
 
 	// If we are still below bss_end, loop.
 2:
@@ -41,5 +42,8 @@ _start:
 
 	// halt
 halt:
+	// ldr r3, =kernel_halt
+	// blx r3
 	wfe
+    //.inst 0xe320f002
 	b halt
