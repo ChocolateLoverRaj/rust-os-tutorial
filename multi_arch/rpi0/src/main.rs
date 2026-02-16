@@ -55,8 +55,8 @@ extern "C" fn _start() {
             blo do
             // Else, continue executing the instructions below
             // Call kernel_main
-            ldr r3, =kernel_main
-            blx r3
-        "
+            blx {kernel_main}
+        ",
+        kernel_main = sym kernel_main
     )
 }
