@@ -1,0 +1,9 @@
+build:
+    mkdir -p build
+    cargo objcopy --target armv6-none-eabihf -- -O binary build/kernel.img
+
+run: build
+    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --dtb bcm2708-rpi-zero.dtb -m 512M
+
+clippy:
+    cargo clippy --target armv6-none-eabihf

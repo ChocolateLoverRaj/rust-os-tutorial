@@ -8,3 +8,6 @@ path = "./src/main.rs"
 name = "kernel"
 test = false
 bench = false
+
+[dependencies]
+fdt = "0.1.5"
