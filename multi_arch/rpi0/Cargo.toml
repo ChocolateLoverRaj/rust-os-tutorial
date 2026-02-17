@@ -10,5 +10,15 @@ test = false
 bench = false
 
 [dependencies]
+arm-pl011-uart = "0.4.0"
 atags = "0.0.2"
-fdt = "0.1.5"
+critical-section = "1.2.0"
+fdt = { git = "https://github.com/repnop/fdt", version = "0.2.0-alpha1" }
+log = "0.4.29"
+phf = { version = "0.13.1", default-features = false, features = ["macros"] }
+phf_macros = "0.13.1"
+semihosting = { version = "0.1.24", optional = true, features = ["stdio"] }
+
+[features]
+qemu = []
+semihosting = ["dep:semihosting"]

@@ -1,9 +1,12 @@
 build:
     mkdir -p build
-    cargo objcopy --target armv6-none-eabihf -- -O binary build/kernel.img
+    cargo objcopy --target armv6-none-eabihf --features qemu,semihosting -- -O binary build/kernel.img
 
 run: build
-    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img -m 512M
+    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img -m 512M --semihosting
+
+run_raspi1: build
+    qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
 
 clippy:
-    cargo clippy --target armv6-none-eabihf
+    cargo clippy --target armv6-none-eabihf --features qemu,semihosting

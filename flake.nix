@@ -32,6 +32,7 @@
               cargo-binutils
               llvm
               just
+              dtc
             ];
           };
       }
