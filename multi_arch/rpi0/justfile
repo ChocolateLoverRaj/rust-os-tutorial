@@ -3,7 +3,7 @@ build:
     cargo objcopy --target armv6-none-eabihf --features qemu,semihosting -- -O binary build/kernel.img
 
 run: build
-    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img -m 512M --semihosting
+    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img -m 512M --semihosting --trace "bcm2835_mbox_*"
 
 run_raspi1: build
     qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting

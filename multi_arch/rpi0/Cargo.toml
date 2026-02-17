@@ -13,6 +13,7 @@ bench = false
 arm-pl011-uart = "0.4.0"
 atags = "0.0.2"
 critical-section = "1.2.0"
+ez_mailbox = { version = "0.1.0", path = "../../../ez_mailbox" }
 fdt = { git = "https://github.com/repnop/fdt", version = "0.2.0-alpha1" }
 log = "0.4.29"
 phf = { version = "0.13.1", default-features = false, features = ["macros"] }

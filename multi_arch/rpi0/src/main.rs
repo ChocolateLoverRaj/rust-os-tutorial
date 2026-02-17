@@ -4,17 +4,19 @@
 
 mod logger;
 
-use core::arch::naked_asm;
-use core::arch::{arm::__wfe, asm};
-use core::fmt::Write;
-use core::panic::PanicInfo;
-use core::ptr::NonNull;
+use core::{
+    arch::{arm::__wfe, asm, naked_asm},
+    fmt::Write,
+    panic::PanicInfo,
+    ptr::NonNull,
+};
 
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
-// #[cfg(feature = "semihosting")]
-// use defmt_semihosting as _;
-use fdt::Fdt;
-use fdt::properties::Compatible;
+use ez_mailbox::{
+    Mailbox, MailboxVolatileFieldAccess, board_revision, call, get_board_revision,
+    volatile::VolatileRef,
+};
+use fdt::{Fdt, properties::Compatible};
 use log::{error, info};
 use phf::phf_map;
 
@@ -52,12 +54,23 @@ pub fn read_midr() -> usize {
 #[unsafe(no_mangle)]
 extern "C" fn kernel_main(_r0: usize, machine_id: usize, atags_ptr: usize) -> ! {
     logger::init();
+
     info!("Hello from Rust kernel. Machine id: {machine_id:#X}. ATAGs ptr: {atags_ptr:#X}.");
     let midr = read_midr();
     let part_number = ((midr >> 4) & 0xFFF) as u16;
     info!("Main ID: {midr:#X}. Part number: {part_number:#X}");
     let magic = unsafe { (atags_ptr as *const [u32; 2]).read() };
     info!("ATAGS / Device Tree magic: {magic:#X?}");
+
+    if machine_id == 0xC42 {
+        let mbox_ptr = NonNull::new(0x2000B880 as *mut Mailbox).unwrap();
+        let mut mbox = unsafe { VolatileRef::new(mbox_ptr) };
+        let mut buffer = get_board_revision();
+        info!("calling... Mailbox: {:#X}", mbox.as_ptr().status().read());
+        let ok = call(mbox.as_mut_ptr(), 8, &mut buffer);
+        let board_revision = board_revision(&buffer);
+        info!("ok? {ok}. board revision: {board_revision:#X}");
+    }
 
     // error!("hello QEMU");
     // error!("hello QEMU");
