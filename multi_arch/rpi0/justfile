@@ -1,12 +1,21 @@
-build:
+build_dir:
     mkdir -p build
+
+build: build_dir
     cargo objcopy --target armv6-none-eabihf --features qemu,semihosting -- -O binary build/kernel.img
 
-run: build
-    qemu-system-arm --machine raspi0 --cpu arm1176 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img -m 512M --semihosting --trace "bcm2835_mbox_*"
+build_7: build_dir
+    cargo objcopy --target armv7a-none-eabihf --features qemu,semihosting -- -O binary build/kernel7.img
 
-run_raspi1: build
+run_0: build
+    qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+
+run_1: build
     qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+
+run_2: build_7
+    qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel build/kernel7.img --semihosting
 
 clippy:
     cargo clippy --target armv6-none-eabihf --features qemu,semihosting
+    cargo clippy --target armv7a-none-eabihf --features qemu,semihosting
