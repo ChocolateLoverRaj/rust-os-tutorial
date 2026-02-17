@@ -5,6 +5,9 @@
 use core::arch::arm::__wfe;
 use core::arch::naked_asm;
 use core::panic::PanicInfo;
+use core::ptr::NonNull;
+
+use atags::{Atag, Atags};
 
 unsafe extern "C" {
     static __bss_start: usize;
@@ -19,12 +22,16 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 extern "C" fn kernel_main(_r0: usize, machine_id: usize, atags_ptr: usize) -> ! {
+    let atags_ptr = NonNull::new(atags_ptr as *mut _).unwrap();
+    // // Safety: the kernel was given a valid ptr to ATAGS through r2
+    let mut atags = unsafe { Atags::new(atags_ptr) };
+    for atag in atags.iter() {}
     loop {
         unsafe { __wfe() };
     }
 }
 
-#[unsafe(link_section = ".text.boot")]
+#[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
 extern "C" fn _start() {

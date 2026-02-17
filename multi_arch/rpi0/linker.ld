@@ -4,8 +4,8 @@ SECTIONS
     . = LOADER_ADDR;
     .text :
     {
-        KEEP(*(.text._start))
-        *(.text)
+        KEEP(*(.text._start));
+        *(.text .text.*);
     }
 
     .rodata :
@@ -30,4 +30,8 @@ SECTIONS
     . = ALIGN(8);
     . += 128 * 1024;
     __stack_top = .;
+
+    .ARM.exidx : {
+        *(.ARM.exidx)
+    }
 }
