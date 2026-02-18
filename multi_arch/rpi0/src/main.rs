@@ -1,14 +1,12 @@
 #![no_std]
 #![no_main]
-#![feature(stdarch_arm_hints, stdarch_arm_neon_intrinsics)]
+#![feature(stdarch_arm_hints)]
+#![cfg_attr(target_arch = "arm", feature(stdarch_arm_neon_intrinsics))]
 
+mod halt_loop;
 mod logger;
 
-use core::{
-    arch::{arm::__wfe, naked_asm},
-    panic::PanicInfo,
-    ptr::NonNull,
-};
+use core::{arch::naked_asm, panic::PanicInfo, ptr::NonNull};
 
 use aarch32_cpu::register::Midr;
 use arbitrary_int::u12;
@@ -21,7 +19,7 @@ use fdt::{Fdt, properties::Compatible};
 use log::{error, info};
 use phf::phf_map;
 
-use crate::logger::init_uart;
+use crate::{halt_loop::halt_loop, logger::init_uart};
 
 unsafe extern "C" {
     static __bss_start: usize;
@@ -31,31 +29,17 @@ unsafe extern "C" {
 #[panic_handler]
 pub fn panic_handler(panic_info: &PanicInfo) -> ! {
     error!("{panic_info}");
-    loop {
-        unsafe { __wfe() };
-    }
+    halt_loop()
 }
 
 static BUNDLED_DEVICE_TREES: phf::Map<usize, &[u8]> = phf_map! {
     0xC42 => include_bytes!("../bcm2708-rpi-zero.dtb")
 };
 
-#[unsafe(no_mangle)]
-extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
-    logger::init();
-
-    // info!("Hello from Rust kernel. Machine id: {machine_id:#X}. ATAGs ptr: {atags_ptr:#X}.");
-    info!(
-        "Hello from Rust kernel booted on 32 bit ARM. This is likely booted on a Raspberry Pi Zero, 1, or 2."
-    );
-    let midr = Midr::read();
-    info!("Midr: {midr:?}");
-    // let magic = unsafe { (atags_ptr as *const [u32; 2]).read() };
-    // info!("ATAGS / Device Tree magic: {magic:#X?}");
-
+pub fn init_common(part_no: u12) {
     // Figure out what machine we are running on
     // https://wiki.osdev.org/Detecting_Raspberry_Pi_Board
-    match midr.part_no() {
+    match part_no {
         i if i == u12::new(0xB76) => {
             info!("Running on a Raspberry Pi Zero or 1");
             // It's safe to use this UART on any computer after this check.
@@ -76,29 +60,41 @@ extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> 
             init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
             info!("Running on a Raspberry Pi 2");
         }
-
-        // Raspberry pi 3 and 4 also have a part number, but they should not boot 32-bit so we
-        // won't support them in our 32-bit boot process and only support them in our 64-bit
-        // boot process. Also, I'm pretty sure qemu doesn't even allow you to use 64-bit Raspberry
-        // Pis in 32-bit mode.
+        i if i == u12::new(0xD03) => {
+            info!("Running on a Raspberry Pi 3");
+            // It's safe to use this UART on any computer after this check.
+            const MMIO_BASE: usize = 0x3F000000;
+            const GPIO_BASE: usize = MMIO_BASE + 0x200000;
+            const UART0_BASE: usize = GPIO_BASE + 0x1000;
+            let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
+            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+            info!("Running on a Raspberry Pi 3");
+        }
+        i if i == u12::new(0xD08) => {
+            info!("Running on a Raspberry Pi 4");
+            // It's safe to use this UART on any computer after this check.
+            const MMIO_BASE: usize = 0xFE000000;
+            const GPIO_BASE: usize = MMIO_BASE + 0x200000;
+            const UART0_BASE: usize = GPIO_BASE + 0x1000;
+            let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
+            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+            info!("Running on a Raspberry Pi 4");
+        }
         part_no => {
             info!("Unknown part number: {part_no:#X}. Not doing anything.");
         }
     }
-    // if machine_id == 0xC42 {
-    //     let mbox_ptr = NonNull::new(0x2000B880 as *mut Mailbox).unwrap();
-    //     let mut mbox = unsafe { VolatileRef::new(mbox_ptr) };
-    //     let mut buffer = get_board_revision();
-    //     info!("calling... Mailbox: {:#X}", mbox.as_ptr().status().read());
-    //     let ok = call(mbox.as_mut_ptr(), 8, &mut buffer);
-    //     let board_revision = board_revision(&buffer);
-    //     info!("ok? {ok}. board revision: {board_revision:#X}");
-    // }
+}
 
-    // error!("hello QEMU");
-    // error!("hello QEMU");
-    // error!("hello QEMU");
-    // error!("hello QEMU");
+#[cfg(target_arch = "arm")]
+extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
+    logger::init();
+
+    info!(
+        "Hello from Rust kernel booted on 32 bit ARM. This is likely booted on a Raspberry Pi Zero, 1, or 2."
+    );
+    let midr = Midr::read();
+    init_common(midr.part_no());
     // if let Some(device_tree) = BUNDLED_DEVICE_TREES.get(&machine_id) {
     //     let fdt = Fdt::new_unaligned(device_tree).unwrap();
     //     let chosen = fdt.root().chosen();
@@ -166,12 +162,27 @@ extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> 
     // // Safety: the kernel was given a valid ptr to ATAGS through r2
     // let mut atags = unsafe { Atags::new(atags_ptr) };
     // for atag in atags.iter() {}
-    loop {
-        unsafe { __wfe() };
-    }
+    halt_loop()
 }
 
-#[cfg(not(target_feature = "v7"))]
+#[cfg(target_arch = "aarch64")]
+fn kernel_main_64(dtb_ptr: u32, _x1: usize, _x2: usize, _x3: usize) -> ! {
+    use aarch64_cpu::registers::{MIDR_EL1, Readable};
+
+    logger::init();
+
+    info!(
+        "Hello from Rust kernel booted on 64 bit ARM. This is likely booted on a Raspberry Pi 3 or 4. Device Tree pointer: {dtb_ptr:#X}."
+    );
+
+    // TODO: Use device tree
+    let midr = MIDR_EL1.get();
+    init_common(u12::from_u64(MIDR_EL1::PartNum.read(midr)));
+
+    halt_loop()
+}
+
+#[cfg(all(target_arch = "arm", not(target_feature = "v7")))]
 #[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
@@ -205,11 +216,11 @@ extern "C" fn _start() {
             // Call kernel_main
             blx {kernel_main}
         ",
-        kernel_main = sym kernel_main
+        kernel_main = sym kernel_main_32
     )
 }
 
-#[cfg(target_feature = "v7")]
+#[cfg(all(target_arch = "arm", target_feature = "v7"))]
 #[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
@@ -253,6 +264,38 @@ extern "C" fn _start() {
             wfe
             b halt
         ",
-        kernel_main = sym kernel_main
+        kernel_main = sym kernel_main_32
+    )
+}
+
+#[cfg(target_arch = "aarch64")]
+#[unsafe(link_section = ".text._start")]
+#[unsafe(no_mangle)]
+#[unsafe(naked)]
+extern "C" fn _start() {
+    naked_asm!(
+        "
+        // Entry point for the kernel. Registers:
+        // x0 -> 32 bit pointer to DTB in memory (primary core only) / 0 (secondary cores)
+        // x1 -> 0
+        // x2 -> 0
+        // x3 -> 0
+        // x4 -> 32 bit kernel entry point, _start location
+        // Set the stack pointer to the stack space we reserved in the linker script
+        ldr x5, =__stack_top
+        mov sp, x5
+
+        // clear bss
+        ldr x5, =__bss_start
+        ldr w6, =__bss_size
+        1:
+            cbz     w6, 2f
+            str     xzr, [x5], #8
+            sub     w6, w6, #1
+            cbnz    w6, 1b
+        2:
+            bl      {kernel_main}
+        ",
+        kernel_main = sym kernel_main_64
     )
 }

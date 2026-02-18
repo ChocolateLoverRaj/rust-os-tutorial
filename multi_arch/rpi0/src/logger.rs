@@ -2,7 +2,7 @@ use core::fmt::Write;
 
 use arm_pl011_uart::Uart;
 use log::{LevelFilter, Log, max_level, set_logger, set_max_level};
-use spin::{Once, mutex::Mutex};
+use spin::mutex::Mutex;
 
 struct Logger {
     uart: Mutex<Option<Uart<'static>>>,

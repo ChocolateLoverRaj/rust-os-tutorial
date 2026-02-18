@@ -10,7 +10,7 @@ SECTIONS
 
     .rodata :
     {
-        *(.rodata)
+        *(.rodata .rodata.*)
     }
 
     .data :
@@ -27,7 +27,7 @@ SECTIONS
         __bss_end = .;
     }
 
-    . = ALIGN(8);
+    . = ALIGN(STACK_ALIGN);
     . += 128 * 1024;
     __stack_top = .;
 
@@ -35,3 +35,6 @@ SECTIONS
         *(.ARM.exidx)
     }
 }
+
+/* For convenience in assembly */
+__bss_size = __bss_end - __bss_start;
