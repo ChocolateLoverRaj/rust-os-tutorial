@@ -1,3 +1,10 @@
+use core::arch::naked_asm;
+
+use arbitrary_int::u12;
+use log::info;
+
+use crate::{halt_loop, init_common, logger};
+
 #[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]

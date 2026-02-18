@@ -39,13 +39,6 @@ const RPI_2_PART_NO: u16 = 0xC07;
 const RPI_3_PART_NO: u16 = 0xD03;
 const RPI_4_PART_NO: u16 = 0xD08;
 
-static MMIO_BASE: phf::Map<u16, usize> = phf_map! {
-    0xB76 => 0x20000000,
-    0xC07 => 0x3F000000,
-    0xD03 => 0x3F000000,
-    0xD08 => 0xFE000000,
-};
-
 pub fn init_common(part_no: u12) {
     // Figure out what machine we are running on
     // https://wiki.osdev.org/Detecting_Raspberry_Pi_Board

@@ -1,9 +1,10 @@
 use core::arch::{arm::__wfi, naked_asm};
 
 use aarch32_cpu::{asm::irq_enable, register::Midr};
+use arbitrary_int::u12;
 use log::info;
 
-use crate::{halt_loop::halt_loop, init_common, logger};
+use crate::{RPI_0_1_PART_NO, RPI_2_PART_NO, halt_loop::halt_loop, init_common, logger};
 
 #[cfg(all(target_arch = "arm", not(target_feature = "v7")))]
 #[unsafe(link_section = ".text._start")]
@@ -91,6 +92,14 @@ extern "C" fn _start() {
     )
 }
 
+fn get_mmio_base() -> usize {
+    match Midr::read().part_no() {
+        i if i == u12::new(RPI_0_1_PART_NO) => 0x20000000,
+        i if i == u12::new(RPI_2_PART_NO) => 0x3F000000,
+        _ => panic!("unknown part number"),
+    }
+}
+
 extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
     logger::init();
 
@@ -134,36 +143,34 @@ extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) 
         );
     }
 
-    halt_loop();
-
     unsafe { irq_enable() };
 
-    const IRQ_ENABLE_1: *mut u32 = 0x2000_B210 as *mut u32;
+    let mmio_base = get_mmio_base();
+    let irq_enable_1 = (mmio_base + 0xB210) as *mut u32;
 
     unsafe {
         // Enable IRQ 1 (System Timer Compare 1)
-        core::ptr::write_volatile(IRQ_ENABLE_1, 1 << 1);
+        core::ptr::write_volatile(irq_enable_1, 1 << 1);
     }
 
-    const TIMER_CS: *mut u32 = 0x2000_3000 as *mut u32;
-
+    let timer_cs = (mmio_base + 0x3000) as *mut u32;
     unsafe {
         // Write a 1 to bit 1 to CLEAR any pending interrupt for Compare 1
-        core::ptr::write_volatile(TIMER_CS, 1 << 1);
+        core::ptr::write_volatile(timer_cs, 1 << 1);
     }
 
-    const TIMER_CLO: *mut u32 = 0x2000_3004 as *mut u32; // Lower 32 bits of counter
-    const TIMER_C1: *mut u32 = 0x2000_3010 as *mut u32; // Compare register 1
+    let timer_clo: *mut u32 = (mmio_base + 0x3004) as *mut u32; // Lower 32 bits of counter
+    let timer_c1: *mut u32 = (mmio_base + 0x3010) as *mut u32; // Compare register 1
 
     unsafe {
         // 1. Read current time
-        let current_val = core::ptr::read_volatile(TIMER_CLO);
+        let current_val = core::ptr::read_volatile(timer_clo);
 
         // 2. Set match for 1 second from now (System Timer runs at 1MHz)
         let match_val = current_val.wrapping_add(1_000_000);
 
         // 3. Write to Compare 1
-        core::ptr::write_volatile(TIMER_C1, match_val);
+        core::ptr::write_volatile(timer_c1, match_val);
     }
 
     info!("enabled the timer");
@@ -222,13 +229,12 @@ extern "C" fn data_abort_handler() {
 }
 extern "C" fn irq_handler() {
     info!("irq handler");
-    const TIMER_CS: *mut u32 = 0x2000_3000 as *mut u32;
-
+    let mmio_base = get_mmio_base();
+    let timer_cs = (mmio_base + 0x3000) as *mut u32;
     unsafe {
         // Write a 1 to bit 1 to CLEAR any pending interrupt for Compare 1
-        core::ptr::write_volatile(TIMER_CS, 1 << 1);
+        core::ptr::write_volatile(timer_cs, 1 << 1);
     }
-    // halt_loop()
 }
 extern "C" fn fiq_handler() {
     info!("fiq handler");
