@@ -33,7 +33,7 @@ SECTIONS
 
     . = ALIGN(STACK_ALIGN);
     . += 128 * 1024;
-    __und_stack_top = .;
+    __interrupt_handler_stack_top = .;
 
     .ARM.exidx : {
         *(.ARM.exidx)
