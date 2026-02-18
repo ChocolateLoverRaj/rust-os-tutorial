@@ -31,6 +31,10 @@ SECTIONS
     . += 128 * 1024;
     __stack_top = .;
 
+    . = ALIGN(STACK_ALIGN);
+    . += 128 * 1024;
+    __und_stack_top = .;
+
     .ARM.exidx : {
         *(.ARM.exidx)
     }

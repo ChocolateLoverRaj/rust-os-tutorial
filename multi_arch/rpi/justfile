@@ -11,7 +11,7 @@ build_8: build_dir
     cargo objcopy --target aarch64-unknown-none --features qemu,semihosting -- -O binary build/kernel8.img
 
 run_0: build
-    qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+    qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting -d int --trace "bcm2835_systmr*"
 
 run_1: build
     qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
