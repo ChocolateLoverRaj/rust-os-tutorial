@@ -14,8 +14,9 @@ impl Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        let mut writer: Option<&mut dyn Write> = if let Some(uart) = self.uart.) {
-            Some()
+        let mut uart = self.uart.lock();
+        if let Some(uart) = uart.as_mut() {
+            writeln!(uart, "{}", record.args()).unwrap();
         } else {
             #[cfg(feature = "semihosting")]
             semihosting::println!("{}", record.args());
@@ -25,7 +26,9 @@ impl Log for Logger {
     fn flush(&self) {}
 }
 
-static LOGGER: Logger = Logger { uart: Once::new() };
+static LOGGER: Logger = Logger {
+    uart: Mutex::new(None),
+};
 
 pub fn init() {
     set_logger(&LOGGER).unwrap();

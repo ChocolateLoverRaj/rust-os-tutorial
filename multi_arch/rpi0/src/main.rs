@@ -6,7 +6,6 @@ mod logger;
 
 use core::{
     arch::{arm::__wfe, naked_asm},
-    fmt::Write,
     panic::PanicInfo,
     ptr::NonNull,
 };
@@ -21,6 +20,8 @@ use ez_mailbox::{
 use fdt::{Fdt, properties::Compatible};
 use log::{error, info};
 use phf::phf_map;
+
+use crate::logger::init_uart;
 
 unsafe extern "C" {
     static __bss_start: usize;
@@ -62,8 +63,8 @@ extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> 
             const GPIO_BASE: usize = MMIO_BASE + 0x200000;
             const UART0_BASE: usize = GPIO_BASE + 0x1000;
             let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-            let mut uart = Uart::new(unsafe { UniqueMmioPointer::new(ptr) });
-            uart.write_str("Hello from UART driver.\n").unwrap();
+            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+            info!("Running on a Raspberry Pi Zero or 1");
         }
         i if i == u12::new(0xC07) => {
             info!("Running on a Raspberry Pi 2");
@@ -72,9 +73,10 @@ extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> 
             const GPIO_BASE: usize = MMIO_BASE + 0x200000;
             const UART0_BASE: usize = GPIO_BASE + 0x1000;
             let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-            let mut uart = Uart::new(unsafe { UniqueMmioPointer::new(ptr) });
-            uart.write_str("Hello from UART driver.\n").unwrap();
+            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+            info!("Running on a Raspberry Pi 2");
         }
+
         // Raspberry pi 3 and 4 also have a part number, but they should not boot 32-bit so we
         // won't support them in our 32-bit boot process and only support them in our 64-bit
         // boot process. Also, I'm pretty sure qemu doesn't even allow you to use 64-bit Raspberry
