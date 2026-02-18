@@ -15,7 +15,7 @@ use core::{panic::PanicInfo, ptr::NonNull};
 use arbitrary_int::u12;
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
 use log::{error, info};
-use phf::phf_map;
+// use phf::phf_map;
 
 use crate::{halt_loop::halt_loop, logger::init_uart};
 
@@ -30,9 +30,9 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
     halt_loop()
 }
 
-static BUNDLED_DEVICE_TREES: phf::Map<usize, &[u8]> = phf_map! {
-    0xC42 => include_bytes!("../bcm2708-rpi-zero.dtb")
-};
+// static BUNDLED_DEVICE_TREES: phf::Map<usize, &[u8]> = phf_map! {
+//     0xC42 => include_bytes!("../bcm2708-rpi-zero.dtb")
+// };
 
 const RPI_0_1_PART_NO: u16 = 0xB76;
 const RPI_2_PART_NO: u16 = 0xC07;
