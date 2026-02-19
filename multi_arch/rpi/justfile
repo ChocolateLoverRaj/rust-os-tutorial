@@ -28,4 +28,4 @@ run_4: build_8
 clippy:
     cargo clippy --target armv6-none-eabihf --features qemu,semihosting
     cargo clippy --target armv7a-none-eabihf --features qemu,semihosting
-    cargo clippy --target aarch64-unknown-none --features qemu,semihosting
+    cargo clippy --target aarch64-unknown-none-softfloat --features qemu,semihosting
