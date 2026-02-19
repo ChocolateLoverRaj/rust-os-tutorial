@@ -22,6 +22,7 @@ use crate::{halt_loop::halt_loop, logger::init_uart};
 unsafe extern "C" {
     static __bss_start: usize;
     static __bss_end: usize;
+    static __interrupt_handler_stack_top: usize;
 }
 
 #[panic_handler]
