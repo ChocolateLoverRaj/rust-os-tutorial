@@ -1,15 +1,19 @@
-use core::arch::{asm, naked_asm};
+use core::{
+    arch::{asm, naked_asm},
+    ptr::NonNull,
+};
 
 use aarch64_cpu::registers::{
-    CPTR_EL2, CurrentEL, DAIF, ELR_EL2, ESR_EL2, HCR_EL2, MIDR_EL1, ReadWriteable, Readable,
-    SP_EL2, SPSel, VBAR_EL2, Writeable,
+    CurrentEL, DAIF, ELR_EL2, ESR_EL2, HCR_EL2, MIDR_EL1, Readable, VBAR_EL2, Writeable,
 };
-use arbitrary_int::u12;
+use arbitrary_int::{u2, u12};
+use ez_mailbox::{
+    timer::{Timer, TimerRef},
+    volatile::VolatileRef,
+};
 use log::info;
 
-use crate::{
-    __interrupt_handler_stack_top, RPI_3_PART_NO, RPI_4_PART_NO, halt_loop, init_common, logger,
-};
+use crate::{RPI_3_PART_NO, RPI_4_PART_NO, halt_loop, init_common, logger};
 
 #[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
@@ -109,30 +113,13 @@ fn kernel_main_64(dtb_ptr: u32, _x1: usize, _x2: usize, _x3: usize) -> ! {
         core::ptr::write_volatile(irq_enable_1, 1 << 1);
     }
 
-    let timer_cs = (mmio_base + 0x3000) as *mut u32;
-    unsafe {
-        // Write a 1 to bit 1 to CLEAR any pending interrupt for Compare 1
-        core::ptr::write_volatile(timer_cs, 1 << 1);
-    }
-
-    let timer_clo: *mut u32 = (mmio_base + 0x3004) as *mut u32; // Lower 32 bits of counter
-    let timer_c1: *mut u32 = (mmio_base + 0x3010) as *mut u32; // Compare register 1
-
-    unsafe {
-        // 1. Read current time
-        let current_val = core::ptr::read_volatile(timer_clo);
-
-        // 2. Set match for 1 second from now (System Timer runs at 1MHz)
-        let match_val = current_val.wrapping_add(1_000_000);
-
-        // 3. Write to Compare 1
-        core::ptr::write_volatile(timer_c1, match_val);
-    }
+    let pointer = NonNull::new((mmio_base + Timer::ADDRESS) as *mut Timer).unwrap();
+    let mut timer = TimerRef(unsafe { VolatileRef::new(pointer) });
+    timer.clear_interrupt(u2::new(1));
+    let current_val = timer.counter_lo();
+    timer.write_compare_value(u2::new(1), current_val.wrapping_add(1_000_000));
 
     info!("enabled the timer");
-
-    // let daif = DAIF.get();
-    // info!("DAIF: {daif:#b}");
 
     halt_loop()
 }
