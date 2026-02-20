@@ -1,6 +1,7 @@
 use core::{
     arch::{asm, naked_asm},
     ptr::NonNull,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use aarch64_cpu::{
@@ -18,7 +19,7 @@ use ez_mailbox::{
 use log::info;
 use spin::{Mutex, Once};
 
-use crate::{RPI_3_PART_NO, RPI_4_PART_NO, halt_loop, init_common, logger};
+use crate::{RPI_3_PART_NO, RPI_4_PART_NO, init_common, logger};
 
 #[unsafe(link_section = ".text._start")]
 #[unsafe(no_mangle)]
@@ -63,6 +64,8 @@ fn get_mmio_base() -> usize {
 
 static TIMER: Once<Mutex<TimerRef<'static>>> = Once::new();
 static INTERRUPTS: Once<Mutex<InterruptsRef<'static>>> = Once::new();
+static GOT_TIMER_1_INTERRUPT: AtomicBool = AtomicBool::new(false);
+static GOT_TIMER_3_INTERRUPT: AtomicBool = AtomicBool::new(false);
 
 fn kernel_main_64(dtb_ptr: u32, _x1: usize, _x2: usize, _x3: usize) -> ! {
     use aarch64_cpu::registers::{MIDR_EL1, Readable};
@@ -114,29 +117,58 @@ fn kernel_main_64(dtb_ptr: u32, _x1: usize, _x2: usize, _x3: usize) -> ! {
     // unsafe { asm!("hvc #0") };
     let mmio_base = get_mmio_base();
 
+    // Demonstrate using timers 1 and 3 to generate interrupts.
+    // Timer 1 starts in 1s and generates an interrupt every 2s
+    // Timer 2 starts in 2s and generates an interrupt every 2s
+    // So every 1s we will get an interrupt and it will alternate between timer 1 and 3
+    let pointer = NonNull::new((mmio_base + Timer::ADDRESS) as *mut Timer).unwrap();
+    let mut timer = TimerRef(unsafe { VolatileRef::new(pointer) });
+    let counter_lo = timer.counter_lo();
+    let mut timer_1_compare_value = counter_lo.wrapping_add(1_000_000);
+    let mut timer_3_compare_value = counter_lo.wrapping_add(2_000_000);
+    timer.write_compare_value(u2::new(1), timer_1_compare_value);
+    timer.clear_interrupt(u2::new(1));
+    timer.write_compare_value(u2::new(3), timer_3_compare_value);
+    timer.clear_interrupt(u2::new(3));
+
     let mut interrupts = InterruptsRef({
         let pointer = NonNull::new((mmio_base + Interrupts::ADDRESS) as *mut Interrupts).unwrap();
         unsafe { VolatileRef::new(pointer) }
     });
     interrupts.enable_irq(u6::new(1));
-    interrupts.disable_irq(u6::new(1));
-    interrupts.enable_irq(u6::new(1));
+    interrupts.enable_irq(u6::new(3));
 
-    let pointer = NonNull::new((mmio_base + Timer::ADDRESS) as *mut Timer).unwrap();
-    let mut timer = TimerRef(unsafe { VolatileRef::new(pointer) });
-    timer.clear_interrupt(u2::new(1));
-    let current_val = timer.counter_lo();
-    timer.write_compare_value(u2::new(1), current_val.wrapping_add(1_000_000));
-
-    info!("enabled the timer");
+    info!("enabled timers 1 and 3");
 
     TIMER.call_once(|| Mutex::new(timer));
     INTERRUPTS.call_once(|| Mutex::new(interrupts));
 
     DAIF.set(0);
+
     loop {
         wfi();
         info!("after wfi");
+
+        let timer_1_interrupt = GOT_TIMER_1_INTERRUPT.swap(false, Ordering::Relaxed);
+        if timer_1_interrupt {
+            info!("got timer 1 interrupt");
+            timer_1_compare_value = timer_1_compare_value.wrapping_add(2_000_000);
+            TIMER
+                .get()
+                .unwrap()
+                .lock()
+                .write_compare_value(u2::new(1), timer_1_compare_value);
+        }
+        let timer_3_interrupt = GOT_TIMER_3_INTERRUPT.swap(false, Ordering::Relaxed);
+        if timer_3_interrupt {
+            info!("got timer 3 interrupt");
+            timer_3_compare_value = timer_3_compare_value.wrapping_add(2_000_000);
+            TIMER
+                .get()
+                .unwrap()
+                .lock()
+                .write_compare_value(u2::new(3), timer_3_compare_value);
+        }
     }
 }
 
@@ -145,70 +177,6 @@ extern "C" fn vector_table() {
     naked_asm!(
         "
         .macro SAVE_CONTEXT
-            // Subtract 272 bytes from SP (32 registers * 8 bytes + 16 bytes for padding/alignment)
-            sub     sp, sp, #272
-
-            // Save x0 through x29 in pairs
-            stp     x0,  x1,  [sp, #16 * 0]
-            stp     x2,  x3,  [sp, #16 * 1]
-            stp     x4,  x5,  [sp, #16 * 2]
-            stp     x6,  x7,  [sp, #16 * 3]
-            stp     x8,  x9,  [sp, #16 * 4]
-            stp     x10, x11, [sp, #16 * 5]
-            stp     x12, x13, [sp, #16 * 6]
-            stp     x14, x15, [sp, #16 * 7]
-            stp     x16, x17, [sp, #16 * 8]
-            stp     x18, x19, [sp, #16 * 9]
-            stp     x20, x21, [sp, #16 * 10]
-            stp     x22, x23, [sp, #16 * 11]
-            stp     x24, x25, [sp, #16 * 12]
-            stp     x26, x27, [sp, #16 * 13]
-            stp     x28, x29, [sp, #16 * 14]
-
-            // Save x30 (Link Register) separately
-            str     x30, [sp, #16 * 15]
-
-            // Read and save Exception Link Register and Saved Program Status Register
-            mrs     x0, elr_el1
-            mrs     x1, spsr_el1
-            stp     x0, x1, [sp, #16 * 16]
-        .endm
-
-        // macro_restore_context.S
-        .macro RESTORE_CONTEXT
-            // 1. Restore System Registers first
-            ldp     x0, x1, [sp, #16 * 16]
-            msr     elr_el1, x0
-            msr     spsr_el1, x1
-
-            // 2. Restore General Purpose Registers
-            ldp     x0,  x1,  [sp, #16 * 0]
-            ldp     x2,  x3,  [sp, #16 * 1]
-            ldp     x4,  x5,  [sp, #16 * 2]
-            ldp     x6,  x7,  [sp, #16 * 3]
-            ldp     x8,  x9,  [sp, #16 * 4]
-            ldp     x10, x11, [sp, #16 * 5]
-            ldp     x12, x13, [sp, #16 * 6]
-            ldp     x14, x15, [sp, #16 * 7]
-            ldp     x16, x17, [sp, #16 * 8]
-            ldp     x18, x19, [sp, #16 * 9]
-            ldp     x20, x21, [sp, #16 * 10]
-            ldp     x22, x23, [sp, #16 * 11]
-            ldp     x24, x25, [sp, #16 * 12]
-            ldp     x26, x27, [sp, #16 * 13]
-            ldp     x28, x29, [sp, #16 * 14]
-
-            // Restore x30 (Link Register)
-            ldr     x30, [sp, #16 * 15]
-
-            // 3. Shrink stack back to original position
-            add     sp, sp, #272
-
-            // Return to the address in elr_el1 with the state in spsr_el1
-            eret
-        .endm
-
-        .macro SAVE_CONTEXT_MINIMAL
             // Make room for 22 registers (x0-x18, x29, x30, +1 for alignment)
             sub     sp, sp, #176
 
@@ -229,7 +197,7 @@ extern "C" fn vector_table() {
             // Save x30 (Link Register)
             str     x30, [sp, #16 * 10]
         .endm
-        .macro RESTORE_CONTEXT_MINIMAL
+        .macro RESTORE_CONTEXT
             // Restore x30 (Link Register)
             ldr     x30, [sp, #16 * 10]
 
@@ -256,59 +224,105 @@ extern "C" fn vector_table() {
         // The table must be aligned
         .balign 2048
         // SP_EL0
+        // Synchronous Exception
         .balign 0x80
-            mov x0, #0
-            b {interrupt_handler}
-        .balign 0x80
-            mov x0, #1
-            b {interrupt_handler}
-        .balign 0x80
-            mov x0, #2
-            b {interrupt_handler}
-        .balign 0x80
-            mov x2, #3
-            b {interrupt_handler}
-        // SP_ELx
-        .balign 0x80
-            mov x0, #4
-            b {interrupt_handler}
-        .balign 0x80
-            // mov x0, #5
             SAVE_CONTEXT
+            mov x0, #0
             bl {interrupt_handler}
             RESTORE_CONTEXT
+        // IRQ
         .balign 0x80
+            SAVE_CONTEXT
+            mov x0, #1
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // FIQ
+        .balign 0x80
+            SAVE_CONTEXT
+            mov x0, #2
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // Asynchronous Exception
+        .balign 0x80
+            SAVE_CONTEXT
+            mov x0, #3
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // SP_ELx
+        // Syncronous Exception
+        .balign 0x80
+            SAVE_CONTEXT
+            mov x0, #4
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // IRQ
+        .balign 0x80
+            SAVE_CONTEXT
+            mov x0, #5
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // FIQ
+        .balign 0x80
+            SAVE_CONTEXT
             mov x0, #6
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // Asynchronos Exception
         .balign 0x80
-            mov x2, #7
-            b {interrupt_handler}
+            SAVE_CONTEXT
+            mov x0, #7
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
         // From lower EL
+        // Synchronous Exception
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #8
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // IRQ
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #9
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // FIQ
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #10
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // Asynchronous Exception
         .balign 0x80
-            mov x2, #11
-            b {interrupt_handler}
+            SAVE_CONTEXT
+            mov x0, #11
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
         // From lower EL
+        // Synchronous Exception
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #12
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // IRQ
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #13
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // FIQ
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #14
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
+        // FIQ
         .balign 0x80
+            SAVE_CONTEXT
             mov x0, #15
-            b {interrupt_handler}
+            bl {interrupt_handler}
+            RESTORE_CONTEXT
         ",
         interrupt_handler = sym interrupt_handler,
     )
@@ -317,17 +331,23 @@ extern "C" fn vector_table() {
 unsafe extern "C" fn interrupt_handler(source: usize) {
     let esr = ESR_EL2.get();
     let elr = ELR_EL2.get();
+    info!("interrupt / exception. source: {source}. esr: {esr:#X}. elr: {elr:#X}.");
 
     if let Some(interrupts) = INTERRUPTS.get() {
         let mut interrupts = interrupts.try_lock().unwrap();
         let irq_1_pending = interrupts.0.as_mut_ptr().irq_1_pending().read();
         info!("IRQ 1 Pending: {irq_1_pending:#b}");
         if irq_1_pending & (1 << 1) != 0 {
-            info!("timer interrupt");
+            info!("timer 1 interrupt");
             let mut timer = TIMER.get().unwrap().lock();
             timer.clear_interrupt(u2::new(1));
+            GOT_TIMER_1_INTERRUPT.store(true, Ordering::Relaxed);
+        }
+        if irq_1_pending & (1 << 3) != 0 {
+            info!("timer 3 interrupt");
+            let mut timer = TIMER.get().unwrap().lock();
+            timer.clear_interrupt(u2::new(3));
+            GOT_TIMER_3_INTERRUPT.store(true, Ordering::Relaxed);
         }
     }
-
-    // panic!("interrupt / exception. source: {source}. esr: {esr:#X}. elr: {elr:#X}.");
 }
