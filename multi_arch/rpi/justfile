@@ -20,10 +20,10 @@ run_2: build_7
     qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel build/kernel7.img --semihosting
 
 run_3: build_8
-    qemu-system-aarch64 --machine raspi3b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int --trace "bcm2835_systmr_*"
+    qemu-system-aarch64 --machine raspi3b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int
 
 run_4: build_8
-    qemu-system-aarch64 --machine raspi4b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int --trace "bcm2835_systmr_*"
+    qemu-system-aarch64 --machine raspi4b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int --trace "bcm2835_systmr_*" --trace "bcm*" --trace "gic*"
 
 clippy:
     cargo clippy --target armv6-none-eabihf --features qemu,semihosting
