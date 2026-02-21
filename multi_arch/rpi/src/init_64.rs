@@ -34,6 +34,7 @@ use crate::{__stack_top, RPI_3_PART_NO, RPI_4_PART_NO, init_common, logger};
 extern "C" fn _start() {
     naked_asm!(
         "
+        halt: b halt
         // Entry point for the kernel. Registers:
         // x0 -> 32 bit pointer to DTB in memory (primary core only) / 0 (secondary cores)
         // x2 -> 0

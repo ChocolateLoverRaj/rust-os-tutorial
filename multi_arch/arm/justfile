@@ -7,9 +7,6 @@ build: build_dir
 build_7: build_dir
     cargo objcopy --target armv7a-none-eabihf --features qemu,semihosting -- -O binary build/kernel7.img
 
-build_8: build_dir
-    cargo objcopy --target aarch64-unknown-none-softfloat --features qemu,semihosting -- -O binary build/kernel8.img
-
 run_0: build
     qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
 
@@ -19,16 +16,6 @@ run_1: build
 run_2: build_7
     qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel build/kernel7.img --semihosting
 
-run_2_64: build_8
-    qemu-system-aarch64 --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int
-
-run_3: build_8
-    qemu-system-aarch64 --machine raspi3b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int
-
-run_4: build_8
-    qemu-system-aarch64 --machine raspi4b --nographic --serial mon:stdio --no-reboot --kernel build/kernel8.img --semihosting -d int --trace "bcm2835_systmr_*" --trace "bcm*" --trace "gic*"
-
 clippy:
     cargo clippy --target armv6-none-eabihf --features qemu,semihosting
     cargo clippy --target armv7a-none-eabihf --features qemu,semihosting
-    cargo clippy --target aarch64-unknown-none-softfloat --features qemu,semihosting
