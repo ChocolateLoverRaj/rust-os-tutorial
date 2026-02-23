@@ -1,0 +1,33 @@
+build_dir:
+    mkdir -p build
+
+build:
+    cargo build --target armv7a-none-eabihf --features semihosting
+
+build_img: build_dir
+    cargo objcopy --target armv7a-none-eabihf --features semihosting -- -O binary build/kernel.img
+
+run: build_img
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+
+img_name := "sd.img"
+fat_offset := "1M"
+
+build_sd_card:
+    mkimage -A arm -T script -C none -n "Hello World Script" -d ./boot.cmd ./build/boot.scr
+    truncate -s 64M ./build/{{ img_name }}
+    parted -s ./build/{{ img_name }} mklabel msdos mkpart primary fat32 2048s 100% set 1 boot on
+    mformat -i ./build/{{ img_name }}@@{{ fat_offset }} -F -v "BOOT" ::
+    mcopy -i ./build/{{ img_name }}@@{{ fat_offset }} ./build/boot.scr ::/boot.scr -o
+
+uboot: build_sd_card
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file=./build/{{ img_name }},format=raw,if=virtio,readonly=on
+
+serve: build_img
+    http-server ./build
+
+# Steps in uboot to load image:
+# loady 0x40010000
+# Then use ctrl+a+s in picocom to load build/kernel.img
+# fdt move ${fdtcontroladdr} 0x42000000
+# bootz 0x40010000 - ${fdtaddr}

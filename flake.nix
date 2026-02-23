@@ -33,7 +33,18 @@
               llvm
               just
               dtc
+              http-server
+              ubootTools
+              parted
             ];
+
+            UBOOT_ARM =
+              (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override {
+                extraConfig = ''
+                  CONFIG_NET_LWIP=y
+                '';
+              })
+              + "/u-boot.bin";
           };
       }
     );

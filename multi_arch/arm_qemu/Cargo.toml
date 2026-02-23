@@ -1,0 +1,23 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+path = "./src/main.rs"
+name = "kernel"
+test = false
+bench = false
+
+[dependencies]
+aarch32-cpu = "0.2.0"
+arbitrary-int = "2.1.1"
+arm-pl011-uart = "0.4.0"
+ez_mailbox = { version = "0.1.0", path = "../../../ez_mailbox" }
+fdt = { git = "https://github.com/repnop/fdt", version = "0.2.0-alpha1" }
+log = "0.4.29"
+semihosting = { version = "0.1.24", optional = true, features = ["stdio"] }
+spin = "0.10.0"
+
+[features]
+semihosting = ["dep:semihosting"]
