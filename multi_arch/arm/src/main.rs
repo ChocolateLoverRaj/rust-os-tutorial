@@ -48,6 +48,7 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
 pub extern "C" fn _start() {
     naked_asm!(
         "
+        // test: b test
         b {start}
         ",
         start = sym start

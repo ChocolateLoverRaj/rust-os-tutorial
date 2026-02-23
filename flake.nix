@@ -36,6 +36,7 @@
               http-server
               ubootTools
               parted
+              gdb
             ];
 
             UBOOT_ARM =
