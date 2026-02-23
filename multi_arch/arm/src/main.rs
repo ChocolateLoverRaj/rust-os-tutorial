@@ -41,11 +41,22 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
     }
 }
 
-#[cfg(all(target_arch = "arm", not(target_feature = "v7")))]
-#[unsafe(link_section = ".text._start")]
+#[unsafe(link_section = ".text._header")]
+// Prevent this function from being removed
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
-extern "C" fn _start() {
+pub extern "C" fn _start() {
+    naked_asm!(
+        "
+        b {start}
+        ",
+        start = sym start
+    )
+}
+
+#[cfg(all(target_arch = "arm", not(target_feature = "v7")))]
+#[unsafe(naked)]
+extern "C" fn start() {
     naked_asm!(
         "
         // Set the stack pointer to the stack space we reserved in the linker script
@@ -80,10 +91,8 @@ extern "C" fn _start() {
 }
 
 #[cfg(all(target_arch = "arm", target_feature = "v7"))]
-#[unsafe(link_section = ".text._start")]
-#[unsafe(no_mangle)]
 #[unsafe(naked)]
-extern "C" fn _start() {
+extern "C" fn start() {
     naked_asm!(
         "
         // Shut off extra cores

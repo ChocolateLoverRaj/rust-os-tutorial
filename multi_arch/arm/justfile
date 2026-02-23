@@ -1,21 +1,63 @@
+build_dir := "./build"
+hw_raspi_dir := build_dir + "/hw_raspi"
+qemu_raspi_dir := build_dir + "/qemu_raspi"
+qemu_virt_dir := build_dir + "/qemu_virt"
+img_name := "sd.img"
+fat_offset := "1M"
+uboot_script := "./boot.cmd"
+port := "8982"
+
 build_dir:
-    mkdir -p build
+    mkdir -p {{ build_dir }}
 
-build: build_dir
-    cargo objcopy --target armv6-none-eabihf --features qemu,semihosting -- -O binary build/kernel.img
+build_hw_raspi_dir: build_dir
+    mkdir -p {{ hw_raspi_dir }}
 
-build_7: build_dir
-    cargo objcopy --target armv7a-none-eabihf --features qemu,semihosting -- -O binary build/kernel7.img
+build_qemu_raspi_dir: build_dir
+    mkdir -p {{ qemu_raspi_dir }}
 
-run_0: build
-    qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+build_qemu_virt_dir: build_dir
+    mkdir -p {{ qemu_virt_dir }}
 
-run_1: build
-    qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel build/kernel.img --semihosting
+build_qemu: build_qemu_raspi_dir
+    cargo objcopy --target armv6-none-eabihf --features qemu_raspi,semihosting -- -O binary {{ qemu_raspi_dir }}/kernel.img
 
-run_2: build_7
-    qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel build/kernel7.img --semihosting
+build_qemu_7: build_qemu_raspi_dir
+    cargo objcopy --target armv7a-none-eabihf --features qemu_raspi,semihosting -- -O binary {{ qemu_raspi_dir }}/kernel7.img
+
+build_qemu_virt: build_qemu_virt_dir
+    cargo objcopy --target armv7a-none-eabihf --features qemu_virt,semihosting -- -O binary {{ qemu_virt_dir }}/kernel.img
+
+run_0: build_qemu
+    qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel {{ qemu_raspi_dir }}/kernel.img --semihosting
+
+run_1: build_qemu
+    qemu-system-arm --machine raspi1ap --nographic --serial mon:stdio --no-reboot --kernel {{ qemu_raspi_dir }}/kernel.img --semihosting
+
+run_2: build_qemu_7
+    qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel {{ qemu_raspi_dir }}/kernel7.img --semihosting
+
+run_virt: build_qemu_virt
+    # The default CPU for the `virt` machine is armv7a
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ qemu_virt_dir }}/kernel.img --semihosting
+
+# U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
+build_qemu_uboot_script:
+    mkimage -A arm -T script -C none -n "Hello World Script" -d {{ uboot_script }} {{ build_dir }}/boot.scr
+    truncate -s 64M {{ build_dir }}/{{ img_name }}
+    parted -s {{ build_dir }}/{{ img_name }} mklabel msdos mkpart primary fat32 2048s 100% set 1 boot on
+    mformat -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} -F -v "BOOT" ::
+    mcopy -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} {{ build_dir }}/boot.scr ::/boot.scr -o
+
+run_uboot: build_qemu_uboot_script build_qemu_virt
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file=./build/{{ img_name }},format=raw,if=virtio,readonly=on
+
+serve:
+    http-server {{ build_dir }} -p {{ port }}
 
 clippy:
-    cargo clippy --target armv6-none-eabihf --features qemu,semihosting
-    cargo clippy --target armv7a-none-eabihf --features qemu,semihosting
+    cargo clippy --target armv6-none-eabihf --features hw_raspi,semihosting
+    cargo clippy --target armv6-none-eabihf --features qemu_raspi,semihosting
+    cargo clippy --target armv7a-none-eabihf --features hw_raspi,semihosting
+    cargo clippy --target armv7a-none-eabihf --features qemu_raspi,semihosting
+    cargo clippy --target armv7a-none-eabihf --features qemu_virt,semihosting

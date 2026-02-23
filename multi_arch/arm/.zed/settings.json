@@ -9,7 +9,7 @@
         "cargo": {
           "target": "armv6-none-eabihf",
           // "target": "armv7a-none-eabihf",
-          "features": ["qemu", "semihosting"],
+          "features": ["qemu_virt", "semihosting"],
         },
       },
     },
