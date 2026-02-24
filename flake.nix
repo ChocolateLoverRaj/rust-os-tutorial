@@ -40,13 +40,20 @@
             ];
 
             UBOOT_ARM =
-              (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override {
-                extraConfig = ''
-                  CONFIG_NET_LWIP=y
-                  CONFIG_ENV_IS_IN_FLASH=n
-                  CONFIG_ENV_FAT_DEVICE_AND_PART="0:1"
-                '';
-              })
+              (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override (prev: {
+                extraConfig =
+                  let
+                    # boardConfig = prev.src + "/board/emulation/qemu-arm/qemu-arm.env";
+                    patchedBoardConfig = ''
+                      bootmeths="script"
+                    '';
+                    boardConfigFile = pkgs.writeText "Hi" patchedBoardConfig;
+                  in
+                  ''
+                    CONFIG_NET_LWIP=y
+                    CONFIG_ENV_SOURCE_FILE="${boardConfigFile}"
+                  '';
+              }))
               + "/u-boot.bin";
           };
       }

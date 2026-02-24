@@ -42,7 +42,7 @@ build_qemu_uboot_script: build_7
     mcopy -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} ./uEnv.txt ::/uEnv.txt
 
 run_uboot: build_qemu_uboot_script build_7
-    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file=./build/{{ img_name }},format=raw,if=virtio,readonly=on -s
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file=./build/{{ img_name }},format=raw,if=none,readonly=on,id=nvme0 -device nvme,serial=1234,drive=nvme0 -s
 
 serve:
     http-server {{ build_dir }} -p {{ port }}
