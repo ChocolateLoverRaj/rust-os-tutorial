@@ -43,6 +43,8 @@
               (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override {
                 extraConfig = ''
                   CONFIG_NET_LWIP=y
+                  CONFIG_ENV_IS_IN_FLASH=n
+                  CONFIG_ENV_FAT_DEVICE_AND_PART="0:1"
                 '';
               })
               + "/u-boot.bin";
