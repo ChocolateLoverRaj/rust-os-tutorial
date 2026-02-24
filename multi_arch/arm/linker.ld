@@ -1,7 +1,5 @@
 SECTIONS
 {
-    /* Starts at LOADER_ADDR. */
-    . = KERNEL_START;
     __kernel_start = .;
 
     .text :
@@ -61,7 +59,7 @@ SECTIONS
 
     . = ALIGN(8);
     . += 128 * 1024;
-    __interrupt_handler_stack_top = .;
+    __interrupt_handler_stack_top = . - __kernel_start;
 
     __kernel_end = .;
 }

@@ -13,22 +13,10 @@ bench = false
 aarch32-cpu = "0.2.0"
 arbitrary-int = "2.1.1"
 arm-pl011-uart = "0.4.0"
-cfg-if = "1.0.4"
 ez_mailbox = { version = "0.1.0", path = "../../../ez_mailbox" }
 log = "0.4.29"
 semihosting = { version = "0.1.24", optional = true, features = ["stdio"] }
 spin = "0.10.0"
 
 [features]
-# The only difference between these features is the address at which they are loaded
-# For booting on a real Raspberry Pi 0, 1, or 2
-hw_raspi = []
-# For booting on qemu-system-arm with machine `raspi0`, `raspi1ap`, or `raspi2b`
-qemu_raspi = []
-# For booting on qemu-system-arm with machine `virt`
-qemu_virt = []
-
 semihosting = ["dep:semihosting"]
-
-[build-dependencies]
-cfg-if = "1.0.4"

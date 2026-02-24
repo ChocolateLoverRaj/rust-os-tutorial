@@ -7,6 +7,7 @@ mod logger;
 
 use core::arch::arm::{__wfe, __wfi};
 use core::arch::naked_asm;
+use core::ptr::addr_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{panic::PanicInfo, ptr::NonNull};
 
@@ -15,7 +16,6 @@ use aarch32_cpu::register::cpsr::ProcessorMode;
 use aarch32_cpu::register::{Cpsr, Midr};
 use arbitrary_int::{u2, u6, u12};
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
-use cfg_if::cfg_if;
 use ez_mailbox::interrupts::{Interrupts, InterruptsRef};
 use ez_mailbox::timer::{Timer, TimerRef};
 use ez_mailbox::volatile::VolatileRef;
@@ -24,39 +24,9 @@ use spin::Once;
 
 use crate::logger::init_uart;
 
-const KERNEL_START: u32 = {
-    #[allow(unused)]
-    enum TargetBoard {
-        HwRaspi,
-        QemuRaspi,
-        QemuVirt,
-    }
-
-    impl TargetBoard {
-        const fn kernel_start(&self) -> u32 {
-            match self {
-                Self::HwRaspi => 0x8000,
-                Self::QemuRaspi => 0x10000,
-                Self::QemuVirt => 0x40010000,
-            }
-        }
-    }
-
-    let target_board = {
-        cfg_if! {
-            if #[cfg(feature = "hw_raspi")] {
-                TargetBoard::HwRaspi
-            } else if #[cfg(feature = "qemu_raspi")] {
-                TargetBoard::QemuRaspi
-            } else if #[cfg(feature = "qemu_virt")] {
-                TargetBoard::QemuVirt
-            } else {
-                compile_error!("no target board selected")
-            }
-        }
-    };
-    target_board.kernel_start()
-};
+unsafe extern "C" {
+    static __interrupt_handler_stack_top: usize;
+}
 
 #[panic_handler]
 pub fn panic_handler(panic_info: &PanicInfo) -> ! {
@@ -125,8 +95,7 @@ extern "C" fn start_common() {
         ldr r5, =__rel_end
         add r5, r5, r3
         // Get the difference in (actual address we're loaded in - the initial address relocations are based on)
-        ldr r6, ={kernel_start}
-        sub r6, r3, r6
+        // Since our default ELF start address is 0x0, the diference is (r3 - 0 = r3), so we can just use r3
 
         // Loop through all relocations. Each relocation is a (u32, u32).
         // The first u32 is an offset from the start of the kernel binary file to the pointer in memory we need to update
@@ -149,11 +118,11 @@ extern "C" fn start_common() {
             // Load the first u32
             ldr r7, [r4]
             // Get the real address of that location in our memory by adjusting by the offset
-            add r7, r7, r6
+            add r7, r7, r3
             // Load the pointer that needs to be adjusted
             ldr r8, [r7]
             // Adjust the pointer
-            add r8, r8, r6
+            add r8, r8, r3
             // Store the updated value
             str r8, [r7]
 
@@ -197,7 +166,6 @@ extern "C" fn start_common() {
             blx {kernel_main}
         ",
         kernel_main = sym kernel_main,
-        kernel_start = const KERNEL_START
     )
 }
 
@@ -211,11 +179,16 @@ static TIMER_1_COMPLETE: AtomicBool = AtomicBool::new(false);
 static TIMER_3_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 #[unsafe(no_mangle)]
-extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
+extern "C" fn kernel_main(
+    _r0: usize,
+    _machine_id: usize,
+    atags_or_fdt_ptr: usize,
+    kernel_start: usize,
+) -> ! {
     logger::init();
 
     info!(
-        "Hello from Rust kernel booted on 32 bit ARM. This is likely booted on a Raspberry Pi Zero, 1, or 2."
+        "Hello from Rust kernel booted on 32 bit ARM. ATAGS / FDT ptr: {atags_or_fdt_ptr:#X}. Kernel loaded at address: {kernel_start:#X}"
     );
     let midr = Midr::read();
     let vectors_addr = vectors as *const () as usize;
@@ -256,26 +229,38 @@ extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> 
 
     info!("wrote to VBAR {vectors_addr:#X}");
 
+    let interrupt_handler_stack_top = kernel_start + addr_of!(__interrupt_handler_stack_top).addr();
     // Set the stack pointer of the UND handler
     unsafe {
         core::arch::asm!(
+            "
             // 1. Change the CPSR mode bits to 0x1B (Undefined Mode)
             // We use 0xDB to also keep interrupts disabled (I and F bits)
-            "msr cpsr_c, #0xdb",
+            msr cpsr_c, #0xdb
             // 2. Now 'sp' refers to the banked SP_und register
-            // "ldr sp, __interrupt_handler_stack_top",
+            mov sp, {}
             // 3. Switch back to Supervisor Mode (0xD3)
-            "msr cpsr_c, #0xd3",
+            msr cpsr_c, #0xd3
+            ",
+            in(reg) interrupt_handler_stack_top
         );
     }
 
     // Set the stack pointer of the IRQ handler
     unsafe {
         core::arch::asm!(
-            "mrs r0, cpsr",      // Save current (SVC) mode
-            "msr cpsr_c, #0xd2", // Switch to IRQ Mode (0x12 | 0xC0)
-            // "ldr sp, __interrupt_handler_stack_top",   // Set a 4KB-aligned stack pointer
-            "msr cpsr_c, r0",    // Switch back to SVC Mode
+            "
+            // Save current (SVC) mode
+            mrs r0, cpsr
+            // Switch to IRQ Mode (0x12 | 0xC0)
+            msr cpsr_c, #0xd2
+            // Set a 4KB-aligned stack pointer
+            mov sp, {}
+            // Switch back to SVC Mode
+            msr cpsr_c, r0
+            ",
+            in(reg) interrupt_handler_stack_top,
+            // Mark r0 as modified by our assembly
             out("r0") _,
             options(nomem, nostack)
         );
