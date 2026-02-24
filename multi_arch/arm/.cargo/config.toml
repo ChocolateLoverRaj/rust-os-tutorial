@@ -2,4 +2,4 @@
 build-std = ["core"]
 
 [build]
-rustflags = ["-C", "relocation-model=pic"]
+rustflags = ["-C", "relocation-model=pie", "-C", "link-arg=--no-dynamic-linker", "-C", "relro-level=off", "-C", "link-arg=-pie", "-C", "link-arg=--pack-dyn-relocs=none"]

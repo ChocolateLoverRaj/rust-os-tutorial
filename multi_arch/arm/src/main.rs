@@ -15,21 +15,49 @@ use aarch32_cpu::register::cpsr::ProcessorMode;
 use aarch32_cpu::register::{Cpsr, Midr};
 use arbitrary_int::{u2, u6, u12};
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
+use cfg_if::cfg_if;
 use ez_mailbox::interrupts::{Interrupts, InterruptsRef};
 use ez_mailbox::timer::{Timer, TimerRef};
 use ez_mailbox::volatile::VolatileRef;
 use log::{error, info};
+use semihosting::println;
 use spin::Once;
-// use phf::phf_map;
 
 use crate::logger::init_uart;
 
-unsafe extern "C" {
-    static __bss_start: usize;
-    static __bss_end: usize;
-    static __interrupt_handler_stack_top: usize;
-    static __stack_top: usize;
-}
+const KERNEL_START: u32 = {
+    #[allow(unused)]
+    enum TargetBoard {
+        HwRaspi,
+        QemuRaspi,
+        QemuVirt,
+    }
+
+    impl TargetBoard {
+        const fn kernel_start(&self) -> u32 {
+            match self {
+                Self::HwRaspi => 0x8000,
+                Self::QemuRaspi => 0x10000,
+                Self::QemuVirt => 0x40010000,
+            }
+        }
+    }
+
+    let target_board = {
+        cfg_if! {
+            if #[cfg(feature = "hw_raspi")] {
+                TargetBoard::HwRaspi
+            } else if #[cfg(feature = "qemu_raspi")] {
+                TargetBoard::QemuRaspi
+            } else if #[cfg(feature = "qemu_virt")] {
+                TargetBoard::QemuVirt
+            } else {
+                compile_error!("no target board selected")
+            }
+        }
+    };
+    target_board.kernel_start()
+};
 
 #[panic_handler]
 pub fn panic_handler(panic_info: &PanicInfo) -> ! {
@@ -48,7 +76,8 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
 pub extern "C" fn _start() {
     naked_asm!(
         "
-        // test: b test
+        // mov r3, pc
+        sub r3, pc, #8
         b {start}
         ",
         start = sym start
@@ -102,12 +131,46 @@ extern "C" fn start() {
         cmp r5, #0
 	    bne halt
 
+        // Apply relocations
+        ldr r4, =__rel_start
+        add r4, r4, r3
+        ldr r5, =__rel_end
+        add r5, r5, r3
+        ldr r6, ={kernel_start}
+        sub r6, r3, r6
+
+        .reloc_loop:
+            cmp r4, r5
+            beq .reloc_done
+
+            // Make sure the relocation is R_ARM_RELATIVE
+            ldr r7, [r4, #4]
+            and r7, r7, #0xff
+            cmp r7, #0x17
+            bne .unknown_reloc
+
+            ldr r7, [r4]
+            add r7, r7, r6
+            ldr r8, [r7]
+            add r8, r8, r6
+            str r8, [r7]
+            add r4, r4, #8
+            b .reloc_loop
+
+        .unknown_reloc:
+             b .unknown_reloc
+
+        .reloc_done:
+
         // Set the stack pointer to the stack space we reserved in the linker script
         ldr sp, =__stack_top
+        add sp, sp, r3
 
         // Zero the BSS. Zero it by 4 * usize at a time instead of one byte or one usize at a time
         ldr r4, =__bss_start
+        add r4, r4, r3
         ldr r9, =__bss_end
+        add r9, r9, r3
         // Set r5-r8 to 0
         mov r5, #0
         mov r6, #0
@@ -133,7 +196,8 @@ extern "C" fn start() {
             wfe
             b halt
         ",
-        kernel_main = sym kernel_main_32
+        kernel_main = sym kernel_main,
+        kernel_start = const KERNEL_START
     )
 }
 
@@ -146,8 +210,10 @@ static INTERRUPTS: Once<InterruptsRef> = Once::new();
 static TIMER_1_COMPLETE: AtomicBool = AtomicBool::new(false);
 static TIMER_3_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
+#[unsafe(no_mangle)]
+extern "C" fn kernel_main(_r0: usize, _machine_id: usize, _atags_ptr: usize) -> ! {
     logger::init();
+    println!("Hi");
 
     info!(
         "Hello from Rust kernel booted on 32 bit ARM. This is likely booted on a Raspberry Pi Zero, 1, or 2."
@@ -198,7 +264,7 @@ extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) 
             // We use 0xDB to also keep interrupts disabled (I and F bits)
             "msr cpsr_c, #0xdb",
             // 2. Now 'sp' refers to the banked SP_und register
-            "ldr sp, =__interrupt_handler_stack_top",
+            // "ldr sp, __interrupt_handler_stack_top",
             // 3. Switch back to Supervisor Mode (0xD3)
             "msr cpsr_c, #0xd3",
         );
@@ -209,7 +275,7 @@ extern "C" fn kernel_main_32(_r0: usize, _machine_id: usize, _atags_ptr: usize) 
         core::arch::asm!(
             "mrs r0, cpsr",      // Save current (SVC) mode
             "msr cpsr_c, #0xd2", // Switch to IRQ Mode (0x12 | 0xC0)
-            "ldr sp, =__interrupt_handler_stack_top",   // Set a 4KB-aligned stack pointer
+            // "ldr sp, __interrupt_handler_stack_top",   // Set a 4KB-aligned stack pointer
             "msr cpsr_c, r0",    // Switch back to SVC Mode
             out("r0") _,
             options(nomem, nostack)

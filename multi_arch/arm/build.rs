@@ -38,4 +38,5 @@ fn main() {
 
     let kernel_start = target_board.kernel_start();
     println!("cargo:rustc-link-arg=--defsym=KERNEL_START={kernel_start:#X}");
+    println!("cargo:rustc-env=KERNEL_START={kernel_start}");
 }

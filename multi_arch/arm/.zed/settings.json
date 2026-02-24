@@ -7,8 +7,8 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "target": "armv6-none-eabihf",
-          // "target": "armv7a-none-eabihf",
+          // "target": "armv6-none-eabihf",
+          "target": "armv7a-none-eabihf",
           "features": ["qemu_virt", "semihosting"],
         },
       },

@@ -34,6 +34,13 @@ SECTIONS
         *(.rodata .rodata.*)
     }
 
+    .rel.dyn : {
+        . = ALIGN(4);
+        __rel_start = . - __kernel_start;
+        *(.rel*)
+        __rel_end = . - __kernel_start;
+    }
+
     .data :
     {
         *(.data)
@@ -42,23 +49,19 @@ SECTIONS
     .bss :
     {
         . = ALIGN(16);
-        __bss_start = .;
-        *(.bss)
+        __bss_start = . - __kernel_start;
+        *(.bss, .bss.*)
         . = ALIGN(16);
-        __bss_end = .;
+        __bss_end = . - __kernel_start;
     }
 
     . = ALIGN(8);
-    . += 128 * 1024;
-    __stack_top = .;
+    . += 1 * 1024 * 1024;
+    __stack_top = . - __kernel_start;
 
     . = ALIGN(8);
     . += 128 * 1024;
     __interrupt_handler_stack_top = .;
-
-    .ARM.exidx : {
-        *(.ARM.exidx)
-    }
 
     __kernel_end = .;
 }
