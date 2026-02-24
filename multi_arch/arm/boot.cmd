@@ -1,4 +1,4 @@
 dhcp
-wget 0x40010000 http://10.0.2.2:8982/kernel_7.img
-fdt move ${fdtcontroladdr} 0x42000000
-bootz 0x40010000 - ${fdtaddr}
+wget ${kernel_addr_r} http://${serverip}:8982/kernel7.img
+fdt move ${fdtcontroladdr} ${fdt_addr}
+bootz ${kernel_addr_r} - ${fdtaddr}

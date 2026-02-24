@@ -1,1 +1,0 @@
-bootcmd=echo "Autoboot disabled. Manual intervention required.";

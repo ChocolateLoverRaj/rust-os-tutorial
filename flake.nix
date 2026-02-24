@@ -40,20 +40,11 @@
             ];
 
             UBOOT_ARM =
-              (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override (prev: {
-                extraConfig =
-                  let
-                    # boardConfig = prev.src + "/board/emulation/qemu-arm/qemu-arm.env";
-                    patchedBoardConfig = ''
-                      bootmeths="script"
-                    '';
-                    boardConfigFile = pkgs.writeText "Hi" patchedBoardConfig;
-                  in
-                  ''
-                    CONFIG_NET_LWIP=y
-                    CONFIG_ENV_SOURCE_FILE="${boardConfigFile}"
-                  '';
-              }))
+              (pkgsCross.armv7l-hf-multiplatform.ubootQemuArm.override {
+                extraConfig = ''
+                  CONFIG_NET_LWIP=y
+                '';
+              })
               + "/u-boot.bin";
           };
       }
