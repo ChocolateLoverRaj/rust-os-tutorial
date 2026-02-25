@@ -1,4 +1,4 @@
-build_dir := "./build"
+build_dir := absolute_path("./build")
 img_name := "sd.img"
 fat_offset := "1M"
 uboot_script := "./boot.cmd"
@@ -7,9 +7,11 @@ port := "8982"
 build_dir:
     mkdir -p {{ build_dir }}
 
+[working-directory('arm')]
 build: build_dir
     cargo objcopy --target armv6-none-eabihf --features semihosting -- -O binary {{ build_dir }}/kernel.img
 
+[working-directory('arm')]
 build_7: build_dir
     cargo objcopy --target armv7a-none-eabihf --features semihosting -- -O binary {{ build_dir }}/kernel7.img
 
@@ -26,7 +28,13 @@ run_virt: build_7
     # The default CPU for the `virt` machine is armv7a
     qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
 
+[working-directory('aarch64')]
+elf_64:
+    cargo build --target aarch64-unknown-none-softfloat --features semihosting
+    readelf target/aarch64-unknown-none-softfloat/debug/kernel -S -r
+
 # U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
+[working-directory('arm')]
 build_qemu_uboot_script: build_7
     mkimage -A arm -T script -C none -n "Hello World Script" -d {{ uboot_script }} {{ build_dir }}/boot.scr
     truncate -s 64M {{ build_dir }}/{{ img_name }}
@@ -40,11 +48,12 @@ build_qemu_uboot_script: build_7
     # mcopy -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} {{ build_dir }}/kernel7.img ::/boot/kernel.img
 
 run_uboot: build_qemu_uboot_script build_7
-    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file=./build/{{ img_name }},format=raw,if=virtio,readonly=on -s
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --bios $UBOOT_ARM --semihosting  -drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s
 
 serve:
     http-server {{ build_dir }} -p {{ port }}
 
+[working-directory('arm')]
 clippy:
     cargo clippy --target armv6-none-eabihf
     cargo clippy --target armv6-none-eabihf --features semihosting

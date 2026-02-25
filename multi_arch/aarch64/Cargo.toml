@@ -1,0 +1,26 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+path = "./src/main.rs"
+name = "kernel"
+test = false
+bench = false
+
+[dependencies]
+arbitrary-int = "2.1.1"
+arm-gic = { git = "https://review.trustedfirmware.org/arm-firmware-crates/arm-gic.git", rev = "refs/changes/95/43595/4" }
+arm-pl011-uart = "0.4.0"
+atags = "0.0.2"
+collect_array_ext_trait = "0.2.0"
+critical-section = "1.2.0"
+ez_mailbox = { version = "0.1.0", path = "../../../ez_mailbox" }
+fdt-raw = "0.2.0"
+log = "0.4.29"
+semihosting = { version = "0.1.24", optional = true, features = ["stdio"] }
+spin = "0.10.0"
+
+[features]
+semihosting = ["dep:semihosting"]

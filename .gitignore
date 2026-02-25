@@ -5,3 +5,5 @@ target
 # Added by cargo
 
 /target
+
+/multi_arch/build

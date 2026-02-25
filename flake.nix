@@ -46,6 +46,13 @@
                 '';
               })
               + "/u-boot.bin";
+            UBOOT_AARCH64 =
+              (pkgsCross.armv7l-hf-multiplatform.ubootQemuAarch64.override {
+                # extraConfig = ''
+                #   CONFIG_NET_LWIP=y
+                # '';
+              })
+              + "/u-boot.bin";
           };
       }
     );
