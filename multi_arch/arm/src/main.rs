@@ -17,8 +17,7 @@ use aarch32_cpu::interrupt::disable;
 use aarch32_cpu::register::cpsr::ProcessorMode;
 use aarch32_cpu::register::{Cpsr, Midr};
 use arbitrary_int::{u2, u6, u12};
-use arm_gic::gicv2::{GicV2, SgiTarget};
-use arm_gic::{IntId, Trigger};
+use arm_gicv2::{GicCpuInterface, GicDistributor};
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
 use atags::Atags;
 use collect_array_ext_trait::CollectArray;
@@ -27,7 +26,7 @@ use ez_mailbox::timer::{Timer, TimerRef};
 use ez_mailbox::volatile::VolatileRef;
 use fdt_raw::{Fdt, FdtError};
 use log::{error, info, warn};
-use spin::Once;
+use spin::{Mutex, Once};
 
 use crate::logger::init_uart;
 
@@ -185,6 +184,9 @@ static INTERRUPTS: Once<InterruptsRef> = Once::new();
 static TIMER_1_COMPLETE: AtomicBool = AtomicBool::new(false);
 static TIMER_3_COMPLETE: AtomicBool = AtomicBool::new(false);
 
+static GICC: Once<GicCpuInterface> = Once::new();
+static UART: Once<Mutex<Uart>> = Once::new();
+
 #[unsafe(no_mangle)]
 extern "C" fn kernel_main(
     _r0: usize,
@@ -331,8 +333,13 @@ extern "C" fn kernel_main(
                                         let gicd = gicd as *mut _;
                                         let gicc = gicc as *mut _;
                                         // Safety: we know the pointers are valid from the device tree
-                                        let mut gic = unsafe { GicV2::new(gicd, gicc) };
-                                        gic.setup();
+                                        // let mut gic = unsafe { GicV2::new(gicd, gicc) };
+                                        let mut gicd = GicDistributor::new(gicd);
+                                        let gicc = GicCpuInterface::new(gicc);
+                                        gicd.init();
+                                        gicc.init();
+                                        gicd.set_enable(33, true);
+                                        GICC.call_once(|| gicc);
                                         info!("Set up GIC v2");
                                         if let Some(interrupts_property) =
                                             stdout.find_property("interrupts")
@@ -345,26 +352,26 @@ extern "C" fn kernel_main(
                                             info!(
                                                 "UART interrupt type: {interrupt_type:#X} , relative_id: {relative_id:#X} , trigger: {trigger:#X}"
                                             );
-                                            let int_id = match interrupt_type {
-                                                0x0 => IntId::spi(relative_id),
-                                                _ => todo!(),
-                                            };
-                                            gic.enable_interrupt(int_id, true).unwrap();
-                                            info!("Enabled UART interrupts in the GIC");
-                                            let priority_mask = gic.get_priority_mask();
-                                            info!("Current CPU priority mask: {priority_mask:#X}");
-                                            gic.set_interrupt_priority(int_id, 0);
-                                            // unsafe { irq_enable() };
+                                            // let int_id = match interrupt_type {
+                                            //     0x0 => IntId::spi(relative_id),
+                                            //     _ => todo!(),
+                                            // };
+                                            // gic.enable_interrupt(int_id, true).unwrap();
+                                            // info!("Enabled UART interrupts in the GIC");
+                                            // let priority_mask = gic.get_priority_mask();
+                                            // info!("Current CPU priority mask: {priority_mask:#X}");
+                                            // gic.set_interrupt_priority(int_id, 0);
+                                            // // unsafe { irq_enable() };
 
-                                            let sgi_intid = IntId::sgi(3);
-                                            gic.set_interrupt_priority(sgi_intid, 0x80);
-                                            gic.enable_interrupt(sgi_intid, true).unwrap();
-                                            gic.send_sgi(sgi_intid, SgiTarget::All);
-                                            info!("Sent SGI");
+                                            // let sgi_intid = IntId::sgi(3);
+                                            // gic.set_interrupt_priority(sgi_intid, 0x80);
+                                            // gic.enable_interrupt(sgi_intid, true).unwrap();
+                                            // gic.send_sgi(sgi_intid, SgiTarget::All);
+                                            // info!("Sent SGI");
                                         } else {
                                             warn!("No interrupts property for UART");
                                         }
-                                        Some(gic)
+                                        Some(())
                                     } else {
                                         warn!("no driver for interrupt controller");
                                         None
@@ -389,18 +396,11 @@ extern "C" fn kernel_main(
                             info!("UART interrupt masks: {interrupt_masks:#X?}");
                             // Safety: we're not in an interrupt handler
                             // unsafe { aarch32_cpu::interrupt::enable() };
-                            uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
+                            // uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
+                            UART.call_once(|| Mutex::new(uart));
                             unsafe { aarch32_cpu::interrupt::enable() };
-                            unsafe {
-                                asm!(
-                                    "
-                                    cpsie i
-                                    isb
-                                    "
-                                )
-                            };
-                            let sgi_intid = IntId::sgi(3);
-                            gic.as_mut().unwrap().send_sgi(sgi_intid, SgiTarget::All);
+                            // let sgi_intid = IntId::sgi(3);
+                            // gic.as_mut().unwrap().send_sgi(sgi_intid, SgiTarget::All);
                             loop {}
                         } else {
                             warn!("no compatible UART found.");
@@ -529,20 +529,26 @@ unsafe extern "C" fn exception_handler() {
     info!("exception handler!");
     let cpsr = Cpsr::read();
     if cpsr.mode() == Ok(ProcessorMode::Irq) {
-        let interrupts = INTERRUPTS.get().unwrap();
-        let pending_irqs = interrupts.pending_interrupts_irq_0_32();
-        // info!("pending irqs: {pending_irqs:#X}");
-        let timer = TIMER.get().unwrap();
-        if pending_irqs & (1 << 1) != 0 {
-            // info!("timer 1 done");
-            timer.clear_interrupt(u2::new(1));
-            TIMER_1_COMPLETE.store(true, Ordering::Relaxed);
-        }
-        if pending_irqs & (1 << 3) != 0 {
-            // info!("timer 3 done");
-            timer.clear_interrupt(u2::new(3));
-            TIMER_3_COMPLETE.store(true, Ordering::Relaxed);
-        }
+        let gicc = GICC.get().unwrap();
+        gicc.handle_irq(|vector| {
+            info!("interrupt vector {vector}");
+            let mut uart = UART.get().unwrap().try_lock().unwrap();
+            uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
+        });
+        // let interrupts = INTERRUPTS.get().unwrap();
+        // let pending_irqs = interrupts.pending_interrupts_irq_0_32();
+        // // info!("pending irqs: {pending_irqs:#X}");
+        // let timer = TIMER.get().unwrap();
+        // if pending_irqs & (1 << 1) != 0 {
+        //     // info!("timer 1 done");
+        //     timer.clear_interrupt(u2::new(1));
+        //     TIMER_1_COMPLETE.store(true, Ordering::Relaxed);
+        // }
+        // if pending_irqs & (1 << 3) != 0 {
+        //     // info!("timer 3 done");
+        //     timer.clear_interrupt(u2::new(3));
+        //     TIMER_3_COMPLETE.store(true, Ordering::Relaxed);
+        // }
     } else {
         panic!("exception in unexpected processor mode. cpsr: {cpsr:?}")
     }
