@@ -20,15 +20,40 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
 // Prevent this function from being removed
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
-pub extern "C" fn _start() {
+pub unsafe extern "C" fn _start() {
     naked_asm!(
         "
-        .halt:
-            b .halt
-        // Get the addres where the start of our kernel was loaded
-
-        // sub r3, pc, #8
+        b {start}
         ",
-        // start_common = sym start_common
+        start = sym start
     )
+}
+
+#[unsafe(naked)]
+pub unsafe extern "C" fn start() {
+    naked_asm!(
+        "
+        // Set stack pointer
+        adr x5, __stack_top
+        mov sp, x5
+
+        // Clear bss
+        adr x5, __bss_start
+        ldr w6, __bss_size
+        1:
+            cbz     w6, 2f
+            str     xzr, [x5], #8
+            sub     w6, w6, #1
+            cbnz    w6, 1b
+
+        2:
+            bl      {kernel_main}
+        ",
+        kernel_main = sym kernel_main
+    )
+}
+
+unsafe extern "C" fn kernel_main(fdt_addr: usize) -> ! {
+    semihosting::println!("Hello from kernel (written in Rust) on aarch64");
+    loop {}
 }
