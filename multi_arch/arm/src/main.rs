@@ -6,20 +6,27 @@
 mod logger;
 
 use core::arch::arm::{__wfe, __wfi};
-use core::arch::naked_asm;
+use core::arch::{asm, naked_asm};
+use core::fmt::Write;
 use core::ptr::addr_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{panic::PanicInfo, ptr::NonNull};
 
+use aarch32_cpu::asm::irq_enable;
 use aarch32_cpu::interrupt::disable;
 use aarch32_cpu::register::cpsr::ProcessorMode;
 use aarch32_cpu::register::{Cpsr, Midr};
 use arbitrary_int::{u2, u6, u12};
+use arm_gic::gicv2::{GicV2, SgiTarget};
+use arm_gic::{IntId, Trigger};
 use arm_pl011_uart::{Uart, UniqueMmioPointer};
+use atags::Atags;
+use collect_array_ext_trait::CollectArray;
 use ez_mailbox::interrupts::{Interrupts, InterruptsRef};
 use ez_mailbox::timer::{Timer, TimerRef};
 use ez_mailbox::volatile::VolatileRef;
-use log::{error, info};
+use fdt_raw::{Fdt, FdtError};
+use log::{error, info, warn};
 use spin::Once;
 
 use crate::logger::init_uart;
@@ -190,6 +197,7 @@ extern "C" fn kernel_main(
     info!(
         "Hello from Rust kernel booted on 32 bit ARM. ATAGS / FDT ptr: {atags_or_fdt_ptr:#X}. Kernel loaded at address: {kernel_start:#X}"
     );
+
     let midr = Midr::read();
     let vectors_addr = vectors as *const () as usize;
     unsafe {
@@ -198,37 +206,6 @@ extern "C" fn kernel_main(
             in(reg) vectors_addr
         );
     }
-
-    // Figure out what machine we are running on
-    // https://wiki.osdev.org/Detecting_Raspberry_Pi_Board
-    match midr.part_no() {
-        i if i == u12::new(RPI_0_1_PART_NO) => {
-            info!("Running on a Raspberry Pi Zero or 1");
-            // It's safe to use this UART on any computer after this check.
-            const MMIO_BASE: usize = 0x20000000;
-            const GPIO_BASE: usize = MMIO_BASE + 0x200000;
-            const UART0_BASE: usize = GPIO_BASE + 0x1000;
-            let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
-            info!("Running on a Raspberry Pi Zero or 1");
-        }
-        i if i == u12::new(RPI_2_PART_NO) => {
-            info!("Running on a Raspberry Pi 2");
-            // It's safe to use this UART on any computer after this check.
-            const MMIO_BASE: usize = 0x3F000000;
-            const GPIO_BASE: usize = MMIO_BASE + 0x200000;
-            const UART0_BASE: usize = GPIO_BASE + 0x1000;
-            let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-            init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
-            info!("Running on a Raspberry Pi 2");
-        }
-        part_no => {
-            info!("Unknown part number: {part_no:#X}. Not doing anything.");
-        }
-    }
-
-    info!("wrote to VBAR {vectors_addr:#X}");
-
     let interrupt_handler_stack_top = kernel_start + addr_of!(__interrupt_handler_stack_top).addr();
     // Set the stack pointer of the UND handler
     unsafe {
@@ -245,7 +222,6 @@ extern "C" fn kernel_main(
             in(reg) interrupt_handler_stack_top
         );
     }
-
     // Set the stack pointer of the IRQ handler
     unsafe {
         core::arch::asm!(
@@ -266,45 +242,254 @@ extern "C" fn kernel_main(
         );
     }
 
-    let mmio_base = get_mmio_base();
-    let timer = TimerRef({
-        let ptr = NonNull::new((mmio_base + Timer::ADDRESS) as *mut _).unwrap();
-        unsafe { VolatileRef::new(ptr) }
-    });
-    let counter_lo = timer.counter_lo();
-    let mut timer_1_compare_value = counter_lo.wrapping_add(1_000_000);
-    timer.write_compare_value(u2::new(1), timer_1_compare_value);
-    timer.clear_interrupt(u2::new(1));
-    let mut timer_3_compare_value = counter_lo.wrapping_add(2_000_000);
-    timer.write_compare_value(u2::new(3), timer_3_compare_value);
-    timer.clear_interrupt(u2::new(3));
+    let p = atags_or_fdt_ptr as *const [u32; 2];
+    let magic_bytes = unsafe { p.read() };
+    info!("magic bytes: {:#X?}", magic_bytes);
+    enum FdtOrAtags<'a> {
+        Fdt(Fdt<'a>),
+        Atags(Atags<'a>),
+    }
+    let fdt_or_atags = {
+        let ptr = atags_or_fdt_ptr as *mut _;
+        // Safety: it's safe to at least read the magic
+        let fdt = unsafe { Fdt::from_ptr(ptr) };
+        match fdt {
+            Ok(fdt) => FdtOrAtags::Fdt(fdt),
+            Err(FdtError::InvalidMagic(n)) => FdtOrAtags::Atags({
+                let ptr = NonNull::new(kernel_start as *mut _).unwrap();
+                // Safety: since the pointer is not an FDT is must be an ATAGS
+                unsafe { Atags::new(ptr) }
+            }),
+            Err(e) => panic!("error parsing fdt: {e}"),
+        }
+    };
+    match fdt_or_atags {
+        FdtOrAtags::Fdt(fdt) => {
+            info!("Received Device Tree from previous boot stage");
+            if let Some(chosen) = fdt.chosen() {
+                if let Some(stdout_path) = chosen.stdout_path() {
+                    info!("chosen stdout: {stdout_path:?}");
+                    if stdout_path.starts_with("/") {
+                        let stdout = fdt.find_by_path(stdout_path).expect("chosen node exists");
+                        if stdout
+                            .compatibles()
+                            .any(|compatible| compatible == "arm,pl011")
+                        {
+                            let mut gic = {
+                                let interrupt_parent = {
+                                    let mut node_path = stdout_path;
+                                    loop {
+                                        let node = fdt
+                                            .find_by_path(match node_path {
+                                                "" => "/",
+                                                node_path => node_path,
+                                            })
+                                            .unwrap();
+                                        if let Some(property) =
+                                            node.find_property("interrupt-parent")
+                                        {
+                                            break Some(property.as_interrupt_parent().unwrap());
+                                        }
+                                        if let Some((parent_path, _)) = node_path.rsplit_once("/") {
+                                            node_path = parent_path;
+                                        } else {
+                                            break None;
+                                        }
+                                    }
+                                };
+                                if let Some(interrupt_parent) = interrupt_parent {
+                                    info!("interrupt parent: {interrupt_parent:#X?}");
+                                    let interrupt_parent = fdt
+                                        .all_nodes()
+                                        .find(|node| {
+                                            if let Some(phandle) = node.find_property("phandle")
+                                                && phandle.as_phandle().unwrap() == interrupt_parent
+                                            {
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        })
+                                        .unwrap();
+                                    let interrupt_parent_name = interrupt_parent.name();
+                                    info!("interrupt parent name: {interrupt_parent_name:?}");
+                                    if interrupt_parent
+                                        .compatibles()
+                                        .any(|compatible| compatible == "arm,cortex-a15-gic")
+                                    {
+                                        let [gicd, gicc] = interrupt_parent
+                                            .reg()
+                                            .unwrap()
+                                            .collect_array::<2>()
+                                            .unwrap();
+                                        let mut addresses = [gicd.address, gicc.address];
+                                        fdt.translate_addresses(
+                                            interrupt_parent_name,
+                                            &mut addresses,
+                                        );
+                                        let [gicd, gicc] = addresses;
+                                        let gicd = gicd as *mut _;
+                                        let gicc = gicc as *mut _;
+                                        // Safety: we know the pointers are valid from the device tree
+                                        let mut gic = unsafe { GicV2::new(gicd, gicc) };
+                                        gic.setup();
+                                        info!("Set up GIC v2");
+                                        if let Some(interrupts_property) =
+                                            stdout.find_property("interrupts")
+                                        {
+                                            let [interrupt_type, relative_id, trigger] =
+                                                interrupts_property
+                                                    .as_u32_iter()
+                                                    .collect_array()
+                                                    .unwrap();
+                                            info!(
+                                                "UART interrupt type: {interrupt_type:#X} , relative_id: {relative_id:#X} , trigger: {trigger:#X}"
+                                            );
+                                            let int_id = match interrupt_type {
+                                                0x0 => IntId::spi(relative_id),
+                                                _ => todo!(),
+                                            };
+                                            gic.enable_interrupt(int_id, true).unwrap();
+                                            info!("Enabled UART interrupts in the GIC");
+                                            let priority_mask = gic.get_priority_mask();
+                                            info!("Current CPU priority mask: {priority_mask:#X}");
+                                            gic.set_interrupt_priority(int_id, 0);
+                                            // unsafe { irq_enable() };
 
-    let interrupts = InterruptsRef({
-        let ptr = NonNull::new((mmio_base + Interrupts::ADDRESS) as *mut _).unwrap();
-        unsafe { VolatileRef::new(ptr) }
-    });
-    interrupts.enable_irq(u6::new(1));
-    interrupts.enable_irq(u6::new(3));
+                                            let sgi_intid = IntId::sgi(3);
+                                            gic.set_interrupt_priority(sgi_intid, 0x80);
+                                            gic.enable_interrupt(sgi_intid, true).unwrap();
+                                            gic.send_sgi(sgi_intid, SgiTarget::All);
+                                            info!("Sent SGI");
+                                        } else {
+                                            warn!("No interrupts property for UART");
+                                        }
+                                        Some(gic)
+                                    } else {
+                                        warn!("no driver for interrupt controller");
+                                        None
+                                    }
+                                } else {
+                                    warn!("no nterrupts property for UART");
+                                    None
+                                }
+                            };
+                            let fdt_address = stdout.reg().unwrap().next().unwrap().address;
+                            let physical_address =
+                                usize::try_from(fdt.translate_address(stdout_path, fdt_address))
+                                    .unwrap();
+                            let mut uart = Uart::new({
+                                let ptr = NonNull::new(physical_address as *mut _).unwrap();
+                                // Safety: we know the pointer is valid from the device tree
+                                unsafe { UniqueMmioPointer::new(ptr) }
+                            });
+                            uart.write_str("hello through UART\n").unwrap();
+                            uart.set_interrupt_masks(arm_pl011_uart::Interrupts::all());
+                            let interrupt_masks = uart.interrupt_masks();
+                            info!("UART interrupt masks: {interrupt_masks:#X?}");
+                            // Safety: we're not in an interrupt handler
+                            // unsafe { aarch32_cpu::interrupt::enable() };
+                            uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
+                            unsafe { aarch32_cpu::interrupt::enable() };
+                            unsafe {
+                                asm!(
+                                    "
+                                    cpsie i
+                                    isb
+                                    "
+                                )
+                            };
+                            let sgi_intid = IntId::sgi(3);
+                            gic.as_mut().unwrap().send_sgi(sgi_intid, SgiTarget::All);
+                            loop {}
+                        } else {
+                            warn!("no compatible UART found.");
+                            for compatible in stdout.compatibles() {
+                                info!("compatible: {compatible:?}");
+                            }
+                        }
+                    } else {
+                        todo!("alias stdout")
+                    }
+                }
+            } else {
+                info!("No /chosen");
+            }
+        }
+        FdtOrAtags::Atags(_) => {
+            info!("Received ATAGS from previous boot stage");
+            // Figure out what machine we are running on
+            // https://wiki.osdev.org/Detecting_Raspberry_Pi_Board
+            match midr.part_no() {
+                i if i == u12::new(RPI_0_1_PART_NO) => {
+                    info!("Running on a Raspberry Pi Zero or 1");
+                    // It's safe to use this UART on any computer after this check.
+                    const MMIO_BASE: usize = 0x20000000;
+                    const GPIO_BASE: usize = MMIO_BASE + 0x200000;
+                    const UART0_BASE: usize = GPIO_BASE + 0x1000;
+                    let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
+                    init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+                    info!("Running on a Raspberry Pi Zero or 1");
+                }
+                i if i == u12::new(RPI_2_PART_NO) => {
+                    info!("Running on a Raspberry Pi 2");
+                    // It's safe to use this UART on any computer after this check.
+                    const MMIO_BASE: usize = 0x3F000000;
+                    const GPIO_BASE: usize = MMIO_BASE + 0x200000;
+                    const UART0_BASE: usize = GPIO_BASE + 0x1000;
+                    let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
+                    init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+                    info!("Running on a Raspberry Pi 2");
+                }
+                part_no => {
+                    info!("Unknown part number: {part_no:#X}. Not doing anything.");
+                }
+            };
+            let mmio_base = get_mmio_base();
+            let timer = TimerRef({
+                let ptr = NonNull::new((mmio_base + Timer::ADDRESS) as *mut _).unwrap();
+                unsafe { VolatileRef::new(ptr) }
+            });
+            let counter_lo = timer.counter_lo();
+            let mut timer_1_compare_value = counter_lo.wrapping_add(1_000_000);
+            timer.write_compare_value(u2::new(1), timer_1_compare_value);
+            timer.clear_interrupt(u2::new(1));
+            let mut timer_3_compare_value = counter_lo.wrapping_add(2_000_000);
+            timer.write_compare_value(u2::new(3), timer_3_compare_value);
+            timer.clear_interrupt(u2::new(3));
 
-    info!("enabled timers 1 and 3");
-    let timer = TIMER.call_once(|| timer);
-    INTERRUPTS.call_once(|| interrupts);
+            let interrupts = InterruptsRef({
+                let ptr = NonNull::new((mmio_base + Interrupts::ADDRESS) as *mut _).unwrap();
+                unsafe { VolatileRef::new(ptr) }
+            });
+            interrupts.enable_irq(u6::new(1));
+            interrupts.enable_irq(u6::new(3));
 
-    // Safety: we're not in an interrupt handler
-    unsafe { aarch32_cpu::interrupt::enable() };
+            info!("enabled timers 1 and 3");
+            let timer = TIMER.call_once(|| timer);
+            INTERRUPTS.call_once(|| interrupts);
+
+            // Safety: we're not in an interrupt handler
+            unsafe { aarch32_cpu::interrupt::enable() };
+
+            loop {
+                unsafe { __wfi() };
+                if TIMER_1_COMPLETE.swap(false, Ordering::Relaxed) {
+                    info!("timer 1 complete");
+                    timer_1_compare_value = timer_1_compare_value.wrapping_add(2_000_000);
+                    timer.write_compare_value(u2::new(1), timer_1_compare_value);
+                }
+                if TIMER_3_COMPLETE.swap(false, Ordering::Relaxed) {
+                    info!("timer 3 complete");
+                    timer_3_compare_value = timer_3_compare_value.wrapping_add(2_000_000);
+                    timer.write_compare_value(u2::new(3), timer_3_compare_value);
+                }
+            }
+        }
+    };
 
     loop {
-        unsafe { __wfi() };
-        if TIMER_1_COMPLETE.swap(false, Ordering::Relaxed) {
-            info!("timer 1 complete");
-            timer_1_compare_value = timer_1_compare_value.wrapping_add(2_000_000);
-            timer.write_compare_value(u2::new(1), timer_1_compare_value);
-        }
-        if TIMER_3_COMPLETE.swap(false, Ordering::Relaxed) {
-            info!("timer 3 complete");
-            timer_3_compare_value = timer_3_compare_value.wrapping_add(2_000_000);
-            timer.write_compare_value(u2::new(3), timer_3_compare_value);
-        }
+        unsafe { __wfe() };
     }
 }
 
@@ -341,6 +526,7 @@ extern "C" fn vectors() {
 }
 
 unsafe extern "C" fn exception_handler() {
+    info!("exception handler!");
     let cpsr = Cpsr::read();
     if cpsr.mode() == Ok(ProcessorMode::Irq) {
         let interrupts = INTERRUPTS.get().unwrap();
