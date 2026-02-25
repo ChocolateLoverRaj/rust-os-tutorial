@@ -533,6 +533,22 @@ unsafe extern "C" fn exception_handler() {
         gicc.handle_irq(|vector| {
             info!("interrupt vector {vector}");
             let mut uart = UART.get().unwrap().try_lock().unwrap();
+            loop {
+                match uart.read_word() {
+                    Ok(byte) => {
+                        if let Some(byte) = byte {
+                            let char = char::from_u32(byte.into());
+                            info!("received byte from UART: {byte:#X} ({char:?})");
+                        } else {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("uart error: {e}");
+                        break;
+                    }
+                }
+            }
             uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
         });
         // let interrupts = INTERRUPTS.get().unwrap();
