@@ -24,7 +24,7 @@ run_2: build_7
 
 run_virt: build_7
     # The default CPU for the `virt` machine is armv7a
-    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting -s --trace "*gic*"
+    qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
 
 # U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
 build_qemu_uboot_script: build_7

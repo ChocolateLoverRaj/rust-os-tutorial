@@ -28,6 +28,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993a810118f8f37e9c4411c86f1c4c940a09a7ab34b7bf2d88d06f50c553fab7"
 
 [[package]]
+name = "arm-gic"
+version = "0.7.1"
+source = "git+https://review.trustedfirmware.org/arm-firmware-crates/arm-gic.git?rev=refs%2Fchanges%2F95%2F43595%2F4#e8f8be38736ea46b8fe27605043d34ba5bb3fa80"
+dependencies = [
+ "bitflags",
+ "safe-mmio",
+ "thiserror",
+ "zerocopy",
+]
+
+[[package]]
 name = "arm-pl011-uart"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -46,15 +57,6 @@ name = "arm-targets"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d29a37f252452446b67d5e50dee82a6ce12781218b915244bb6507c10b72812"
-
-[[package]]
-name = "arm_gicv2"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d25e73c949c69f75d1b9dba39c5475523403b31eb8c2fdc99da4dc33bc1aca"
-dependencies = [
- "tock-registers",
-]
 
 [[package]]
 name = "atags"
@@ -186,8 +188,8 @@ version = "0.1.0"
 dependencies = [
  "aarch32-cpu",
  "arbitrary-int 2.1.1",
+ "arm-gic",
  "arm-pl011-uart",
- "arm_gicv2",
  "atags",
  "collect_array_ext_trait",
  "ez_mailbox",
@@ -352,12 +354,6 @@ dependencies = [
  "quote",
  "syn 2.0.116",
 ]
-
-[[package]]
-name = "tock-registers"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
 
 [[package]]
 name = "unicode-ident"
