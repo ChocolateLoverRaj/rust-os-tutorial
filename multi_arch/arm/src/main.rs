@@ -338,6 +338,7 @@ extern "C" fn kernel_main(
                                         let gicc = GicCpuInterface::new(gicc);
                                         gicd.init();
                                         gicc.init();
+                                        gicd.configure_interrupt(33, arm_gicv2::TriggerMode::Level);
                                         gicd.set_enable(33, true);
                                         GICC.call_once(|| gicc);
                                         info!("Set up GIC v2");
@@ -398,6 +399,7 @@ extern "C" fn kernel_main(
                             // unsafe { aarch32_cpu::interrupt::enable() };
                             // uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
                             UART.call_once(|| Mutex::new(uart));
+
                             unsafe { aarch32_cpu::interrupt::enable() };
                             // let sgi_intid = IntId::sgi(3);
                             // gic.as_mut().unwrap().send_sgi(sgi_intid, SgiTarget::All);
@@ -533,6 +535,8 @@ unsafe extern "C" fn exception_handler() {
         gicc.handle_irq(|vector| {
             info!("interrupt vector {vector}");
             let mut uart = UART.get().unwrap().try_lock().unwrap();
+            let interrupts = uart.raw_interrupt_status();
+            info!("uart interrupts: {interrupts:#X?}");
             loop {
                 match uart.read_word() {
                     Ok(byte) => {
@@ -549,7 +553,7 @@ unsafe extern "C" fn exception_handler() {
                     }
                 }
             }
-            uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
+            // uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
         });
         // let interrupts = INTERRUPTS.get().unwrap();
         // let pending_irqs = interrupts.pending_interrupts_irq_0_32();
