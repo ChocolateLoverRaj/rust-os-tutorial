@@ -7,7 +7,6 @@ mod logger;
 
 use core::arch::arm::{__wfe, __wfi};
 use core::arch::naked_asm;
-use core::fmt::Write;
 use core::ptr::addr_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{panic::PanicInfo, ptr::NonNull};
@@ -28,8 +27,6 @@ use fdt_raw::{Fdt, FdtError};
 use log::{error, info, warn};
 use spin::{Mutex, Once};
 
-use crate::logger::init_uart;
-
 unsafe extern "C" {
     static __interrupt_handler_stack_top: usize;
 }
@@ -37,7 +34,10 @@ unsafe extern "C" {
 #[panic_handler]
 pub fn panic_handler(panic_info: &PanicInfo) -> ! {
     disable();
-    unsafe { logger::force_unlock() };
+    if let Some(uart) = UART.get() {
+        // Safety: we're breaking safety to show panic messages even if unsafe
+        unsafe { uart.force_unlock() };
+    }
     error!("{panic_info}");
     loop {
         unsafe { __wfe() };
@@ -391,14 +391,16 @@ extern "C" fn kernel_main(
                                 // Safety: we know the pointer is valid from the device tree
                                 unsafe { UniqueMmioPointer::new(ptr) }
                             });
-                            uart.write_str("hello through UART\n").unwrap();
-                            uart.set_interrupt_masks(arm_pl011_uart::Interrupts::all());
+                            uart.set_interrupt_masks(
+                                arm_pl011_uart::Interrupts::RXI | arm_pl011_uart::Interrupts::RTI,
+                            );
                             let interrupt_masks = uart.interrupt_masks();
                             info!("UART interrupt masks: {interrupt_masks:#X?}");
                             // Safety: we're not in an interrupt handler
                             // unsafe { aarch32_cpu::interrupt::enable() };
                             // uart.clear_interrupts(arm_pl011_uart::Interrupts::all());
                             UART.call_once(|| Mutex::new(uart));
+                            info!("Logger set to log to {stdout_path}");
 
                             unsafe { aarch32_cpu::interrupt::enable() };
                             // let sgi_intid = IntId::sgi(3);
@@ -432,7 +434,9 @@ extern "C" fn kernel_main(
                     const GPIO_BASE: usize = MMIO_BASE + 0x200000;
                     const UART0_BASE: usize = GPIO_BASE + 0x1000;
                     let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-                    init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+                    UART.call_once(|| {
+                        Mutex::new(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }))
+                    });
                     info!("Running on a Raspberry Pi Zero or 1");
                 }
                 i if i == u12::new(RPI_2_PART_NO) => {
@@ -442,7 +446,9 @@ extern "C" fn kernel_main(
                     const GPIO_BASE: usize = MMIO_BASE + 0x200000;
                     const UART0_BASE: usize = GPIO_BASE + 0x1000;
                     let ptr = NonNull::new(UART0_BASE as *mut _).unwrap();
-                    init_uart(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }));
+                    UART.call_once(|| {
+                        Mutex::new(Uart::new(unsafe { UniqueMmioPointer::new(ptr) }))
+                    });
                     info!("Running on a Raspberry Pi 2");
                 }
                 part_no => {
@@ -536,15 +542,18 @@ unsafe extern "C" fn exception_handler() {
             let mut gic = gic.try_lock().unwrap();
             let int_id = gic.get_and_acknowledge_interrupt().unwrap();
             info!("interrupt: {int_id:#X?}");
-            let mut uart = UART.get().unwrap().try_lock().unwrap();
+            let uart_mutex = UART.get().unwrap();
+            let uart = uart_mutex.try_lock().unwrap();
             let interrupts = uart.raw_interrupt_status();
+            // We can't log messages while holding the lock to UART
+            drop(uart);
             info!("uart interrupts: {interrupts:#X?}");
-            if interrupts.contains(arm_pl011_uart::Interrupts::TXI) {
-                uart.clear_interrupts(arm_pl011_uart::Interrupts::TXI);
-            }
 
             loop {
-                match uart.read_word() {
+                let mut uart = uart_mutex.try_lock().unwrap();
+                let byte = uart.read_word();
+                drop(uart);
+                match byte {
                     Ok(byte) => {
                         if let Some(byte) = byte {
                             let char = char::from_u32(byte.into());

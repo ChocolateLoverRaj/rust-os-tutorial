@@ -1,12 +1,10 @@
 use core::fmt::Write;
 
-use arm_pl011_uart::Uart;
 use log::{LevelFilter, Log, max_level, set_logger, set_max_level};
-use spin::mutex::Mutex;
 
-struct Logger {
-    uart: Mutex<Option<Uart<'static>>>,
-}
+use crate::UART;
+
+struct Logger;
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
@@ -14,31 +12,23 @@ impl Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        let mut uart = self.uart.lock();
-        if let Some(uart) = uart.as_mut() {
-            writeln!(uart, "{}", record.args()).unwrap();
-        } else {
-            #[cfg(feature = "semihosting")]
-            semihosting::println!("{}", record.args());
-        };
+        critical_section::with(|_cs| {
+            if let Some(uart) = UART.get() {
+                let mut uart = uart.lock();
+                writeln!(uart, "{}", record.args()).unwrap();
+            } else {
+                #[cfg(feature = "semihosting")]
+                semihosting::println!("{}", record.args());
+            };
+        });
     }
 
     fn flush(&self) {}
 }
 
-static LOGGER: Logger = Logger {
-    uart: Mutex::new(None),
-};
+static LOGGER: Logger = Logger;
 
 pub fn init() {
     set_logger(&LOGGER).unwrap();
     set_max_level(LevelFilter::Trace);
-}
-
-pub fn init_uart(uart: Uart<'static>) {
-    *LOGGER.uart.lock() = Some(uart);
-}
-
-pub unsafe fn force_unlock() {
-    unsafe { LOGGER.uart.force_unlock() };
 }

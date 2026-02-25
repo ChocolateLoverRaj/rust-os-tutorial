@@ -11,6 +11,7 @@ dependencies = [
  "arbitrary-int 2.1.1",
  "arm-targets",
  "bitbybit 1.4.0",
+ "critical-section",
  "num_enum",
  "thiserror",
 ]
@@ -109,6 +110,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ba2e83230de13abf9f0aab7b50d98ba07fb2135cb44c930de17b4bbdebaf497"
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
 name = "custom_debug_derive"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,6 +199,7 @@ dependencies = [
  "arm-pl011-uart",
  "atags",
  "collect_array_ext_trait",
+ "critical-section",
  "ez_mailbox",
  "fdt-raw",
  "log",
