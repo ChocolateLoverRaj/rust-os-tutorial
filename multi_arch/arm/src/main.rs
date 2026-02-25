@@ -537,6 +537,9 @@ unsafe extern "C" fn exception_handler() {
             let mut uart = UART.get().unwrap().try_lock().unwrap();
             let interrupts = uart.raw_interrupt_status();
             info!("uart interrupts: {interrupts:#X?}");
+            if interrupts.contains(arm_pl011_uart::Interrupts::TXI) {
+                uart.clear_interrupts(arm_pl011_uart::Interrupts::TXI);
+            }
             loop {
                 match uart.read_word() {
                     Ok(byte) => {
