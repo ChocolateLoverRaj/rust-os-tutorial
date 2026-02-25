@@ -28,14 +28,21 @@ run_1: build
 run_2: build_7
     qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
 
-run_virt: build_7
+run_virt_arm: build_7
     # The default CPU for the `virt` machine is armv7a
     qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
+
+run_virt_aarch64: build_8
+    qemu-system-aarch64 --machine virt --cpu cortex-a57 --no-reboot --nographic --serial mon:stdio --semihosting --kernel {{ build_dir }}/kernel8.img
 
 [working-directory('aarch64')]
 elf_64:
     cargo build --target aarch64-unknown-none-softfloat --features semihosting
     readelf target/aarch64-unknown-none-softfloat/debug/kernel -S -r
+
+[working-directory('aarch64')]
+objdump:
+    cargo objdump --target aarch64-unknown-none-softfloat --features semihosting -- -d --start-address=0x0 --stop-address=0x100
 
 # U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
 build_qemu_uboot_script:

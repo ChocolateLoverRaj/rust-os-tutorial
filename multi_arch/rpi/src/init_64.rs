@@ -51,7 +51,7 @@ extern "C" fn _start() {
         1:
             cbz     w6, 2f
             str     xzr, [x5], #8
-            sub     w6, w6, #1
+            sub     w6, w6, #8
             cbnz    w6, 1b
         2:
             bl      {kernel_main}

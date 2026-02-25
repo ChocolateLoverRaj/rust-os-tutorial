@@ -39,10 +39,10 @@ SECTIONS
         *(.rodata .rodata.*)
     }
 
-    .rel.dyn : {
-        . = ALIGN(4);
+    .rela.dyn : {
+        . = ALIGN(8);
         __rel_start = . - __kernel_start;
-        *(.rel*)
+        *(.rela*)
         __rel_end = . - __kernel_start;
     }
 
@@ -53,10 +53,10 @@ SECTIONS
 
     .bss :
     {
-        . = ALIGN(16);
+        . = ALIGN(8);
         __bss_start = . - __kernel_start;
         *(.bss, .bss.*)
-        . = ALIGN(16);
+        . = ALIGN(8);
         __bss_end = . - __kernel_start;
     }
 

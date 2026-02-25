@@ -23,6 +23,8 @@ pub fn panic_handler(panic_info: &PanicInfo) -> ! {
 pub unsafe extern "C" fn _start() {
     naked_asm!(
         "
+        // Get the actual start address (which is also the load offset)
+        adr x1, _start
         b {start}
         ",
         start = sym start
@@ -33,20 +35,68 @@ pub unsafe extern "C" fn _start() {
 pub unsafe extern "C" fn start() {
     naked_asm!(
         "
+        // Do relocations
+        // Get the actual start and end addresses
+        ldr x2, =__rel_start
+        add x2, x2, x1
+        ldr x3, =__rel_end
+        add x3, x3, x1
+        // Loop through all relocations
+        .reloc_loop:
+            // Exit if we're done
+            cmp x2, x3
+            beq .reloc_loop_done
+
+            // Load the relocation type to make sure it is R_AARCH64_RELATIV
+            ldr x4, [x2, #8]
+            // The type is the lower 32 bits
+            cmp w4, #0x403
+            bne .unknown_reloc
+
+            // Read `r_addend`
+            ldr x4, [x2, #16]
+            // Add the offset
+            add x4, x4, x1
+
+            // Read the location to be patched
+            ldr x5, [x2]
+            // Add the offset
+            add x5, x5, x1
+
+            // Patch the location
+            str x4, [x5]
+
+            // Go to the next relocation
+            add x2, x2, #24
+            b .reloc_loop
+
+        .unknown_reloc:
+            b .unknown_reloc
+
+        .reloc_loop_done:
+
         // Set stack pointer
-        adr x5, __stack_top
-        mov sp, x5
+        ldr x2, =__stack_top
+        add x2, x2, x1
+        mov sp, x2
 
         // Clear bss
-        adr x5, __bss_start
-        ldr w6, __bss_size
-        1:
-            cbz     w6, 2f
-            str     xzr, [x5], #8
-            sub     w6, w6, #1
-            cbnz    w6, 1b
+        ldr x2, =__bss_start
+        add x2, x2, x1
+        ldr x3, =__bss_end
+        add x3, x3, x1
 
-        2:
+        .zero_bss_loop:
+            // Exit the loop if we're done
+            cmp x2, x3
+            beq .zero_bss_loop_done
+
+            // Write *x2 = 0_u64; x2 += 8;
+            str     xzr, [x2], #8
+
+            b .zero_bss_loop
+
+        .zero_bss_loop_done:
             bl      {kernel_main}
         ",
         kernel_main = sym kernel_main
