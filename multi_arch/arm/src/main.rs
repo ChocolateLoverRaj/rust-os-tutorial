@@ -12,7 +12,6 @@ use core::ptr::addr_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{panic::PanicInfo, ptr::NonNull};
 
-use aarch32_cpu::asm::wfi;
 use aarch32_cpu::interrupt::disable;
 use aarch32_cpu::register::cpsr::ProcessorMode;
 use aarch32_cpu::register::{Cpsr, Midr};
@@ -405,7 +404,7 @@ extern "C" fn kernel_main(
                             // let sgi_intid = IntId::sgi(3);
                             // gic.as_mut().unwrap().send_sgi(sgi_intid, SgiTarget::All);
                             loop {
-                                wfi();
+                                unsafe { __wfi() };
                             }
                         } else {
                             warn!("no compatible UART found.");
@@ -533,47 +532,50 @@ extern "C" fn vectors() {
 unsafe extern "C" fn exception_handler() {
     let cpsr = Cpsr::read();
     if cpsr.mode() == Ok(ProcessorMode::Irq) {
-        let mut gic = GIC.get().unwrap().try_lock().unwrap();
-        let int_id = gic.get_and_acknowledge_interrupt().unwrap();
-        info!("interrupt: {int_id:#X?}");
-        let mut uart = UART.get().unwrap().try_lock().unwrap();
-        let interrupts = uart.raw_interrupt_status();
-        info!("uart interrupts: {interrupts:#X?}");
-        if interrupts.contains(arm_pl011_uart::Interrupts::TXI) {
-            uart.clear_interrupts(arm_pl011_uart::Interrupts::TXI);
-        }
+        if let Some(gic) = GIC.get() {
+            let mut gic = gic.try_lock().unwrap();
+            let int_id = gic.get_and_acknowledge_interrupt().unwrap();
+            info!("interrupt: {int_id:#X?}");
+            let mut uart = UART.get().unwrap().try_lock().unwrap();
+            let interrupts = uart.raw_interrupt_status();
+            info!("uart interrupts: {interrupts:#X?}");
+            if interrupts.contains(arm_pl011_uart::Interrupts::TXI) {
+                uart.clear_interrupts(arm_pl011_uart::Interrupts::TXI);
+            }
 
-        loop {
-            match uart.read_word() {
-                Ok(byte) => {
-                    if let Some(byte) = byte {
-                        let char = char::from_u32(byte.into());
-                        info!("received byte from UART: {byte:#X} ({char:?})");
-                    } else {
+            loop {
+                match uart.read_word() {
+                    Ok(byte) => {
+                        if let Some(byte) = byte {
+                            let char = char::from_u32(byte.into());
+                            info!("received byte from UART: {byte:#X} ({char:?})");
+                        } else {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("uart error: {e}");
                         break;
                     }
                 }
-                Err(e) => {
-                    error!("uart error: {e}");
-                    break;
-                }
+            }
+            gic.end_interrupt(int_id);
+        } else {
+            let interrupts = INTERRUPTS.get().unwrap();
+            let pending_irqs = interrupts.pending_interrupts_irq_0_32();
+            // info!("pending irqs: {pending_irqs:#X}");
+            let timer = TIMER.get().unwrap();
+            if pending_irqs & (1 << 1) != 0 {
+                // info!("timer 1 done");
+                timer.clear_interrupt(u2::new(1));
+                TIMER_1_COMPLETE.store(true, Ordering::Relaxed);
+            }
+            if pending_irqs & (1 << 3) != 0 {
+                // info!("timer 3 done");
+                timer.clear_interrupt(u2::new(3));
+                TIMER_3_COMPLETE.store(true, Ordering::Relaxed);
             }
         }
-        gic.end_interrupt(int_id);
-        // let interrupts = INTERRUPTS.get().unwrap();
-        // let pending_irqs = interrupts.pending_interrupts_irq_0_32();
-        // // info!("pending irqs: {pending_irqs:#X}");
-        // let timer = TIMER.get().unwrap();
-        // if pending_irqs & (1 << 1) != 0 {
-        //     // info!("timer 1 done");
-        //     timer.clear_interrupt(u2::new(1));
-        //     TIMER_1_COMPLETE.store(true, Ordering::Relaxed);
-        // }
-        // if pending_irqs & (1 << 3) != 0 {
-        //     // info!("timer 3 done");
-        //     timer.clear_interrupt(u2::new(3));
-        //     TIMER_3_COMPLETE.store(true, Ordering::Relaxed);
-        // }
     } else {
         panic!("exception in unexpected processor mode. cpsr: {cpsr:?}")
     }
