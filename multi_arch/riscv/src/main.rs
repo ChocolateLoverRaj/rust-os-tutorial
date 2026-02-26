@@ -183,8 +183,26 @@ extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) -> ! {
         info!("RISC-V extension: {extension:?}");
     }
 
-    // let has_atomics = misa::read().has_extension('A');
-    // info!("read misa");
+    for node in fdt.all_nodes() {
+        let node_path = node.path();
+        info!("node: {node_path:?}");
+    }
+
+    for memory in fdt.memory() {
+        for reg in memory.reg().unwrap() {
+            info!("reg: {reg:#X?}");
+        }
+    }
+
+    for memory_reservation in fdt.memory_reservations() {
+        info!("memory reservation: {memory_reservation:#X?}");
+    }
+
+    for node in fdt.reserved_memory() {
+        for reg in node.reg().unwrap() {
+            info!("reserved mem: {reg:#X?}");
+        }
+    }
 
     shutdown()
 }

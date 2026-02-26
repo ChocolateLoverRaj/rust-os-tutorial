@@ -49,8 +49,8 @@ run_virt_arm: build_7
 run_virt_aarch64: build_8
     qemu-system-aarch64 --machine virt --cpu cortex-a57 --no-reboot --nographic --serial mon:stdio --semihosting --kernel {{ build_dir }}/kernel8.img
 
-run_virt_riscv32: build_riscv32
-    qemu-system-riscv32 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv32.img
+run_virt_riscv32 *args: build_riscv32
+    qemu-system-riscv32 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv32.img {{ args }}
 
 run_virt_riscv64: build_riscv64
     qemu-system-riscv64 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv64.img
