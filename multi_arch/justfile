@@ -36,6 +36,12 @@ run_1: build
 run_2: build_7
     qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
 
+run_3: build_8
+    qemu-system-aarch64 --machine raspi3b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel8.img --semihosting
+
+run_4: build_8
+    qemu-system-aarch64 --machine raspi4b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel8.img --semihosting
+
 run_virt_arm: build_7
     # The default CPU for the `virt` machine is armv7a
     qemu-system-arm --machine virt --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
@@ -57,7 +63,7 @@ elf_64:
 [working-directory('riscv')]
 readelf_riscv32:
     cargo build --target riscv32imc-unknown-none-elf
-    readelf target/riscv32imc-unknown-none-elf/debug/kernel -S -r
+    readelf target/riscv32imc-unknown-none-elf/debug/kernel -h -S -r
 
 [working-directory('riscv')]
 readelf_riscv64:

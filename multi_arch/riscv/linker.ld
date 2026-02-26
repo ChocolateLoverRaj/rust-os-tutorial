@@ -37,8 +37,8 @@ SECTIONS {
         *(.rodata .rodata.*);
     }
 
+    . = ALIGN(POINTER_WIDTH);
     .rela.dyn :{
-        . = ALIGN(POINTER_WIDTH);
         __rel_start = . - __kernel_start;
         *(.rela*);
         __rel_end = . - __kernel_start;

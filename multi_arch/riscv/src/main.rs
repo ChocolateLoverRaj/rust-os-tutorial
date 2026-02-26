@@ -6,7 +6,9 @@ mod logger;
 use core::arch::naked_asm;
 use core::panic::PanicInfo;
 
+use fdt_raw::Fdt;
 use log::{error, info};
+use riscv::register::misa::{self, Misa};
 use sbi::legacy::shutdown;
 
 // These variables are defined in the linker script
@@ -167,9 +169,22 @@ extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) -> ! {
         logger::init();
     }
 
-    info!(
-        "Hello from Rust kernel. HART ID: {}. FTD pointer: {:#X}",
-        hart_id, ftd_ptr
-    );
+    info!("Hello from Rust kernel. HART ID: {hart_id}. FTD pointer: {ftd_ptr:#X}");
+
+    let fdt = {
+        let ptr = ftd_ptr as *mut _;
+        unsafe { Fdt::from_ptr(ptr) }
+    }
+    .unwrap();
+
+    let cpu_node = fdt.find_by_path("/cpus/cpu@0").unwrap();
+    let extensions = cpu_node.find_property("riscv,isa-extensions").unwrap();
+    for extension in extensions.as_str_iter() {
+        info!("RISC-V extension: {extension:?}");
+    }
+
+    // let has_atomics = misa::read().has_extension('A');
+    // info!("read misa");
+
     shutdown()
 }
