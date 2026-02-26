@@ -10,14 +10,8 @@ test = false
 bench = false
 
 [dependencies]
-defmt = { version = "1.0.1", optional = true }
-defmt-or-log = "0.2.3"
-log = { version = "0.4.29", optional = true }
+log = { version = "0.4.29" }
 portable-atomic = { version = "1.13.1", features = ["critical-section"], optional = true }
 riscv = { version = "0.16.0", features = ["s-mode", "critical-section-single-hart"], optional = true }
 sbi = "0.3.0"
 spin = { version = "0.10.0", features = ["portable-atomic"], optional = true }
-
-[features]
-defmt = ["dep:defmt", "defmt-or-log/defmt", "dep:spin", "dep:portable-atomic", "dep:riscv"]
-log = ["dep:log", "defmt-or-log/log"]

@@ -53,6 +53,16 @@
                 '';
               })
               + "/u-boot.bin";
+
+            # UBOOT_RISCV32 =
+            #   (pkgsCross.riscv32.buildUBoot {
+            #     defconfig = "qemu-riscv32_defconfig";
+            #     extraConfig = ''
+            #       CONFIG_NET_LWIP=y
+            #     '';
+            #     filesToInstall = [ "u-boot.bin" ];
+            #   })
+            #   + "/u-boot.bin";
           };
       }
     );
