@@ -23,6 +23,10 @@ build_8: build_dir
 build_riscv32: build_dir
     cargo objcopy --target riscv32imc-unknown-none-elf -- -O binary {{ build_dir }}/kernel_riscv32.img
 
+[working-directory('riscv')]
+build_riscv64: build_dir
+    cargo objcopy --target riscv64gc-unknown-none-elf -- -O binary {{ build_dir }}/kernel_riscv64.img
+
 run_0: build
     qemu-system-arm --machine raspi0 --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel.img --semihosting
 
@@ -42,6 +46,9 @@ run_virt_aarch64: build_8
 run_virt_riscv32: build_riscv32
     qemu-system-riscv32 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv32.img
 
+run_virt_riscv64: build_riscv64
+    qemu-system-riscv64 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv64.img
+
 [working-directory('aarch64')]
 elf_64:
     cargo build --target aarch64-unknown-none-softfloat --features semihosting
@@ -51,6 +58,11 @@ elf_64:
 readelf_riscv32:
     cargo build --target riscv32imc-unknown-none-elf
     readelf target/riscv32imc-unknown-none-elf/debug/kernel -S -r
+
+[working-directory('riscv')]
+readelf_riscv64:
+    cargo build --target riscv64gc-unknown-none-elf
+    readelf target/riscv64gc-unknown-none-elf/debug/kernel -h -S -r
 
 [working-directory('aarch64')]
 objdump:
@@ -83,6 +95,10 @@ run_uboot_riscv32: build_qemu_uboot_script build_riscv32
     # U-Boot env vars expect at least 256M RAM
     qemu-system-riscv32 --machine virt -m 256M --bios $UBOOT_RISCV32_BIOS -device loader,file=$UBOOT_RISCV32,addr=0x80200000 --no-reboot --nographic --serial mon:stdio --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s -netdev user,id=net0 -device virtio-net-device,netdev=net0
 
+run_uboot_riscv64: build_qemu_uboot_script build_riscv64
+    # U-Boot env vars expect at least 256M RAM
+    qemu-system-riscv64 --machine virt -m 256M --bios $UBOOT_RISCV64_BIOS -device loader,file=$UBOOT_RISCV64,addr=0x80200000 --no-reboot --nographic --serial mon:stdio --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s -netdev user,id=net0 -device virtio-net-device,netdev=net0
+
 serve:
     http-server {{ build_dir }} -p {{ port }}
 
@@ -98,4 +114,9 @@ clippy_aarch64:
     cargo clippy --target aarch64-unknown-none-softfloat
     cargo clippy --target aarch64-unknown-none-softfloat --features semihosting
 
-clippy: clippy_arm clippy_aarch64
+[working-directory('riscv')]
+clippy_riscv:
+    cargo clippy --target riscv32imc-unknown-none-elf
+    cargo clippy --target riscv64gc-unknown-none-elf
+
+clippy: clippy_arm clippy_aarch64 clippy_riscv

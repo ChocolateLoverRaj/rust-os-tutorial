@@ -38,7 +38,7 @@ SECTIONS {
     }
 
     .rela.dyn :{
-        . = ALIGN(4);
+        . = ALIGN(POINTER_WIDTH);
         __rel_start = . - __kernel_start;
         *(.rela*);
         __rel_end = . - __kernel_start;
@@ -51,10 +51,10 @@ SECTIONS {
 
     /* `static`s that are zero-initialized */
     .bss :{
-        . = ALIGN(4);
+        . = ALIGN(POINTER_WIDTH);
         __bss_start = .;
         *(.bss .bss.*);
-        . = ALIGN(4);
+        . = ALIGN(POINTER_WIDTH);
         __bss_end = .;
     }
 

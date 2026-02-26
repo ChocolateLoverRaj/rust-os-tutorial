@@ -38,6 +38,18 @@
                 "u-boot.itb"
               ];
             };
+            uboot_riscv64 = pkgsCross.riscv64.buildUBoot {
+              defconfig = "qemu-riscv64_spl_defconfig";
+              env.OPENSBI = "${pkgsCross.riscv64.opensbi}/share/opensbi/lp64/generic/firmware/fw_dynamic.bin";
+              extraConfig = ''
+                CONFIG_CMD_WGET=y
+                CONFIG_NET_LWIP=y
+              '';
+              filesToInstall = [
+                "spl/u-boot-spl"
+                "u-boot.itb"
+              ];
+            };
           in
           mkShell {
             buildInputs = [
@@ -69,6 +81,8 @@
               + "/u-boot.bin";
             UBOOT_RISCV32_BIOS = "${uboot_riscv32}/u-boot-spl";
             UBOOT_RISCV32 = "${uboot_riscv32}/u-boot.itb";
+            UBOOT_RISCV64_BIOS = "${uboot_riscv64}/u-boot-spl";
+            UBOOT_RISCV64 = "${uboot_riscv64}/u-boot.itb";
           };
       }
     );
