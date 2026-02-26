@@ -10,8 +10,5 @@ test = false
 bench = false
 
 [dependencies]
-log = { version = "0.4.29" }
-portable-atomic = { version = "1.13.1", features = ["critical-section"], optional = true }
-riscv = { version = "0.16.0", features = ["s-mode", "critical-section-single-hart"], optional = true }
+log = "0.4.29"
 sbi = "0.3.0"
-spin = { version = "0.10.0", features = ["portable-atomic"], optional = true }
