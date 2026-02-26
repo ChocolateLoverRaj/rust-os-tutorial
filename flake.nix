@@ -25,6 +25,20 @@
       {
         devShells.default =
           with pkgs;
+          let
+            uboot_riscv32 = pkgsCross.riscv32.buildUBoot {
+              defconfig = "qemu-riscv32_spl_defconfig";
+              env.OPENSBI = "${pkgsCross.riscv32.opensbi}/share/opensbi/ilp32/generic/firmware/fw_dynamic.bin";
+              extraConfig = ''
+                CONFIG_CMD_WGET=y
+                CONFIG_NET_LWIP=y
+              '';
+              filesToInstall = [
+                "spl/u-boot-spl"
+                "u-boot.itb"
+              ];
+            };
+          in
           mkShell {
             buildInputs = [
               (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
@@ -53,16 +67,8 @@
                 '';
               })
               + "/u-boot.bin";
-
-            # UBOOT_RISCV32 =
-            #   (pkgsCross.riscv32.buildUBoot {
-            #     defconfig = "qemu-riscv32_defconfig";
-            #     extraConfig = ''
-            #       CONFIG_NET_LWIP=y
-            #     '';
-            #     filesToInstall = [ "u-boot.bin" ];
-            #   })
-            #   + "/u-boot.bin";
+            UBOOT_RISCV32_BIOS = "${uboot_riscv32}/u-boot-spl";
+            UBOOT_RISCV32 = "${uboot_riscv32}/u-boot.itb";
           };
       }
     );

@@ -79,6 +79,10 @@ run_uboot_arm: build_qemu_uboot_script build_7
 run_uboot_aarch64: build_qemu_uboot_script build_8
     qemu-system-aarch64 --machine virt --cpu cortex-a57 --bios $UBOOT_AARCH64 --no-reboot --nographic --serial mon:stdio --semihosting --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s
 
+run_uboot_riscv32: build_qemu_uboot_script build_riscv32
+    # U-Boot env vars expect at least 256M RAM
+    qemu-system-riscv32 --machine virt -m 256M --bios $UBOOT_RISCV32_BIOS -device loader,file=$UBOOT_RISCV32,addr=0x80200000 --no-reboot --nographic --serial mon:stdio --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s -netdev user,id=net0 -device virtio-net-device,netdev=net0
+
 serve:
     http-server {{ build_dir }} -p {{ port }}
 
