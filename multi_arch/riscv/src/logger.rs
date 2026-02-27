@@ -1,37 +1,33 @@
-use core::fmt::Write;
+use core::fmt::{Arguments, Write};
 
-use log::{Log, max_level};
+use kernel_lib::EarlyLogger;
 
-pub struct Logger;
-impl Log for Logger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= max_level()
-    }
+pub struct SbiEarlyLogger;
 
-    fn log(&self, record: &log::Record) {
-        struct ConsoleWriter;
-        impl Write for ConsoleWriter {
-            fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                for &byte in s.as_bytes() {
-                    sbi::legacy::console_putchar(byte);
-                }
-                Ok(())
-            }
+// impl EarlyLogger for SbiEarlyLogger {}
+
+impl Write for SbiEarlyLogger {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for &byte in s.as_bytes() {
+            sbi::legacy::console_putchar(byte);
         }
-        let mut console = ConsoleWriter;
-        writeln!(console, "{}", record.args()).unwrap();
+        Ok(())
     }
-
-    fn flush(&self) {}
 }
 
-pub static LOGGER: Logger = Logger;
+pub static EARLY_LOGGER: SbiEarlyLogger = SbiEarlyLogger;
 
-/// # Safety
-/// Only call once.
-pub unsafe fn init() {
-    // Safety: nothing else is calling this function
-    unsafe { log::set_logger_racy(&LOGGER).unwrap() };
-    // Safety: nothing else is calling this function
-    unsafe { log::set_max_level_racy(log::LevelFilter::Trace) };
+pub fn early_log(arguments: Arguments<'_>) {
+    pub struct SbiEarlyLogger;
+
+    impl Write for SbiEarlyLogger {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            for &byte in s.as_bytes() {
+                sbi::legacy::console_putchar(byte);
+            }
+            Ok(())
+        }
+    }
+
+    writeln!(SbiEarlyLogger, "{arguments}");
 }

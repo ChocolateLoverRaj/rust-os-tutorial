@@ -102,6 +102,7 @@ name = "kernel_lib"
 version = "0.1.0"
 dependencies = [
  "arm-pl011-uart",
+ "fdt-raw",
  "log",
  "spin",
 ]

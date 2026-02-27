@@ -9,8 +9,11 @@ use core::{arch::naked_asm, sync::atomic::AtomicBool};
 
 use fdt_raw::Fdt;
 use log::{error, info};
+use riscv::asm::wfi;
 use riscv::register::misa::{self, Misa};
 use sbi::legacy::shutdown;
+
+use crate::logger::{SbiEarlyLogger, early_log};
 
 // These variables are defined in the linker script
 unsafe extern "C" {
@@ -164,45 +167,22 @@ fn panic_handler(panic_info: &PanicInfo) -> ! {
     loop {}
 }
 
+const ARCH: kernel_lib::Arch = kernel_lib::Arch {
+    early_log,
+    shutdown: Some(shutdown),
+    low_power_loop: || {
+        loop {
+            wfi();
+        }
+    },
+};
+
 static A: AtomicBool = AtomicBool::new(true);
-extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) -> ! {
+extern "C" fn kernel_main(hart_id: usize, fdt_ptr: usize) -> ! {
     // A.store(false, Ordering::Relaxed);
-    kernel_lib::start();
+    kernel_lib::start(ARCH, kernel_lib::BootInfo::FdtAddr(fdt_ptr));
 
-    info!("Hello from Rust kernel. HART ID: {hart_id}. FTD pointer: {ftd_ptr:#X}");
-
-    let fdt = {
-        let ptr = ftd_ptr as *mut _;
-        unsafe { Fdt::from_ptr(ptr) }
-    }
-    .unwrap();
-
-    let cpu_node = fdt.find_by_path("/cpus/cpu@0").unwrap();
-    let extensions = cpu_node.find_property("riscv,isa-extensions").unwrap();
-    for extension in extensions.as_str_iter() {
-        info!("RISC-V extension: {extension:?}");
-    }
-
-    for node in fdt.all_nodes() {
-        let node_path = node.path();
-        info!("node: {node_path:?}");
-    }
-
-    for memory in fdt.memory() {
-        for reg in memory.reg().unwrap() {
-            info!("reg: {reg:#X?}");
-        }
-    }
-
-    for memory_reservation in fdt.memory_reservations() {
-        info!("memory reservation: {memory_reservation:#X?}");
-    }
-
-    for node in fdt.reserved_memory() {
-        for reg in node.reg().unwrap() {
-            info!("reserved mem: {reg:#X?}");
-        }
-    }
+    info!("Hello from Rust kernel. HART ID: {hart_id}. FTD pointer: {fdt_ptr:#X}");
 
     shutdown()
 }

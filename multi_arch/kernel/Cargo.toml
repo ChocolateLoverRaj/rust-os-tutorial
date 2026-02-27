@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 arm-pl011-uart = "0.4.0"
+fdt-raw = "0.2.0"
 log = "0.4.29"
 semihosting = { version = "0.1.24", optional = true }
 spin = "0.10.0"
