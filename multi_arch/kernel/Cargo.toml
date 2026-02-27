@@ -1,0 +1,13 @@
+[package]
+name = "kernel_lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arm-pl011-uart = "0.4.0"
+log = "0.4.29"
+semihosting = { version = "0.1.24", optional = true }
+spin = "0.10.0"
+
+[features]
+semihosting = ["dep:semihosting"]

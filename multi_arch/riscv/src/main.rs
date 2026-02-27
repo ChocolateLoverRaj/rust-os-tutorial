@@ -3,8 +3,9 @@
 
 mod logger;
 
-use core::arch::naked_asm;
 use core::panic::PanicInfo;
+use core::sync::atomic::Ordering;
+use core::{arch::naked_asm, sync::atomic::AtomicBool};
 
 use fdt_raw::Fdt;
 use log::{error, info};
@@ -163,11 +164,10 @@ fn panic_handler(panic_info: &PanicInfo) -> ! {
     loop {}
 }
 
+static A: AtomicBool = AtomicBool::new(true);
 extern "C" fn kernel_main(hart_id: usize, ftd_ptr: usize) -> ! {
-    // Safety: we're only calling this once
-    unsafe {
-        logger::init();
-    }
+    // A.store(false, Ordering::Relaxed);
+    kernel_lib::start();
 
     info!("Hello from Rust kernel. HART ID: {hart_id}. FTD pointer: {ftd_ptr:#X}");
 

@@ -22,7 +22,7 @@ async fn main() {
         .args([
             "build",
             "--target",
-            "riscv32imc-unknown-none-elf",
+            "riscv32imac-unknown-none-elf",
             "--features",
             "defmt",
         ])
@@ -33,7 +33,7 @@ async fn main() {
     if !output.status.success() {
         panic!("build error: {:#?}", output);
     }
-    let kernel_path = kernel_dir.join("target/riscv32imc-unknown-none-elf/debug/kernel");
+    let kernel_path = kernel_dir.join("target/riscv32imac-unknown-none-elf/debug/kernel");
     let elf = tokio::fs::read(&kernel_path).await.unwrap();
     let table = Table::parse(&elf).unwrap().unwrap();
     let locs = table.get_locations(&elf).ok();

@@ -21,7 +21,7 @@ build_8: build_dir
 
 [working-directory('riscv')]
 build_riscv32: build_dir
-    cargo objcopy --target riscv32imc-unknown-none-elf -- -O binary {{ build_dir }}/kernel_riscv32.img
+    cargo objcopy --target riscv32imac-unknown-none-elf -- -O binary {{ build_dir }}/kernel_riscv32.img
 
 [working-directory('riscv')]
 build_riscv64: build_dir
@@ -62,8 +62,8 @@ elf_64:
 
 [working-directory('riscv')]
 readelf_riscv32:
-    cargo build --target riscv32imc-unknown-none-elf
-    readelf target/riscv32imc-unknown-none-elf/debug/kernel -h -S -r
+    cargo build --target riscv32imac-unknown-none-elf
+    readelf target/riscv32imac-unknown-none-elf/debug/kernel -h -S -r
 
 [working-directory('riscv')]
 readelf_riscv64:
@@ -76,7 +76,7 @@ objdump:
 
 [working-directory('riscv')]
 objdump_riscv32:
-    cargo objdump --target riscv32imc-unknown-none-elf -- -d --start-address=0x0 --stop-address=0x300
+    cargo objdump --target riscv32imac-unknown-none-elf -- -d --start-address=0x0 --stop-address=0x300
 
 # U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
 build_qemu_uboot_script:
@@ -122,7 +122,7 @@ clippy_aarch64:
 
 [working-directory('riscv')]
 clippy_riscv:
-    cargo clippy --target riscv32imc-unknown-none-elf
+    cargo clippy --target riscv32imac-unknown-none-elf
     cargo clippy --target riscv64gc-unknown-none-elf
 
 clippy: clippy_arm clippy_aarch64 clippy_riscv
