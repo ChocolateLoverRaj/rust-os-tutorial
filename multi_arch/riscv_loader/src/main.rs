@@ -2,18 +2,15 @@
 #![no_main]
 
 mod logger;
+mod paging;
 
-use core::panic::PanicInfo;
-use core::sync::atomic::Ordering;
-use core::{arch::naked_asm, sync::atomic::AtomicBool};
+use core::arch::naked_asm;
 
-use fdt_raw::Fdt;
-use log::{error, info};
+use loader::{Arch, BootInfo};
 use riscv::asm::wfi;
-use riscv::register::misa::{self, Misa};
 use sbi::legacy::shutdown;
 
-use crate::logger::{SbiEarlyLogger, early_log};
+use crate::{logger::early_log, paging::RiscvPaging};
 
 // These variables are defined in the linker script
 unsafe extern "C" {
@@ -161,28 +158,33 @@ extern "C" fn start() {
     )
 }
 
-#[panic_handler]
-fn panic_handler(panic_info: &PanicInfo) -> ! {
-    error!("{panic_info}");
-    loop {}
-}
+pub struct RiscvArch;
+impl Arch for RiscvArch {
+    type Paging = RiscvPaging;
 
-const ARCH: kernel_lib::Arch = kernel_lib::Arch {
-    early_log,
-    shutdown: Some(shutdown),
-    low_power_loop: || {
+    fn early_log(arguments: core::fmt::Arguments<'_>) {
+        early_log(arguments);
+    }
+
+    fn can_shutdown() -> bool {
+        true
+    }
+
+    fn shutdown() -> ! {
+        shutdown()
+    }
+
+    fn low_power_loop() -> ! {
         loop {
             wfi();
         }
-    },
-};
+    }
+}
 
-static A: AtomicBool = AtomicBool::new(true);
-extern "C" fn kernel_main(hart_id: usize, fdt_ptr: usize) -> ! {
-    // A.store(false, Ordering::Relaxed);
-    kernel_lib::start(ARCH, kernel_lib::BootInfo::FdtAddr(fdt_ptr));
-
-    info!("Hello from Rust kernel. HART ID: {hart_id}. FTD pointer: {fdt_ptr:#X}");
-
-    shutdown()
+extern "C" fn kernel_main(hart_id: usize, fdt_addr: usize) -> ! {
+    let _ = hart_id;
+    loader::start::<RiscvArch>(BootInfo {
+        cpu_id: hart_id,
+        fdt_addr,
+    })
 }

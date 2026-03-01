@@ -6,13 +6,13 @@ use log::{LevelFilter, Log, max_level, set_logger, set_max_level};
 use spin::Mutex;
 use spin::Once;
 
-use crate::arch::arch;
-
 static UART: Once<Mutex<Uart>> = Once::new();
 
 pub type EarlyLogger = fn(Arguments);
 
-struct Logger;
+struct Logger {
+    early_logger: EarlyLogger,
+}
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
@@ -24,17 +24,18 @@ impl Log for Logger {
             let mut uart = uart.lock();
             writeln!(uart, "{}", record.args()).unwrap();
         } else {
-            (arch().early_log)(format_args!("{}", record.args()));
+            (self.early_logger)(format_args!("{}", record.args()));
         };
     }
 
     fn flush(&self) {}
 }
 
-static LOGGER: Logger = Logger;
+static LOGGER: Once<Logger> = Once::new();
 
-pub fn init() {
-    set_logger(&LOGGER).unwrap();
+pub fn init(early_logger: EarlyLogger) {
+    let logger = LOGGER.call_once(|| Logger { early_logger });
+    set_logger(logger).unwrap();
     set_max_level(LevelFilter::Trace);
 }
 

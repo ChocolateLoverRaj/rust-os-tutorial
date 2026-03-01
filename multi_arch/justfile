@@ -19,9 +19,14 @@ build_7: build_dir
 build_8: build_dir
     cargo objcopy --target aarch64-unknown-none-softfloat --features semihosting -- -O binary {{ build_dir }}/kernel8.img
 
-[working-directory('riscv')]
-build_riscv32: build_dir
-    cargo objcopy --target riscv32imac-unknown-none-elf -- -O binary {{ build_dir }}/kernel_riscv32.img
+[working-directory('riscv_loader')]
+build_loader_riscv32: build_dir
+    cargo objcopy --target riscv32imac-unknown-none-elf -- -O binary {{ build_dir }}/kernel_0_riscv32.img
+
+[working-directory('riscv_kernel')]
+build_kernel_riscv32: build_dir
+    cargo build --target riscv32imac-unknown-none-elf
+    cp target/riscv32imac-unknown-none-elf/debug/kernel {{ build_dir }}/kernel_1_riscv32
 
 [working-directory('riscv')]
 build_riscv64: build_dir
@@ -49,8 +54,8 @@ run_virt_arm: build_7
 run_virt_aarch64: build_8
     qemu-system-aarch64 --machine virt --cpu cortex-a57 --no-reboot --nographic --serial mon:stdio --semihosting --kernel {{ build_dir }}/kernel8.img
 
-run_virt_riscv32 *args: build_riscv32
-    qemu-system-riscv32 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv32.img {{ args }}
+run_virt_riscv32 *args: build_loader_riscv32 build_kernel_riscv32
+    qemu-system-riscv32 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_0_riscv32.img {{ args }} --initrd {{ build_dir }}/kernel_1_riscv32
 
 run_virt_riscv64: build_riscv64
     qemu-system-riscv64 --machine virt --no-reboot --nographic --serial mon:stdio --kernel {{ build_dir }}/kernel_riscv64.img
@@ -69,6 +74,11 @@ readelf_riscv32:
 readelf_riscv64:
     cargo build --target riscv64gc-unknown-none-elf
     readelf target/riscv64gc-unknown-none-elf/debug/kernel -h -S -r
+
+[working-directory('riscv_kernel')]
+readelf_kernel_riscv32:
+    cargo build --target riscv32imac-unknown-none-elf
+    readelf target/riscv32imac-unknown-none-elf/debug/kernel -h -l -S -r
 
 [working-directory('aarch64')]
 objdump:
@@ -97,7 +107,7 @@ run_uboot_arm: build_qemu_uboot_script build_7
 run_uboot_aarch64: build_qemu_uboot_script build_8
     qemu-system-aarch64 --machine virt --cpu cortex-a57 --bios $UBOOT_AARCH64 --no-reboot --nographic --serial mon:stdio --semihosting --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s
 
-run_uboot_riscv32: build_qemu_uboot_script build_riscv32
+run_uboot_riscv32: build_qemu_uboot_script build_loader_riscv32 build_kernel_riscv32
     # U-Boot env vars expect at least 256M RAM
     qemu-system-riscv32 --machine virt -m 256M --bios $UBOOT_RISCV32_BIOS -device loader,file=$UBOOT_RISCV32,addr=0x80200000 --no-reboot --nographic --serial mon:stdio --drive file={{ build_dir }}/{{ img_name }},format=raw,if=virtio,readonly=on -s -netdev user,id=net0 -device virtio-net-device,netdev=net0
 
