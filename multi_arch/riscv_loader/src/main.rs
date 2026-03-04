@@ -4,8 +4,10 @@
 mod logger;
 mod paging;
 
-use core::arch::naked_asm;
+use core::{arch::naked_asm, mem::MaybeUninit};
 
+use arbitrary_int::{u20, u22, u34};
+use bitbybit::bitfield;
 use loader::{Arch, BootInfo};
 use riscv::asm::wfi;
 use sbi::legacy::shutdown;
@@ -158,9 +160,44 @@ extern "C" fn start() {
     )
 }
 
+pub struct Sv32PageTable {
+    entries: [Sv32PageTableEntry; 0x400],
+}
+
+impl Default for Sv32PageTable {
+    fn default() -> Self {
+        Self {
+            entries: [Default::default(); _],
+        }
+    }
+}
+
+#[bitfield(u32, default = 0)]
+pub struct Sv32PageTableEntry {
+    #[bits(10..=31, rw)]
+    physical_page_number: u22,
+    #[bit(7)]
+    d: bool,
+    #[bit(6)]
+    a: bool,
+    #[bit(5)]
+    g: bool,
+    #[bit(4)]
+    u: bool,
+    #[bit(3)]
+    x: bool,
+    #[bit(2)]
+    w: bool,
+    #[bit(1)]
+    r: bool,
+    #[bit(0)]
+    v: bool,
+}
+
 pub struct RiscvArch;
 impl Arch for RiscvArch {
     type Paging = RiscvPaging;
+    type PhysAddr = u34;
 
     fn early_log(arguments: core::fmt::Arguments<'_>) {
         early_log(arguments);
@@ -178,6 +215,28 @@ impl Arch for RiscvArch {
         loop {
             wfi();
         }
+    }
+
+    type Page = [u8; 0x1000];
+
+    type PhysPageNumber = u22;
+
+    type VirtPageNumber = u20;
+
+    const MAX_NEW_PAGES_NEEDED: usize = 1;
+
+    fn new_page(bytes: &mut core::mem::MaybeUninit<Self::Page>) -> &mut Self::Page {
+        bytes.write([0; _])
+    }
+
+    unsafe fn map_page(
+        page_table: &mut Self::Page,
+        virt_page: Self::VirtPageNumber,
+        phys_page: Self::PhysPageNumber,
+        flags: loader::MappingFlags,
+        new_page_tables: &mut [&mut Self::Page],
+    ) -> loader::MapPageResult {
+        todo!("map page. virt_page = {virt_page:#X} phys_page = {phys_page:#X} flags = {flags:?}");
     }
 }
 

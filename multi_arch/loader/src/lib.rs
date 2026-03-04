@@ -1,18 +1,20 @@
 #![no_std]
-#![feature(generic_const_exprs)]
 
 mod arch;
 mod logger;
 pub mod paging;
+mod phys_mem_allocator;
 
-use core::{panic::PanicInfo, slice};
+use core::{mem::MaybeUninit, panic::PanicInfo, ptr::NonNull, slice};
 
-pub use arch::Arch;
+pub use arch::{Arch, MapPageResult, MappingFlags};
 use elf::{ElfBytes, abi::PT_LOAD, endian::NativeEndian};
 use fdt_raw::Fdt;
 pub use logger::EarlyLogger;
 
 use log::{error, info};
+
+use crate::phys_mem_allocator::{AllocRequest, PhysMemAllocator};
 
 pub struct BootInfo {
     pub cpu_id: usize,
@@ -86,7 +88,19 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
     info!("initrd-start: {initrd_start:#X}");
     info!("initrd len: {initrd_len:#X}");
 
-    // let elf_bytes = slice
+    let mut allocator = PhysMemAllocator::<A::PhysAddr, _>::new(fdt);
+    // Create a page table
+    let page_table_pointer: usize = (allocator
+        .allocate(AllocRequest {
+            size: size_of::<A::Page>().try_into().unwrap(),
+            align: size_of::<A::Page>().try_into().unwrap(),
+        })
+        .unwrap())
+    .try_into()
+    .unwrap();
+    let mut page_table = NonNull::new(page_table_pointer as *mut MaybeUninit<A::Page>).unwrap();
+    let page_table = A::new_page(unsafe { page_table.as_mut() });
+
     let elf = ElfBytes::<NativeEndian>::minimal_parse({
         let ptr = initrd_start as *const _;
         let len = initrd_len;
@@ -98,6 +112,25 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
     for segment in elf.segments().unwrap() {
         if segment.p_type == PT_LOAD {
             info!("segment: {segment:#X?}");
+            let start_phys_page_number =
+                elf.segment_data(&segment).unwrap().as_ptr().addr() / size_of::<A::Page>();
+            let n_pages = usize::try_from(segment.p_filesz).unwrap() / size_of::<A::Page>();
+            for i in 0..n_pages {
+                let phys_page_number = A::PhysPageNumber::try_from(
+                    A::PhysAddr::try_from(start_phys_page_number + i).unwrap(),
+                )
+                .unwrap();
+                // Safety: MMU is disabled
+                unsafe {
+                    A::map_page(
+                        page_table,
+                        (segment.p_vaddr as usize).try_into().unwrap(),
+                        phys_page_number,
+                        MappingFlags::ReadWriteExecute,
+                        &mut [],
+                    )
+                };
+            }
         }
     }
     if A::can_shutdown() {

@@ -10,8 +10,11 @@ test = false
 bench = false
 
 [dependencies]
-arbitrary-int = "2.1.1"
+arbitrary-int = { version = "2.1.1", features = ["num-traits"] }
 bitbybit = "2.0.0"
 loader = { version = "0.1.0", path = "../loader" }
 riscv = { version = "0.16.0", features = ["s-mode"] }
 sbi = "0.3.0"
+
+[patch.crates-io]
+arbitrary-int = { path = "../../../arbitrary-int" }
