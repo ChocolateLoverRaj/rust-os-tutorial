@@ -106,6 +106,7 @@ dependencies = [
  "arm-pl011-uart",
  "elf",
  "fdt-raw",
+ "heapless",
  "log",
  "num-traits",
  "semihosting",

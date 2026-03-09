@@ -3,13 +3,13 @@ use core::{
     mem::MaybeUninit,
 };
 
-use num_traits::Zero;
+use num_traits::{CheckedAdd, CheckedRem, Num};
 
 use crate::paging::Paging;
 
-pub enum MapPageResult {
-    Mapped { new_page_tables_used: usize },
-    NotMapped { n_page_tables_needed: usize },
+#[derive(Debug)]
+pub struct MapPageError {
+    pub n_page_tables_needed: usize,
 }
 
 #[derive(Debug)]
@@ -22,11 +22,15 @@ pub enum MappingFlags {
 
 pub trait Arch {
     type Paging: Paging;
-    type PhysAddr: Zero
+    type PhysAddr: Debug
+        + Num
+        + CheckedAdd<Output = Self::PhysAddr>
+        + Ord
         + Copy
         + TryFrom<u64, Error: Debug>
         + TryFrom<usize, Error: Debug>
-        + TryInto<usize, Error: Debug>;
+        + TryInto<usize, Error: Debug>
+        + CheckedRem<Output = Self::PhysAddr>;
     /// Must be `[u8; PAGE_SIZE]`
     type Page;
     type PhysPageNumber: TryFrom<Self::PhysAddr, Error: Debug>;
@@ -45,6 +49,9 @@ pub trait Arch {
         virt_page: Self::VirtPageNumber,
         phys_page: Self::PhysPageNumber,
         flags: MappingFlags,
-        new_page_tables: &mut [&mut Self::Page],
-    ) -> MapPageResult;
+        new_page_tables: &mut heapless::VecView<&mut Self::Page>,
+    ) -> Result<(), MapPageError>;
+    /// # Safety
+    /// Assumes that the physical addresses of the pointee page tables can be accessed at the exact address (MMU is disabled).
+    unsafe fn debug_page_tables(page_table: &'_ mut Self::Page) -> impl Debug + '_;
 }

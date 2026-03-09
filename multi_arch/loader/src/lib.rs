@@ -1,13 +1,15 @@
 #![no_std]
 
+mod align;
 mod arch;
 mod logger;
 pub mod paging;
 mod phys_mem_allocator;
+pub use heapless;
 
 use core::{mem::MaybeUninit, panic::PanicInfo, ptr::NonNull, slice};
 
-pub use arch::{Arch, MapPageResult, MappingFlags};
+pub use arch::{Arch, MapPageError, MappingFlags};
 use elf::{ElfBytes, abi::PT_LOAD, endian::NativeEndian};
 use fdt_raw::Fdt;
 pub use logger::EarlyLogger;
@@ -90,14 +92,13 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
 
     let mut allocator = PhysMemAllocator::<A::PhysAddr, _>::new(fdt);
     // Create a page table
-    let page_table_pointer: usize = (allocator
-        .allocate(AllocRequest {
-            size: size_of::<A::Page>().try_into().unwrap(),
-            align: size_of::<A::Page>().try_into().unwrap(),
-        })
-        .unwrap())
-    .try_into()
-    .unwrap();
+    let alloc_request = AllocRequest {
+        size: size_of::<A::Page>().try_into().unwrap(),
+        align: size_of::<A::Page>().try_into().unwrap(),
+    };
+    let page_table_pointer: usize = (allocator.allocate(alloc_request).unwrap())
+        .try_into()
+        .unwrap();
     let mut page_table = NonNull::new(page_table_pointer as *mut MaybeUninit<A::Page>).unwrap();
     let page_table = A::new_page(unsafe { page_table.as_mut() });
 
@@ -109,6 +110,7 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
     .unwrap();
     let entry_address = elf.ehdr.e_entry;
     info!("entry address: {entry_address:#X}");
+    let mut extra_pages = heapless::Vec::<_, 1>::new();
     for segment in elf.segments().unwrap() {
         if segment.p_type == PT_LOAD {
             info!("segment: {segment:#X?}");
@@ -120,19 +122,41 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
                     A::PhysAddr::try_from(start_phys_page_number + i).unwrap(),
                 )
                 .unwrap();
+                while !extra_pages.is_full() {
+                    let mut ptr = NonNull::new(
+                        allocator
+                            .allocate(alloc_request)
+                            .unwrap()
+                            .try_into()
+                            .unwrap() as *mut MaybeUninit<A::Page>,
+                    )
+                    .unwrap();
+                    extra_pages
+                        .push(A::new_page(unsafe { ptr.as_mut() }))
+                        .ok()
+                        .unwrap();
+                }
                 // Safety: MMU is disabled
                 unsafe {
                     A::map_page(
                         page_table,
-                        (segment.p_vaddr as usize).try_into().unwrap(),
+                        (segment.p_vaddr as usize / size_of::<A::Page>())
+                            .try_into()
+                            .unwrap(),
                         phys_page_number,
                         MappingFlags::ReadWriteExecute,
-                        &mut [],
+                        extra_pages.as_mut_view(),
                     )
-                };
+                }
+                .unwrap();
             }
         }
     }
+
+    info!("Mapped all segments. Top page table: {:#X?}", unsafe {
+        A::debug_page_tables(page_table)
+    });
+
     if A::can_shutdown() {
         A::shutdown()
     } else {

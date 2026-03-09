@@ -124,6 +124,7 @@ dependencies = [
  "arm-pl011-uart",
  "elf",
  "fdt-raw",
+ "heapless",
  "log",
  "num-traits",
  "spin",
@@ -220,6 +221,7 @@ dependencies = [
  "arbitrary-int",
  "bitbybit",
  "loader",
+ "log",
  "riscv",
  "sbi",
 ]

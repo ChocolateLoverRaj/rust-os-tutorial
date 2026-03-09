@@ -2,11 +2,14 @@ use core::{
     fmt::Debug,
     iter::chain,
     marker::PhantomData,
-    ops::{Add, RangeInclusive},
+    ops::{Add, RangeInclusive, Sub},
 };
 
 use fdt_raw::Fdt;
-use num_traits::{Num, Zero};
+use log::info;
+use num_traits::{CheckedAdd, CheckedRem, One, Zero};
+
+use crate::align::checked_align_up;
 
 pub trait MemInfo<PhysAddr> {
     fn memory(&self) -> impl IntoIterator<Item = RangeInclusive<PhysAddr>>;
@@ -45,6 +48,7 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct AllocRequest<PhysAddr> {
     pub size: PhysAddr,
     pub align: PhysAddr,
@@ -57,29 +61,67 @@ pub struct PhysMemAllocator<PhysAddr, T: MemInfo<PhysAddr>> {
     _phantom_data: PhantomData<PhysAddr>,
     // Which memory region we are allocating from
     memory_index: usize,
-    memory_position: PhysAddr,
+    offset_in_chunk: PhysAddr,
 }
 
-impl<PhysAddr: Add<Output = PhysAddr> + Zero, T: MemInfo<PhysAddr>> PhysMemAllocator<PhysAddr, T> {
+impl<
+    PhysAddr: Debug
+        + Add<Output = PhysAddr>
+        + Zero
+        + One
+        + CheckedAdd<Output = PhysAddr>
+        + CheckedRem<Output = PhysAddr>
+        + Sub<Output = PhysAddr>
+        + Ord
+        + Copy
+        + Eq,
+    T: MemInfo<PhysAddr>,
+> PhysMemAllocator<PhysAddr, T>
+{
     pub fn new(mem_info: T) -> Self {
         Self {
             mem_info,
             _phantom_data: PhantomData,
             memory_index: 0,
-            memory_position: PhysAddr::zero(),
+            offset_in_chunk: PhysAddr::zero(),
         }
     }
 
     pub fn allocate(&mut self, request: AllocRequest<PhysAddr>) -> Option<PhysAddr> {
-        // self.mem_info
-        //     .memory()
-        //     .into_iter()
-        //     .enumerate()
-        //     .skip(self.memory_index)
-        //     .find_map(|(memory_index, range)| {
-        //         range = self.memory_position;
-        //         todo!();
-        //     });
-        todo!()
+        let memory_index = self.memory_index;
+        let offset_in_chunk = self.offset_in_chunk;
+        info!("memory_index = {memory_index:#X} offset_in_chunk = {offset_in_chunk:#X?}");
+        let mut iterator = self.mem_info.memory().into_iter().skip(self.memory_index);
+        let mut chunk = iterator.next()?;
+        let mut relative_chunk_index = 0;
+        let mut offset_in_chunk = self.offset_in_chunk;
+        'find: loop {
+            let start = checked_align_up(*chunk.start() + offset_in_chunk, request.align).unwrap();
+            // Check that the region to be allocated is within the usable memory range
+            let end_inclusive = start
+                .checked_add(&(request.size - PhysAddr::one()))
+                .unwrap();
+            info!("start = {start:#X?} end_inclusive = {end_inclusive:#X?} chunk = {chunk:#X?}");
+            if end_inclusive > *chunk.end() {
+                // Next chunk
+                info!("next chunk");
+                chunk = iterator.next()?;
+                relative_chunk_index += 1;
+                offset_in_chunk = PhysAddr::zero();
+                continue;
+            }
+            info!("checking reserved regions");
+            // Make sure that the region to be allocated is not reserved
+            for reserved in self.mem_info.reserved_memory() {
+                if *reserved.start() <= start && *reserved.end() >= start {
+                    offset_in_chunk = *reserved.end() - *chunk.start() + PhysAddr::one();
+                    continue 'find;
+                }
+            }
+            // Mark as used
+            self.memory_index += relative_chunk_index;
+            self.offset_in_chunk = start - *chunk.start() + request.size;
+            break Some(start);
+        }
     }
 }

@@ -13,6 +13,7 @@ bench = false
 arbitrary-int = { version = "2.1.1", features = ["num-traits"] }
 bitbybit = "2.0.0"
 loader = { version = "0.1.0", path = "../loader" }
+log = "0.4.29"
 riscv = { version = "0.16.0", features = ["s-mode"] }
 sbi = "0.3.0"
 
