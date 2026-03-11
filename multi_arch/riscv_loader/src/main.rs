@@ -5,23 +5,28 @@ mod logger;
 mod paging;
 
 use core::{
-    arch::naked_asm,
+    arch::{asm, naked_asm},
     fmt::Debug,
     mem::{MaybeUninit, transmute},
-    ptr::NonNull,
+    ptr::{NonNull, addr_of},
 };
 
-use arbitrary_int::{u20, u22, u34};
+use arbitrary_int::{traits::Integer, u10, u12, u20, u22, u34};
 use bitbybit::bitfield;
 use loader::{Arch, BootInfo, MapPageError, MappingFlags, heapless};
 use log::info;
-use riscv::asm::wfi;
+use riscv::{
+    asm::wfi,
+    register::satp::{self, Satp},
+};
 use sbi::legacy::shutdown;
 
 use crate::{logger::early_log, paging::RiscvPaging};
 
 // These variables are defined in the linker script
 unsafe extern "C" {
+    static __kernel_start: usize;
+    static __kernel_end: usize;
     static __bss_start: usize;
     static __bss_end: usize;
     static __stack_top: usize;
@@ -201,6 +206,16 @@ pub struct Sv32PageTableEntry {
     v: bool,
 }
 
+#[bitfield(u32)]
+struct Sv32VirtAddr {
+    #[bits(22..=31, rw)]
+    vpn_1: u10,
+    #[bits(12..=21, rw)]
+    vpn_0: u10,
+    #[bits(0..=11, rw)]
+    page_offset: u12,
+}
+
 const PAGE_SIZE: usize = 0x1000;
 
 pub struct RiscvArch;
@@ -302,6 +317,41 @@ impl Arch for RiscvArch {
             ptr: NonNull::from_mut(page_table).cast(),
         }
     }
+
+    unsafe fn enable_page_table(page_table: Self::PhysPageNumber, jump_address: usize) {
+        let mut satp = Satp::from_bits(0);
+        satp.set_mode(satp::Mode::Sv32);
+        satp.set_asid(0);
+        satp.set_ppn(page_table.try_into().unwrap());
+        info!("jumping to {jump_address:#X}");
+        unsafe {
+            asm!(
+                "
+                    csrw satp, {}
+                    sfence.vma
+                    jr {}
+                ",
+                in(reg) satp.bits(),
+                in(reg) jump_address,
+                options(noreturn)
+            )
+        }
+    }
+
+    unsafe fn identity_map(page_table: &mut Self::Page, start_addr: usize, len: usize) {
+        info!("identity map start_addr = {start_addr:#X} len = {len:#X}");
+        let page_table = unsafe { transmute::<_, &mut Sv32PageTable>(page_table) };
+        let start_addr = Sv32VirtAddr::new_with_raw_value(start_addr as u32);
+        assert_eq!(start_addr.page_offset(), u12::ZERO);
+        assert_eq!(start_addr.vpn_0(), u10::ZERO);
+        assert!(len <= 1 << 22);
+        let entry = &mut page_table.entries[usize::try_from(start_addr.vpn_1().value()).unwrap()];
+        entry.set_r(true);
+        entry.set_w(true);
+        entry.set_x(true);
+        entry.set_physical_page_number(u22::new(start_addr.raw_value >> 12));
+        entry.set_v(true);
+    }
 }
 
 enum PageTableLevel {
@@ -357,5 +407,7 @@ extern "C" fn kernel_main(hart_id: usize, fdt_addr: usize) -> ! {
     loader::start::<RiscvArch>(BootInfo {
         cpu_id: hart_id,
         fdt_addr,
+        self_addr: addr_of!(__kernel_start).addr(),
+        self_len: addr_of!(__kernel_end).addr() - addr_of!(__kernel_start).addr(),
     })
 }

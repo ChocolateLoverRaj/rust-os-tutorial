@@ -10,3 +10,5 @@ test = false
 bench = false
 
 [dependencies]
+riscv = { version = "0.16.0", features = ["s-mode"] }
+sbi = "0.3.0"

@@ -84,9 +84,9 @@ readelf_kernel_riscv32:
 objdump:
     cargo objdump --target aarch64-unknown-none-softfloat --features semihosting -- -d --start-address=0x0 --stop-address=0x100
 
-[working-directory('riscv')]
-objdump_riscv32:
-    cargo objdump --target riscv32imac-unknown-none-elf -- -d --start-address=0x0 --stop-address=0x300
+[working-directory('riscv_kernel')]
+objdump_kernel_riscv32:
+    cargo objdump --target riscv32imac-unknown-none-elf -- -d
 
 # U-Boot works on real Raspberry Pis and on the qemu `virt` machine. It doesn't work in qemu `raspi` machines.
 build_qemu_uboot_script:

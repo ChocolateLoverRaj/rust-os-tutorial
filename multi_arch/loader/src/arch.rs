@@ -1,6 +1,7 @@
 use core::{
     fmt::{Arguments, Debug},
     mem::MaybeUninit,
+    ops::{Range, RangeInclusive},
 };
 
 use num_traits::{CheckedAdd, CheckedRem, Num};
@@ -54,4 +55,8 @@ pub trait Arch {
     /// # Safety
     /// Assumes that the physical addresses of the pointee page tables can be accessed at the exact address (MMU is disabled).
     unsafe fn debug_page_tables(page_table: &'_ mut Self::Page) -> impl Debug + '_;
+    /// # Safety
+    /// Assumes that the code at that address can be safely run after enabling the page table
+    unsafe fn enable_page_table(page_table: Self::PhysPageNumber, jump_address: usize);
+    unsafe fn identity_map(page_table: &mut Self::Page, start_addr: usize, len: usize);
 }

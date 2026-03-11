@@ -21,6 +21,8 @@ use crate::phys_mem_allocator::{AllocRequest, PhysMemAllocator};
 pub struct BootInfo {
     pub cpu_id: usize,
     pub fdt_addr: usize,
+    pub self_addr: usize,
+    pub self_len: usize,
 }
 
 #[panic_handler]
@@ -96,9 +98,8 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
         size: size_of::<A::Page>().try_into().unwrap(),
         align: size_of::<A::Page>().try_into().unwrap(),
     };
-    let page_table_pointer: usize = (allocator.allocate(alloc_request).unwrap())
-        .try_into()
-        .unwrap();
+    let page_table_phys_addr = allocator.allocate(alloc_request).unwrap();
+    let page_table_pointer: usize = (page_table_phys_addr).try_into().unwrap();
     let mut page_table = NonNull::new(page_table_pointer as *mut MaybeUninit<A::Page>).unwrap();
     let page_table = A::new_page(unsafe { page_table.as_mut() });
 
@@ -153,13 +154,29 @@ pub fn start<A: Arch>(boot_info: BootInfo) -> ! {
         }
     }
 
+    unsafe { A::identity_map(page_table, boot_info.self_addr, boot_info.self_len) };
+
     info!("Mapped all segments. Top page table: {:#X?}", unsafe {
         A::debug_page_tables(page_table)
     });
 
-    if A::can_shutdown() {
-        A::shutdown()
-    } else {
-        A::low_power_loop()
-    }
+    unsafe {
+        A::enable_page_table(
+            A::PhysPageNumber::try_from(
+                A::PhysAddr::try_from(
+                    core::ptr::from_ref(page_table).addr() / size_of::<A::Page>(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            elf.ehdr.e_entry.try_into().unwrap(),
+        )
+    };
+    unreachable!()
+
+    // if A::can_shutdown() {
+    //     A::shutdown()
+    // } else {
+    //     A::low_power_loop()
+    // }
 }
