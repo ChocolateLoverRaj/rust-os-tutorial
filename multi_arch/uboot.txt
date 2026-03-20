@@ -1,0 +1,3 @@
+bootdelay=0
+scriptaddr=0x05400000
+bootcmd=usb start; dhcp; wget ${scriptaddr} http://${serverip}:8982/rpi_boot.scr; source ${scriptaddr}

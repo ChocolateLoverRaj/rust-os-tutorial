@@ -55,6 +55,7 @@
               extraConfig = ''
                 CONFIG_CMD_WGET=y
                 CONFIG_NET_LWIP=y
+                CONFIG_CMD_BOOTMENU=y
               '';
               extraMeta.platforms = [ "aarch64-linux" ];
               filesToInstall = [ "u-boot.bin" ];
