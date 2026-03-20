@@ -50,6 +50,15 @@
                 "u-boot.itb"
               ];
             };
+            ubootRpiArm64 = pkgsCross.aarch64-multiplatform.buildUBoot {
+              defconfig = "rpi_arm64_defconfig";
+              extraConfig = ''
+                CONFIG_CMD_WGET=y
+                CONFIG_NET_LWIP=y
+              '';
+              extraMeta.platforms = [ "aarch64-linux" ];
+              filesToInstall = [ "u-boot.bin" ];
+            };
           in
           mkShell {
             buildInputs = [
@@ -83,6 +92,7 @@
             UBOOT_RISCV32 = "${uboot_riscv32}/u-boot.itb";
             UBOOT_RISCV64_BIOS = "${uboot_riscv64}/u-boot-spl";
             UBOOT_RISCV64 = "${uboot_riscv64}/u-boot.itb";
+            UBOOT_RPI = "${ubootRpiArm64}/u-boot.bin";
           };
       }
     );

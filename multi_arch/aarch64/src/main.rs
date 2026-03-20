@@ -104,6 +104,27 @@ pub unsafe extern "C" fn start() {
 }
 
 unsafe extern "C" fn kernel_main(fdt_addr: usize) -> ! {
+    #[cfg(feature = "semihosting")]
     semihosting::println!("Hello from kernel (written in Rust) on aarch64");
+
+    // FIXME: This is just for testing and is hard-coded for a Raspberry Pi 3B. Use the device tree!
+    // Base address for the Auxiliary peripherals (BCM2837 Physical Address)
+    const AUX_BASE: usize = 0x3F215000;
+    // const AUX_ENABLES: *mut u32 = (AUX_BASE + 0x04) as *mut u32;
+    const AUX_MU_IO: *mut u32 = (AUX_BASE + 0x40) as *mut u32;
+    const AUX_MU_LSR: *mut u32 = (AUX_BASE + 0x54) as *mut u32;
+
+    print_uart("Hello from Rust Bare Metal!\r\n");
+
+    fn print_uart(s: &str) {
+        for c in s.chars() {
+            // Wait until Transmitter is empty (Bit 5 of LSR)
+            unsafe {
+                while (core::ptr::read_volatile(AUX_MU_LSR) & 0x20) == 0 {}
+                core::ptr::write_volatile(AUX_MU_IO, c as u32);
+            }
+        }
+    }
+
     loop {}
 }

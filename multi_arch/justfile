@@ -19,6 +19,10 @@ build_7: build_dir
 build_8: build_dir
     cargo objcopy --target aarch64-unknown-none-softfloat --features semihosting -- -O binary {{ build_dir }}/kernel8.img
 
+[working-directory('aarch64')]
+build_8_no_semihosting: build_dir
+    cargo objcopy --target aarch64-unknown-none-softfloat -- -O binary {{ build_dir }}/kernel8_no_semihosting.img
+
 [working-directory('riscv_loader')]
 build_loader_riscv32: build_dir
     cargo objcopy --target riscv32imac-unknown-none-elf -- -O binary {{ build_dir }}/kernel_0_riscv32.img
@@ -42,7 +46,7 @@ run_2: build_7
     qemu-system-arm --machine raspi2b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel7.img --semihosting
 
 run_3: build_8
-    qemu-system-aarch64 --machine raspi3b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel8.img --semihosting
+    qemu-system-aarch64 --machine raspi3b --nographic --serial null --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel8.img --semihosting
 
 run_4: build_8
     qemu-system-aarch64 --machine raspi4b --nographic --serial mon:stdio --no-reboot --kernel {{ build_dir }}/kernel8.img --semihosting
