@@ -1,0 +1,4 @@
+bootdelay=0
+update_env=usb start; dhcp; wget 0x8000 http://${serverip}:8982/rpi_uboot.env; fatwrite mmc 0:1 ${fileaddr} uboot.env ${filesize}; reset
+# U-Boot tries to load the kernel at 0x0 and then fails. So we patch the text_offset field to be at 2 MiB
+bootcmd=usb start; dhcp; wget 0x200000 http://${serverip}:8982/kernel_aarch64.bin; mw.q 0x200008 0x200000; fdt addr ${fdt_addr}; booti 0x200000 - ${fdt_addr}

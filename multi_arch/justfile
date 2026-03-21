@@ -20,8 +20,8 @@ build_8: build_dir
     cargo objcopy --target aarch64-unknown-none-softfloat --features semihosting -- -O binary {{ build_dir }}/kernel8.img
 
 [working-directory('aarch64')]
-build_8_no_semihosting: build_dir
-    cargo objcopy --target aarch64-unknown-none-softfloat -- -O binary {{ build_dir }}/kernel8_no_semihosting.img
+build_aarch64: build_dir
+    cargo objcopy --target aarch64-unknown-none-softfloat -- -O binary {{ build_dir }}/kernel_aarch64.bin
 
 [working-directory('riscv_loader')]
 build_loader_riscv32: build_dir
@@ -105,9 +105,9 @@ build_qemu_uboot_script:
     # mcopy -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} ./extlinux.conf ::/boot/extlinux/extlinux.conf
     # mcopy -i {{ build_dir }}/{{ img_name }}@@{{ fat_offset }} {{ build_dir }}/kernel7.img ::/boot/kernel.img
 
-build_rpi_uboot:
-    mkenvimage -s 16384 -o {{ build_dir }}/uboot.env uboot.txt
-    mkimage -A arm -T script -C none -n "Boot Script" -d rpi.cmd {{ build_dir }}/rpi_boot.scr
+build_rpi_uboot_env:
+    mkenvimage -s 16384 -o {{ build_dir }}/rpi_uboot.env rpi_uboot.txt
+    # mkimage -A arm -T script -C none -n "Boot Script" -d rpi.cmd {{ build_dir }}/rpi_boot.scr
 
     # To update uboot.env on the SD card through U-Boot (so you don't have to physically remove the SD card):
     # dhcp

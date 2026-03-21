@@ -73,6 +73,8 @@
               ubootTools
               parted
               gdb
+              openocd
+              lldb
             ];
 
             UBOOT_ARM =
