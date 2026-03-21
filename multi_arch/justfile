@@ -111,7 +111,7 @@ build_rpi_uboot_env:
 
     # To update uboot.env on the SD card through U-Boot (so you don't have to physically remove the SD card):
     # dhcp
-    # wget 0x8000 http://${serverip}:8982/uboot.env
+    # wget 0x8000 http://${serverip}:8982/rpi_uboot.env
     # fatwrite mmc 0:1 ${fileaddr} uboot.env ${filesize}
 
 run_uboot_arm: build_qemu_uboot_script build_7
